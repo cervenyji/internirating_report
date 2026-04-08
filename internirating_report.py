@@ -2475,8 +2475,7 @@ def generate_revenue_client_heatmap(df, parties_full_df=None):
     _clat = float(_pf_top['_lat'].median())
     _clon = float(_pf_top['_lon'].median())
     _fig.update_layout(
-        mapbox=dict(style='light', accesstoken=MAPBOX_TOKEN,
-                    center=dict(lat=_clat, lon=_clon), zoom=6),
+        mapbox=_mapbox_layout(center_lat=_clat, center_lon=_clon, zoom=6),
         height=480, margin=dict(l=0, r=0, t=0, b=0),
         paper_bgcolor='white',
     )
@@ -7898,6 +7897,14 @@ setTimeout(function() {{
 
 MAPBOX_TOKEN = ''  # Vlož vlastní Mapbox public token
 
+def _mapbox_layout(center_lat=49.8, center_lon=15.5, zoom=6.5):
+    """Vrátí dict pro mapbox layout — bez tokenu použije open-street-map."""
+    if MAPBOX_TOKEN:
+        return dict(style='light', accesstoken=MAPBOX_TOKEN,
+                    center=dict(lat=center_lat, lon=center_lon), zoom=zoom)
+    return dict(style='open-street-map',
+                center=dict(lat=center_lat, lon=center_lon), zoom=zoom)
+
 def generate_map_html(df, title="🗺️ Mapa poboček"):
     """
     Scatter_mapbox s pobočkami. Každá kombinace (hotovostní/bezhotovostní × strategie) = vlastní trace.
@@ -8041,12 +8048,7 @@ def generate_map_html(df, title="🗺️ Mapa poboček"):
 
     fig = go.Figure(traces)
     fig.update_layout(
-        mapbox=dict(
-            accesstoken=MAPBOX_TOKEN,
-            style='light',
-            center=dict(lat=49.8, lon=15.5),
-            zoom=6.5,
-        ),
+        mapbox=_mapbox_layout(center_lat=49.8, center_lon=15.5, zoom=6.5),
         margin=dict(l=0, r=0, t=0, b=0),
         height=560,
         legend=dict(
@@ -12197,11 +12199,7 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
                                 showlegend=False,
                             ))
                             _fig.update_layout(
-                                mapbox=dict(
-                                    style='light',
-                                    accesstoken=MAPBOX_TOKEN,
-                                    center=dict(lat=_map_clat, lon=_map_clon),
-                                    zoom=7),
+                                mapbox=_mapbox_layout(center_lat=_map_clat, center_lon=_map_clon, zoom=7),
                                 height=420,
                                 margin=dict(l=0, r=0, t=0, b=0),
                                 paper_bgcolor='white',
