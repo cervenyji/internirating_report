@@ -2818,7 +2818,7 @@ def generate_atm_region_html(df_reg, export_atm=None, kapacita_atm=None):
     """
     Přehled ATM pro region:
     - Souhrnné počty bankomatů
-    - Top 5 nejhůře kapacitně zajištěných poboček
+    - Top 10 nejhůře kapacitně zajištěných poboček
     - Top 5 nejvytíženějších bankomatů (dle průměrného počtu výběrů + vkladů / měsíc)
     """
     if export_atm is None or kapacita_atm is None:
@@ -2905,7 +2905,7 @@ def generate_atm_region_html(df_reg, export_atm=None, kapacita_atm=None):
             + '</div>'
         )
 
-        # ── 2. Top 5 nejhůře kapacitně zajištěných poboček ────────
+        # ── 2. Top 10 nejhůře kapacitně zajištěných poboček ───────
         # Řadíme dle ZBYVAJICI_VOLNA_KAPACITA vzestupně — záporná = přetíženo
         worst_html = ''
         if 'ZBYVAJICI_VOLNA_KAPACITA' in kap_reg.columns:
@@ -2913,7 +2913,7 @@ def generate_atm_region_html(df_reg, export_atm=None, kapacita_atm=None):
                 kap_reg['ZBYVAJICI_VOLNA_KAPACITA'], errors='coerce') * 100
             worst5 = (kap_reg.dropna(subset=['_volno_pct'])
                       .sort_values('_volno_pct', ascending=True)   # nejméně volná = nahoře
-                      .head(5))
+                      .head(10))
             if not worst5.empty:
                 rows = ''
                 for i, (_, r) in enumerate(worst5.iterrows()):
@@ -2928,20 +2928,24 @@ def generate_atm_region_html(df_reg, export_atm=None, kapacita_atm=None):
                         f'<span style="font-weight:700;color:{"#eb4d79" if v>100 else "#f59e0b" if v>80 else "#0bb440"};">'
                         f'{v:.0f}%{"⚠️" if v>100 else ""}</span>'
                     )
+                    # Volno: záporné = červeně (přetíženo), kladné = zeleně
+                    _vol_col = '#eb4d79' if vol < 0 else '#0bb440'
+                    _vol_pfx = '⚠️ ' if vol < 0 else ''
                     rows += (
                         f'<tr style="background:{bg};">'
                         f'<td style="padding:5px 10px;font-weight:600;color:#0f172a;">{bnam}</td>'
                         f'<td style="padding:5px 10px;text-align:center;color:#888;">{n_atm_b}</td>'
                         f'<td style="padding:5px 10px;text-align:center;">{_pc(akt)}</td>'
                         f'<td style="padding:5px 10px;text-align:center;">{_pc(prev)}</td>'
-                        f'<td style="padding:5px 10px;text-align:center;color:#0bb440;font-weight:600;">{vol:.0f}%</td>'
+                        f'<td style="padding:5px 10px;text-align:center;color:{_vol_col};font-weight:700;">'
+                        f'{_vol_pfx}{vol:.0f}%</td>'
                         f'</tr>'
                     )
                 worst_html = (
                     f'<div style="flex:1;min-width:300px;">'
                     f'<div style="font-size:0.75rem;font-weight:700;color:#e07020;'
                     f'text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">'
-                    f'⚠️ Top 5 — nejhůře kapacitně zajištěné pobočky</div>'
+                    f'⚠️ Top 10 — nejhůře kapacitně zajištěné pobočky</div>'
                     f'<table style="width:100%;border-collapse:collapse;font-size:0.78rem;">'
                     f'<thead><tr style="background:#fff5ef;">'
                     f'<th style="padding:5px 10px;text-align:left;color:#888;">Pobočka</th>'
@@ -3279,6 +3283,125 @@ def generate_cohort_analysis(df):
                 sections.append(('📐 Plocha D5 kvintil', rows))
         except Exception:
             pass
+
+    # ── Sekce 8: Typologie pobočky (BRANCH_TYPE_NAME) ─────────────
+    if 'BRANCH_TYPE_NAME' in d.columns and d['BRANCH_TYPE_NAME'].notna().any():
+        _typ_colors = ['#2770f0', '#4d8ef0', '#74aaf5', '#9cc4f8', '#c2dafc',
+                       '#a5b4fc', '#818cf8', '#6366f1']
+        g = _agg('BRANCH_TYPE_NAME')
+        _typ_map = {
+            str(v): (str(v), _typ_colors[i % len(_typ_colors)])
+            for i, v in enumerate(g['BRANCH_TYPE_NAME'].dropna().unique())
+        }
+        rows = _make_section(g, 'BRANCH_TYPE_NAME', _typ_map)
+        if rows:
+            sections.append(('🏢 Typologie pobočky', rows))
+
+    # ── Sekce 9: Kvintil indexu expozice (IE_Q) ───────────────────
+    _ie_q_col = 'IE_Q'
+    if _ie_q_col in d.columns and d[_ie_q_col].notna().any():
+        d[_ie_q_col] = pd.to_numeric(d[_ie_q_col], errors='coerce')
+        _ieq_map = {
+            1: ('IEQ1 — Nejlepší index expozice', '#0bb440'),
+            2: ('IEQ2 — Nadprůměrná expozice',    '#4ade80'),
+            3: ('IEQ3 — Průměrná expozice',        '#f59e0b'),
+            4: ('IEQ4 — Podprůměrná expozice',     '#fb923c'),
+            5: ('IEQ5 — Nejhorší index expozice',  '#eb4d79'),
+        }
+        d_ie = d[d[_ie_q_col].notna() & d[_ie_q_col].between(1, 5)].copy()
+        d_ie[_ie_q_col] = d_ie[_ie_q_col].astype(int)
+        g = d_ie.groupby(_ie_q_col, observed=True).agg(
+            pocet    = ('BRANCH_CODE', 'count'),
+            rev_mean = ('OBJEM_VYNOSU_CZK', 'mean'),
+            rev_med  = ('OBJEM_VYNOSU_CZK', 'median'),
+            rev_fte  = ('OBJEM_VYNOSU_CZK',
+                        lambda x: (x / d_ie.loc[x.index, 'FTE']).mean()
+                        if 'FTE' in d_ie.columns else float('nan')),
+        ).reset_index().sort_values(_ie_q_col)
+        rows = _make_section(g, _ie_q_col, _ieq_map, is_quintile=True)
+        if rows:
+            sections.append(('📡 Kvintil indexu expozice', rows))
+
+    # ── Sekce 10: PEREX kvintil (CAP_PEREX_Q) ─────────────────────
+    _perex_q_col = 'CAP_PEREX_Q'
+    if _perex_q_col in d.columns and d[_perex_q_col].notna().any():
+        d[_perex_q_col] = pd.to_numeric(d[_perex_q_col], errors='coerce')
+        _pq_map = {
+            1: ('PQ1 — Nejefektivnější PEREX',  '#0bb440'),
+            2: ('PQ2 — Nadprůměrný PEREX',      '#4ade80'),
+            3: ('PQ3 — Průměrný PEREX',          '#f59e0b'),
+            4: ('PQ4 — Podprůměrný PEREX',       '#fb923c'),
+            5: ('PQ5 — Nejméně efektivní PEREX', '#eb4d79'),
+        }
+        d_pq = d[d[_perex_q_col].notna() & d[_perex_q_col].between(1, 5)].copy()
+        d_pq[_perex_q_col] = d_pq[_perex_q_col].astype(int)
+        g = d_pq.groupby(_perex_q_col, observed=True).agg(
+            pocet    = ('BRANCH_CODE', 'count'),
+            rev_mean = ('OBJEM_VYNOSU_CZK', 'mean'),
+            rev_med  = ('OBJEM_VYNOSU_CZK', 'median'),
+            rev_fte  = ('OBJEM_VYNOSU_CZK',
+                        lambda x: (x / d_pq.loc[x.index, 'FTE']).mean()
+                        if 'FTE' in d_pq.columns else float('nan')),
+        ).reset_index().sort_values(_perex_q_col)
+        rows = _make_section(g, _perex_q_col, _pq_map, is_quintile=True)
+        if rows:
+            sections.append(('⚡ PEREX kvintil', rows))
+
+    # ── Sekce 11: Primární klienti kvintil (CAP_PRIMCLI_FTE_Q) ────
+    _prim_q_col = 'CAP_PRIMCLI_FTE_Q'
+    if _prim_q_col in d.columns and d[_prim_q_col].notna().any():
+        d[_prim_q_col] = pd.to_numeric(d[_prim_q_col], errors='coerce')
+        _primq_map = {
+            1: ('PKQ1 — Nejvíce prim. klientů/FTE', '#0bb440'),
+            2: ('PKQ2 — Nadprůměr',                  '#4ade80'),
+            3: ('PKQ3 — Průměr',                      '#f59e0b'),
+            4: ('PKQ4 — Podprůměr',                   '#fb923c'),
+            5: ('PKQ5 — Nejméně prim. klientů/FTE',  '#eb4d79'),
+        }
+        d_primq = d[d[_prim_q_col].notna() & d[_prim_q_col].between(1, 5)].copy()
+        d_primq[_prim_q_col] = d_primq[_prim_q_col].astype(int)
+        g = d_primq.groupby(_prim_q_col, observed=True).agg(
+            pocet    = ('BRANCH_CODE', 'count'),
+            rev_mean = ('OBJEM_VYNOSU_CZK', 'mean'),
+            rev_med  = ('OBJEM_VYNOSU_CZK', 'median'),
+            rev_fte  = ('OBJEM_VYNOSU_CZK',
+                        lambda x: (x / d_primq.loc[x.index, 'FTE']).mean()
+                        if 'FTE' in d_primq.columns else float('nan')),
+        ).reset_index().sort_values(_prim_q_col)
+        rows = _make_section(g, _prim_q_col, _primq_map, is_quintile=True)
+        if rows:
+            sections.append(('👤 Primární klienti/FTE kvintil', rows))
+
+    # ── Sekce 12: Počet bankéřů (BANKERS_COUNT) ───────────────────
+    if 'BANKERS_COUNT' in d.columns and d['BANKERS_COUNT'].notna().any():
+        d['BANKERS_COUNT'] = pd.to_numeric(d['BANKERS_COUNT'], errors='coerce')
+        d_bnk = d[d['BANKERS_COUNT'].notna()].copy()
+        d_bnk['BANKERS_COUNT'] = d_bnk['BANKERS_COUNT'].astype(int)
+        # Seskup do skupin: 0, 1, 2, 3, 4-5, 6+
+        def _bnk_grp(n):
+            if n == 0: return '0 — bez bankéřů'
+            if n == 1: return '1 bankéř'
+            if n == 2: return '2 bankéři'
+            if n == 3: return '3 bankéři'
+            if n <= 5: return '4–5 bankéřů'
+            return '6+ bankéřů'
+        d_bnk['_bnk_grp'] = d_bnk['BANKERS_COUNT'].apply(_bnk_grp)
+        _bnk_order = ['0 — bez bankéřů', '1 bankéř', '2 bankéři', '3 bankéři', '4–5 bankéřů', '6+ bankéřů']
+        _bnk_colors = ['#eb4d79', '#fb923c', '#f59e0b', '#4ade80', '#0bb440', '#047857']
+        _bnk_map = {v: (v, _bnk_colors[i % len(_bnk_colors)]) for i, v in enumerate(_bnk_order)}
+        g = d_bnk.groupby('_bnk_grp', observed=True).agg(
+            pocet    = ('BRANCH_CODE', 'count'),
+            rev_mean = ('OBJEM_VYNOSU_CZK', 'mean'),
+            rev_med  = ('OBJEM_VYNOSU_CZK', 'median'),
+            rev_fte  = ('OBJEM_VYNOSU_CZK',
+                        lambda x: (x / d_bnk.loc[x.index, 'FTE']).mean()
+                        if 'FTE' in d_bnk.columns else float('nan')),
+        ).reset_index()
+        g['_ord'] = g['_bnk_grp'].map({v: i for i, v in enumerate(_bnk_order)}).fillna(99)
+        g = g.sort_values('_ord')
+        rows = _make_section(g, '_bnk_grp', _bnk_map)
+        if rows:
+            sections.append(('🏦 Počet bankéřů', rows))
 
     if not sections:
         return "<p style='color:#aaa;font-style:italic;'>Nedostatek dat pro kohortovou analýzu.</p>"
@@ -8283,6 +8406,68 @@ def generate_map_html(df, title="🗺️ Mapa poboček"):
 </div>"""
 
 
+def _render_top_revenues_table(df, region_label="", n=10):
+    """
+    Přehled oblastí s nejvyššími výnosy — dvě tabulky vedle sebe:
+    1) Top N dle celkových výnosů (VYNOSY)
+    2) Top N dle nových výnosů (OBJEM_VYNOSU_CZK)
+    """
+    d = df.copy()
+    for c in ['VYNOSY', 'OBJEM_VYNOSU_CZK', 'IR', 'PRIME_NAKLADY/VYNOSY']:
+        if c in d.columns:
+            d[c] = pd.to_numeric(d[c], errors='coerce')
+
+    def _tbl(sorted_df, val_col, val_label, accent):
+        rows = ''
+        top = sorted_df.dropna(subset=[val_col]).query(f'{val_col} > 0').sort_values(val_col, ascending=False).head(n)
+        if top.empty:
+            return f"<p style='color:#aaa;font-style:italic;font-size:0.82rem;'>Žádná data.</p>"
+        max_val = float(top[val_col].max()) or 1
+        for i, (_, r) in enumerate(top.iterrows()):
+            bc  = int(r.get('BRANCH_CODE', 0))
+            bn  = str(r.get('BRANCH_NAME', bc))
+            val = float(r[val_col])
+            ir  = r.get('IR'); ci = r.get('PRIME_NAKLADY/VYNOSY')
+            try: ir_s = str(int(float(ir)))
+            except: ir_s = '—'
+            try: ci_s = f"{float(ci)*100:.1f} %"
+            except: ci_s = '—'
+            pct = val / max_val * 100
+            bg  = '#fff' if i % 2 == 0 else '#fafbff'
+            medal = ['🥇','🥈','🥉'][i] if i < 3 else f'<span style="color:#aaa;font-size:0.72rem;">#{i+1}</span>'
+            rows += (
+                f'<tr style="background:{bg};">'
+                f'<td style="padding:5px 8px;text-align:center;width:28px;">{medal}</td>'
+                f'<td style="padding:5px 8px;font-weight:600;color:#0f172a;">'
+                f'{bn}<span style="color:#aaa;font-size:0.7rem;margin-left:5px;">({bc})</span></td>'
+                f'<td style="padding:5px 8px;">'
+                f'<div style="display:flex;align-items:center;gap:6px;">'
+                f'<div style="flex:1;background:#eee;border-radius:3px;height:6px;">'
+                f'<div style="width:{pct:.0f}%;background:{accent};height:100%;border-radius:3px;"></div></div>'
+                f'<span style="font-weight:700;color:{accent};white-space:nowrap;font-size:0.82rem;">'
+                f'{format_money(val)}</span></div></td>'
+                f'<td style="padding:5px 8px;text-align:center;color:#888;font-size:0.75rem;">{ir_s}</td>'
+                f'<td style="padding:5px 8px;text-align:center;color:#888;font-size:0.75rem;">{ci_s}</td>'
+                f'</tr>'
+            )
+        return (
+            f'<table style="width:100%;border-collapse:collapse;font-size:0.8rem;">'
+            f'<thead><tr style="background:#f4f8ff;">'
+            f'<th style="padding:5px 8px;"></th>'
+            f'<th style="padding:5px 8px;text-align:left;color:#555;">Pobočka</th>'
+            f'<th style="padding:5px 8px;text-align:left;color:{accent};">{val_label}</th>'
+            f'<th style="padding:5px 8px;text-align:center;color:#888;">Rating</th>'
+            f'<th style="padding:5px 8px;text-align:center;color:#888;">C/I</th>'
+            f'</tr></thead><tbody>{rows}</tbody></table>'
+        )
+
+    left  = f'<div style="flex:1;min-width:300px;"><div style="font-size:0.75rem;font-weight:700;color:#0bb440;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">💰 Top {n} — celkové výnosy (VYNOSY)</div>{_tbl(d,"VYNOSY","Výnosy celkem","#0bb440")}</div>' if 'VYNOSY' in d.columns else ''
+    right = f'<div style="flex:1;min-width:300px;"><div style="font-size:0.75rem;font-weight:700;color:#2770f0;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">🆕 Top {n} — nové výnosy (OBJEM_VYNOSU_CZK)</div>{_tbl(d,"OBJEM_VYNOSU_CZK","Nové výnosy","#2770f0")}</div>' if 'OBJEM_VYNOSU_CZK' in d.columns else ''
+    if not left and not right:
+        return "<p style='color:#aaa;font-style:italic;'>Žádná výnosová data.</p>"
+    return f'<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;">{left}{right}</div>'
+
+
 def generate_report(rating_status, mode='static', output_prefix="report"):
     """
     Generuje HTML report(y).
@@ -9188,10 +9373,10 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Přehled plánovaných uzavření, investic a přechodů na bezhotovostní provoz v regionu {region}.</p>"
         + render_strategy_columns(df_reg), default_open=False)}
 
-    <!-- 7. Nejvyšší nové výnosy -->
-    {make_collapsible(f"top-revenue-{region_slug}", "💰 Nejvyšší nové výnosy",
-        f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Top 5 poboček regionu {region} s nejvyššími novými výnosy v roce 2025.</p>"
-        + render_top5_cards(df_reg, "revenue", "💰 Nejvyšší nové výnosy 2025", "seřazeno sestupně dle objemu nových výnosů", n=5),
+    <!-- 7. Nejvyšší výnosy a nové výnosy -->
+    {make_collapsible(f"top-revenue-{region_slug}", "💰 Přehled oblastí s nejvyššími výnosy",
+        f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Top pobočky regionu {region} dle celkových výnosů (VYNOSY) a nových výnosů (OBJEM_VYNOSU_CZK) v roce 2025.</p>"
+        + _render_top_revenues_table(df_reg, region),
         default_open=False)}
 
     <!-- 8. Top 5 zlepšení a zhoršení -->
