@@ -2149,14 +2149,20 @@ def render_top5_cards(df, mode, title, subtitle="", n=5):
 
 def generate_danger_zone_table(df):
     """
-    Pobočky v nebezpečné zóně — tři kritéria:
+    Pobočky v nebezpečné zóně — pět kritérií:
       A) Vysoké nájemné + nízké výnosy
       B) Vysoké C/I + podprůměrné výnosy + málo FTE
-      C) Zhoršení ratingu 2 roky za sebou (IR_DIFF_NUM > 0 AND starší IR také horší)
+      C) Zhoršení ratingu 2 roky za sebou
+      D) Nízká primární klientela (PRIM_RATIO pod Q25)
+      E) Výnosy v dolním kvintilu + žádný růst prodejů (POCET_PRODEJU_CELKEM_2025 <= 2024)
+    Štítky jsou zaklikávatelné — slouží k filtrování zobrazených řádků.
     """
+    import json as _json
+
     d = df.copy()
-    for c in ['OBJEM_VYNOSU_CZK','ROCNI_SPLATKY_S_DPH_CZK','PRIME_NAKLADY/VYNOSY','FTE',
-              'IR','INTERNI_RATING_2024','INTERNI_RATING_2023','IR_DIFF_NUM']:
+    for c in ['OBJEM_VYNOSU_CZK', 'ROCNI_SPLATKY_S_DPH_CZK', 'PRIME_NAKLADY/VYNOSY', 'FTE',
+              'IR', 'INTERNI_RATING_2024', 'INTERNI_RATING_2023', 'IR_DIFF_NUM',
+              'PRIM_RATIO', 'POCET_PRODEJU_CELKEM_2025', 'VYNOSY']:
         if c in d.columns:
             d[c] = pd.to_numeric(d[c], errors='coerce')
 
@@ -2166,17 +2172,19 @@ def generate_danger_zone_table(df):
     elif 'IR' in d.columns:
         d = d[d['IR'].notna() & (d['IR'] > 0)].copy()
 
-    _rev_med  = d['OBJEM_VYNOSU_CZK'].median()      if 'OBJEM_VYNOSU_CZK' in d.columns else None
-    _rent_q75 = d['ROCNI_SPLATKY_S_DPH_CZK'].quantile(0.75) if 'ROCNI_SPLATKY_S_DPH_CZK' in d.columns else None
-    _ci_q75   = d['PRIME_NAKLADY/VYNOSY'].quantile(0.75)     if 'PRIME_NAKLADY/VYNOSY' in d.columns else None
-    _fte_q25  = d['FTE'].quantile(0.25)              if 'FTE' in d.columns else None
-    _rev_q25  = d['OBJEM_VYNOSU_CZK'].quantile(0.25) if 'OBJEM_VYNOSU_CZK' in d.columns else None
+    _rev_med  = d['OBJEM_VYNOSU_CZK'].median()               if 'OBJEM_VYNOSU_CZK' in d.columns else None
+    _rent_q75 = d['ROCNI_SPLATKY_S_DPH_CZK'].quantile(0.75)  if 'ROCNI_SPLATKY_S_DPH_CZK' in d.columns else None
+    _ci_q75   = d['PRIME_NAKLADY/VYNOSY'].quantile(0.75)      if 'PRIME_NAKLADY/VYNOSY' in d.columns else None
+    _fte_q25  = d['FTE'].quantile(0.25)                       if 'FTE' in d.columns else None
+    _rev_q25  = d['OBJEM_VYNOSU_CZK'].quantile(0.25)          if 'OBJEM_VYNOSU_CZK' in d.columns else None
+    _rev_q20  = d['OBJEM_VYNOSU_CZK'].quantile(0.20)          if 'OBJEM_VYNOSU_CZK' in d.columns else None
+    _prim_q25 = d['PRIM_RATIO'].quantile(0.25)                if 'PRIM_RATIO' in d.columns else None
 
     flags = []
-    _seen = set()   # (BRANCH_CODE, důvod) pro deduplikaci
+    _seen = set()
 
     # A) Vysoké nájemné + nízké výnosy
-    if _rent_q75 and _rev_med:
+    if _rent_q75 is not None and _rev_med is not None:
         mask_a = (d['ROCNI_SPLATKY_S_DPH_CZK'] > _rent_q75) & (d['OBJEM_VYNOSU_CZK'] < _rev_med)
         for _, r in d[mask_a].iterrows():
             key = (int(r['BRANCH_CODE']), 'A')
@@ -2186,7 +2194,7 @@ def generate_danger_zone_table(df):
                               'col': '#eb4d79', 'icon': '🏠'})
 
     # B) Vysoké C/I + podprůměrné výnosy + málo FTE
-    if _ci_q75 and _rev_q25 and _fte_q25:
+    if _ci_q75 is not None and _rev_q25 is not None and _fte_q25 is not None:
         mask_b = ((d['PRIME_NAKLADY/VYNOSY'] > _ci_q75) &
                   (d['OBJEM_VYNOSU_CZK'] < _rev_q25) &
                   (d['FTE'] <= _fte_q25))
@@ -2197,11 +2205,73 @@ def generate_danger_zone_table(df):
                 flags.append({'row': r, 'důvod': 'B', 'popis': 'Vysoké C/I + slabé výnosy + málo FTE',
                               'col': '#f59e0b', 'icon': '📉'})
 
+    # C) Zhoršení ratingu 2 roky za sebou (IR roste = horší)
+    if all(c in d.columns for c in ['IR', 'INTERNI_RATING_2024', 'INTERNI_RATING_2023', 'IR_DIFF_NUM']):
+        mask_c = (
+            d['IR_DIFF_NUM'] > 0
+        ) & (
+            d['INTERNI_RATING_2024'].notna() & d['INTERNI_RATING_2023'].notna()
+        ) & (
+            d['INTERNI_RATING_2024'] > d['INTERNI_RATING_2023']
+        )
+        for _, r in d[mask_c].iterrows():
+            key = (int(r['BRANCH_CODE']), 'C')
+            if key not in _seen:
+                _seen.add(key)
+                flags.append({'row': r, 'důvod': 'C', 'popis': 'Rating se zhoršuje 2 roky za sebou',
+                              'col': '#7c3aed', 'icon': '📛'})
+
+    # D) Nízká primární klientela (PRIM_RATIO pod Q25)
+    if _prim_q25 is not None and 'PRIM_RATIO' in d.columns:
+        mask_d = d['PRIM_RATIO'] < _prim_q25
+        for _, r in d[mask_d].iterrows():
+            key = (int(r['BRANCH_CODE']), 'D')
+            if key not in _seen:
+                _seen.add(key)
+                flags.append({'row': r, 'důvod': 'D', 'popis': 'Nízká primární klientela (pod Q25)',
+                              'col': '#0891b2', 'icon': '👤'})
+
+    # E) Výnosy v dolním kvintilu + stagnace/pokles prodejů 2025 vs 2024
+    if _rev_q20 is not None and 'POCET_PRODEJU_CELKEM_2025' in d.columns:
+        _prod_2024_cols = [c for c in d.columns if c.startswith('POCET_PRODEJU_') and c.endswith('_2024')]
+        if _prod_2024_cols:
+            d['_prod_sum_2024'] = d[_prod_2024_cols].sum(axis=1)
+        else:
+            d['_prod_sum_2024'] = 0
+        mask_e = (
+            (d['OBJEM_VYNOSU_CZK'] < _rev_q20) &
+            (d['POCET_PRODEJU_CELKEM_2025'] <= d['_prod_sum_2024'])
+        )
+        for _, r in d[mask_e].iterrows():
+            key = (int(r['BRANCH_CODE']), 'E')
+            if key not in _seen:
+                _seen.add(key)
+                flags.append({'row': r, 'důvod': 'E', 'popis': 'Nízké výnosy + stagnace prodejů',
+                              'col': '#059669', 'icon': '📦'})
+
     if not flags:
         return "<p style='color:#aaa;font-style:italic;'>Žádné pobočky nesplňují kritéria nebezpečné zóny.</p>"
 
-    # Seřaď: A první, pak B, uvnitř dle výnosů vzestupně
-    flags.sort(key=lambda x: ({'A': 0, 'B': 1}[x['důvod']], x['row'].get('OBJEM_VYNOSU_CZK', 0) or 0))
+    _order = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4}
+    flags.sort(key=lambda x: (_order.get(x['důvod'], 9), x['row'].get('OBJEM_VYNOSU_CZK', 0) or 0))
+
+    # Metadata kritérií pro JS
+    criteria_meta = [
+        {'key': 'A', 'col': '#eb4d79', 'icon': '🏠',
+         'desc': 'Vysoké nájemné + nízké výnosy (nájemné &gt; Q75, výnosy &lt; medián)'},
+        {'key': 'B', 'col': '#f59e0b', 'icon': '📉',
+         'desc': 'Vysoké C/I + slabé výnosy + málo FTE (nad/pod Q75/Q25)'},
+        {'key': 'C', 'col': '#7c3aed', 'icon': '📛',
+         'desc': 'Rating se zhoršuje 2 roky za sebou (IR↑ v 2024 i 2025)'},
+        {'key': 'D', 'col': '#0891b2', 'icon': '👤',
+         'desc': 'Nízká primární klientela (PRIM_RATIO &lt; Q25)'},
+        {'key': 'E', 'col': '#059669', 'icon': '📦',
+         'desc': 'Nízké výnosy (Q20) + stagnace nebo pokles počtu prodejů'},
+    ]
+    # Pouze kritéria, která mají alespoň jeden záznam
+    active_keys = {f['důvod'] for f in flags}
+    criteria_meta = [c for c in criteria_meta if c['key'] in active_keys]
+    criteria_json = _json.dumps([{'key': c['key'], 'col': c['col']} for c in criteria_meta])
 
     rows_html = ""
     for f in flags:
@@ -2214,6 +2284,7 @@ def generate_danger_zone_table(df):
         rent = r.get('ROCNI_SPLATKY_S_DPH_CZK')
         ci   = r.get('PRIME_NAKLADY/VYNOSY')
         fte  = r.get('FTE')
+        prim = r.get('PRIM_RATIO')
         ir25 = r.get('IR'); ir24 = r.get('INTERNI_RATING_2024'); ir23 = r.get('INTERNI_RATING_2023')
         try: ir25 = int(float(ir25))
         except: ir25 = '—'
@@ -2227,10 +2298,12 @@ def generate_danger_zone_table(df):
         if pd.notna(rent):  _metrics.append(f"Nájemné {format_money(rent)}/rok")
         if pd.notna(ci):    _metrics.append(f"C/I {ci*100:.1f} %")
         if pd.notna(fte):   _metrics.append(f"FTE {fte:.1f}")
+        if pd.notna(prim):  _metrics.append(f"Prim. kl. {prim*100:.1f} %")
         _rating_str = f"Rating: {ir23} → {ir24} → {ir25}"
 
         rows_html += f"""
-<div style="display:flex;align-items:stretch;gap:0;border-radius:8px;overflow:hidden;
+<div class="dz-row" data-dz-reason="{f['důvod']}"
+     style="display:flex;align-items:stretch;gap:0;border-radius:8px;overflow:hidden;
             border:1px solid #e8edf5;margin-bottom:8px;background:#fff;
             box-shadow:0 1px 4px rgba(0,0,0,0.05);">
   <div style="background:{col};color:white;font-size:0.78rem;font-weight:900;
@@ -2246,35 +2319,70 @@ def generate_danger_zone_table(df):
                    font-weight:700;padding:1px 8px;border-radius:10px;border:1px solid {col}44;">
         {f['icon']} {f['popis']}</span>
     </div>
-    <div style="font-size:0.75rem;color:#555;margin-top:4px;">
-      {' · '.join(_metrics)}
-    </div>
+    <div style="font-size:0.75rem;color:#555;margin-top:4px;">{' · '.join(_metrics)}</div>
     <div style="font-size:0.72rem;color:#aaa;margin-top:2px;">{_rating_str}</div>
   </div>
 </div>"""
 
-    # Legenda kritérií
-    legend = """
-<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
-  <span style="background:#eb4d7918;color:#eb4d79;border:1px solid #eb4d7944;
-               border-radius:5px;padding:3px 10px;font-size:0.78rem;font-weight:700;">
-    A — Vysoké nájemné + nízké výnosy (nájemné &gt; 75. percentil, výnosy &lt; medián)</span>
-  <span style="background:#f59e0b18;color:#f59e0b;border:1px solid #f59e0b44;
-               border-radius:5px;padding:3px 10px;font-size:0.78rem;font-weight:700;">
-    B — Vysoké C/I + slabé výnosy + málo FTE (vše pod/nad 25./75. percentilem)</span>
-</div>"""
+    # Legenda — zaklikávatelné štítky (toggle)
+    legend_items = "".join(
+        f"""<button class="dz-toggle-btn" data-dz-key="{c['key']}"
+              style="background:{c['col']}18;color:{c['col']};border:2px solid {c['col']}55;
+                     border-radius:6px;padding:4px 12px;font-size:0.78rem;font-weight:700;
+                     cursor:pointer;user-select:none;transition:opacity .15s,border-color .15s;"
+              title="Klikni pro zobrazení/skrytí">
+          {c['icon']} {c['key']} — {c['desc']}
+        </button>"""
+        for c in criteria_meta
+    )
 
+    total = len(flags)
     return f"""
-<div style="background:#fff;border-radius:10px;padding:16px 18px;
-            border:1px solid #e8edf5;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+<div id="dz-wrap" style="background:#fff;border-radius:10px;padding:16px 18px;
+     border:1px solid #e8edf5;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
   <div style="font-size:0.72rem;color:#eb4d79;font-weight:700;text-transform:uppercase;
               letter-spacing:.5px;margin-bottom:4px;">⚠️ Pobočky v nebezpečné zóně</div>
-  <div style="font-size:0.72rem;color:#aaa;margin-bottom:12px;">
-    {len(flags)} poboček splňuje alespoň jedno kritérium rizika
+  <div style="font-size:0.72rem;color:#aaa;margin-bottom:10px;">
+    <span id="dz-count">{total}</span> z {total} poboček · klikni na štítek pro filtrování
   </div>
-  {legend}
-  {rows_html}
-</div>"""
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;"
+       id="dz-legend">{legend_items}</div>
+  <div id="dz-rows">{rows_html}</div>
+</div>
+
+<script>
+(function() {{
+  var meta    = {criteria_json};
+  var active  = {{}};
+  meta.forEach(function(m) {{ active[m.key] = true; }});
+
+  var legend  = document.getElementById("dz-legend");
+  var countEl = document.getElementById("dz-count");
+  if (!legend) return;
+
+  function applyDzFilter() {{
+    var rows    = document.querySelectorAll("#dz-rows .dz-row");
+    var visible = 0;
+    rows.forEach(function(row) {{
+      var k = row.getAttribute("data-dz-reason");
+      var show = active[k] !== false;
+      row.style.display = show ? "" : "none";
+      if (show) visible++;
+    }});
+    if (countEl) countEl.textContent = visible;
+  }}
+
+  legend.querySelectorAll(".dz-toggle-btn").forEach(function(btn) {{
+    btn.addEventListener("click", function() {{
+      var k = btn.getAttribute("data-dz-key");
+      active[k] = !active[k];
+      btn.style.opacity = active[k] ? "1" : "0.3";
+      btn.style.borderStyle = active[k] ? "solid" : "dashed";
+      applyDzFilter();
+    }});
+  }});
+}})();
+</script>"""
 
 
 def generate_age_pyramid(df):
@@ -7494,11 +7602,13 @@ setTimeout(function() {{
       if (isNoRat && !showNoRating) {{ r.style.display = "none"; return; }}
       var basicOk = (!q || codeRaw.toLowerCase().includes(q) || name.includes(q));
       if (!basicOk) {{ r.style.display = "none"; return; }}
-      // Multi-filtry (AND)
-      var active  = (typeof mfFilters !== "undefined") ? mfFilters.filter(function(f) {{ return f.value.trim() !== "" && f.idx > 0; }}) : [];
+      // Multi-filtry (AND mezi sloupci, OR uvnitř sloupce)
+      var active  = (typeof mfFilters !== "undefined") ? mfFilters.filter(function(f) {{ return f.values && f.values.size > 0; }}) : [];
       var multiOk = active.every(function(f) {{
         var td = cells[f.idx];
-        return td && td.textContent.trim().toLowerCase().includes(f.value.toLowerCase().trim());
+        if (!td) return false;
+        var cellVal = td.textContent.trim();
+        return f.values.has(cellVal);
       }});
       r.style.display = multiOk ? "" : "none";
     }});
@@ -7537,13 +7647,12 @@ setTimeout(function() {{
     }});
   }});
 
-  var mfFilters = [];   // pole {{idx, value}} aktivních filtrů
+  var mfFilters = [];   // pole {{idx, values: Set}} aktivních filtrů
 
   function applyMultiFilter() {{
-    var active = mfFilters.filter(function(f) {{ return f.value.trim() !== ""; }});
+    var active = mfFilters.filter(function(f) {{ return f.values && f.values.size > 0; }});
     rows.forEach(function(r) {{
       if (r.style.display === "none" && active.length === 0) return;
-      // Zkontroluj jestli je řádek skrytý základním filtrem
       var cells     = r.querySelectorAll("td");
       var codeRaw   = cells[1] ? cells[1].textContent.trim() : "";
       var codeNum   = parseInt(codeRaw, 10);
@@ -7553,16 +7662,15 @@ setTimeout(function() {{
       if (isNoRat && !showNoRating) {{ r.style.display = "none"; return; }}
       var basicOk   = (!q || codeRaw.toLowerCase().includes(q) || name.includes(q));
       if (!basicOk) {{ r.style.display = "none"; return; }}
-      // Multi-filtr: každý aktivní filtr musí projít (AND logika)
+      // Multi-filtr: AND mezi sloupci, OR uvnitř sloupce (hodnoty v Set)
       var multiOk = active.every(function(f) {{
         var td = r.querySelectorAll("td")[f.idx];
         if (!td) return false;
-        return td.textContent.trim().toLowerCase().includes(f.value.toLowerCase().trim());
+        return f.values.has(td.textContent.trim());
       }});
       r.style.display = multiOk ? "" : "none";
     }});
     updateCount();
-    // Badge s počtem aktivních filtrů
     var n = active.length;
     if (n > 0) {{
       mfActiveInfo.textContent = n + (n === 1 ? " aktivní filtr" : n < 5 ? " aktivní filtry" : " aktivních filtrů");
@@ -7578,7 +7686,10 @@ setTimeout(function() {{
 
   function buildMfRow(filterObj) {{
     var rowDiv = document.createElement("div");
-    rowDiv.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;";
+    rowDiv.style.cssText = "margin-bottom:8px;";
+
+    var controlRow = document.createElement("div");
+    controlRow.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;";
 
     // Select — výběr sloupce
     var sel = document.createElement("select");
@@ -7593,48 +7704,122 @@ setTimeout(function() {{
       sel.appendChild(opt);
     }});
 
-    // Input s datalistem (našeptávač)
-    var dlId  = "ft-mf-dl-{table_id}-" + Math.random().toString(36).slice(2,7);
-    var inp   = document.createElement("input");
-    inp.type  = "text";
-    inp.setAttribute("list", dlId);
-    inp.placeholder = "Hodnota...";
-    inp.value = filterObj.value || "";
-    inp.style.cssText = "padding:5px 10px;border:1px solid #ccc;border-radius:6px;font-size:0.84rem;" +
-                        "width:220px;outline:none;";
-    inp.addEventListener("focus", function() {{ inp.style.borderColor="#2770f0"; }});
-    inp.addEventListener("blur",  function() {{ inp.style.borderColor="#ccc"; }});
+    // ── Checkbox-dropdown pro výběr více hodnot ──────────────────
+    var dropWrap = document.createElement("div");
+    dropWrap.style.cssText = "position:relative;";
 
-    var dl = document.createElement("datalist");
-    dl.id  = dlId;
+    var dropBtn = document.createElement("button");
+    dropBtn.style.cssText = "padding:5px 12px;border:1px solid #ccc;border-radius:6px;" +
+                            "background:#f5f5f5;font-size:0.84rem;cursor:pointer;white-space:nowrap;" +
+                            "min-width:180px;text-align:left;";
+    dropBtn.textContent = "— Vyberte hodnoty —";
 
-    function rebuildDatalist() {{
-      dl.innerHTML = "";
-      var idx = parseInt(sel.value);
-      if (!isNaN(idx) && colValues[idx]) {{
-        var sorted = Array.from(colValues[idx]).sort();
-        sorted.forEach(function(v) {{
-          var o = document.createElement("option");
-          o.value = v;
-          dl.appendChild(o);
-        }});
+    var dropPanel = document.createElement("div");
+    dropPanel.style.cssText = "display:none;position:absolute;top:100%;left:0;z-index:999;" +
+                              "background:#fff;border:1px solid #ccd;border-radius:8px;" +
+                              "padding:8px 10px;max-height:240px;overflow-y:auto;" +
+                              "min-width:220px;box-shadow:0 4px 14px rgba(0,0,0,.12);";
+
+    dropWrap.appendChild(dropBtn);
+    dropWrap.appendChild(dropPanel);
+
+    function updateDropBtn() {{
+      var n = filterObj.values.size;
+      if (n === 0) {{
+        dropBtn.textContent  = "— Vyberte hodnoty (vše) —";
+        dropBtn.style.background   = "#f5f5f5";
+        dropBtn.style.borderColor  = "#ccc";
+        dropBtn.style.color        = "#333";
+      }} else {{
+        dropBtn.textContent  = n + " " + (n === 1 ? "hodnota vybrána" : n < 5 ? "hodnoty vybrány" : "hodnot vybráno") + " ▾";
+        dropBtn.style.background   = "#dbeafe";
+        dropBtn.style.borderColor  = "#2770f0";
+        dropBtn.style.color        = "#1d4ed8";
+        dropBtn.style.fontWeight   = "600";
       }}
     }}
 
+    function rebuildPanel() {{
+      dropPanel.innerHTML = "";
+      filterObj.values = new Set();
+      var idx = parseInt(sel.value);
+      if (isNaN(idx) || !colValues[idx] || colValues[idx].size === 0) {{
+        dropPanel.innerHTML = "<div style='color:#aaa;font-size:0.8rem;padding:4px 0;'>Žádné hodnoty</div>";
+        updateDropBtn();
+        return;
+      }}
+      var sorted = Array.from(colValues[idx]).sort(function(a, b) {{
+        var na = parseFloat(a), nb = parseFloat(b);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return a.localeCompare(b, "cs");
+      }});
+
+      // Řádek "Vybrat vše / Zrušit vše"
+      var ctrlRow = document.createElement("div");
+      ctrlRow.style.cssText = "display:flex;gap:6px;margin-bottom:6px;padding-bottom:6px;" +
+                               "border-bottom:1px solid #eee;";
+      var btnAll  = document.createElement("button");
+      btnAll.textContent = "✔ Vše";
+      btnAll.style.cssText = "font-size:0.75rem;padding:2px 8px;border:1px solid #aaa;" +
+                             "border-radius:4px;background:#f5f5f5;cursor:pointer;";
+      var btnNone = document.createElement("button");
+      btnNone.textContent = "✕ Nic";
+      btnNone.style.cssText = btnAll.style.cssText;
+      ctrlRow.appendChild(btnAll);
+      ctrlRow.appendChild(btnNone);
+      dropPanel.appendChild(ctrlRow);
+
+      var cbs = [];
+      sorted.forEach(function(v) {{
+        var lbl = document.createElement("label");
+        lbl.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 0;" +
+                            "font-size:0.82rem;cursor:pointer;white-space:nowrap;";
+        var cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.style.cursor = "pointer";
+        cb.addEventListener("change", function() {{
+          if (cb.checked) filterObj.values.add(v);
+          else            filterObj.values.delete(v);
+          updateDropBtn();
+          applyMultiFilter();
+        }});
+        cbs.push({{cb: cb, v: v}});
+        lbl.appendChild(cb);
+        lbl.appendChild(document.createTextNode(v));
+        dropPanel.appendChild(lbl);
+      }});
+
+      btnAll.addEventListener("click", function(e) {{
+        e.preventDefault();
+        cbs.forEach(function(o) {{ o.cb.checked = true; filterObj.values.add(o.v); }});
+        updateDropBtn(); applyMultiFilter();
+      }});
+      btnNone.addEventListener("click", function(e) {{
+        e.preventDefault();
+        cbs.forEach(function(o) {{ o.cb.checked = false; }});
+        filterObj.values = new Set();
+        updateDropBtn(); applyMultiFilter();
+      }});
+
+      updateDropBtn();
+    }}
+
+    // Otevření/zavření dropdownu
+    dropBtn.addEventListener("click", function(e) {{
+      e.stopPropagation();
+      dropPanel.style.display = dropPanel.style.display === "none" ? "block" : "none";
+    }});
+    dropPanel.addEventListener("click", function(e) {{ e.stopPropagation(); }});
+    document.addEventListener("click", function() {{ dropPanel.style.display = "none"; }});
+
     sel.addEventListener("change", function() {{
-      filterObj.idx   = parseInt(sel.value) || 0;
-      filterObj.value = "";
-      inp.value = "";
-      rebuildDatalist();
+      filterObj.idx = parseInt(sel.value) || 0;
+      rebuildPanel();
       applyMultiFilter();
     }});
 
-    inp.addEventListener("input", function() {{
-      filterObj.value = inp.value;
-      applyMultiFilter();
-    }});
-
-    rebuildDatalist();
+    // Inicializuj panel pokud je sloupec předvybraný
+    if (filterObj.idx) rebuildPanel();
 
     // Tlačítko smazat tento řádek
     var del = document.createElement("button");
@@ -7649,15 +7834,15 @@ setTimeout(function() {{
       applyMultiFilter();
     }});
 
-    rowDiv.appendChild(sel);
-    rowDiv.appendChild(inp);
-    rowDiv.appendChild(dl);
-    rowDiv.appendChild(del);
+    controlRow.appendChild(sel);
+    controlRow.appendChild(dropWrap);
+    controlRow.appendChild(del);
+    rowDiv.appendChild(controlRow);
     mfRowsDiv.appendChild(rowDiv);
   }}
 
   mfAddBtn.addEventListener("click", function() {{
-    var filterObj = {{idx: 0, value: ""}};
+    var filterObj = {{idx: 0, values: new Set()}};
     mfFilters.push(filterObj);
     buildMfRow(filterObj);
   }});
@@ -7895,7 +8080,10 @@ setTimeout(function() {{
 # MAPA POBOČEK — scatter_mapbox
 # =============================================================================
 
-MAPBOX_TOKEN = ''  # Vlož vlastní Mapbox public token
+MAPBOX_TOKEN = (
+    'pk.eyJ1IjoiY2VydmVueWppIiwiYSI6ImNqM2tsbTl6ajA'
+    'wazMyd3FzeGZxa2VxZzcifQ.z-Ruzxhj76p-f84Ti4r3Gw'
+)
 
 def _mapbox_layout(center_lat=49.8, center_lon=15.5, zoom=6.5):
     """Vrátí dict pro mapbox layout — bez tokenu použije open-street-map."""
