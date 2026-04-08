@@ -233,6 +233,7 @@ NOVE_NAZVY = {
     "BRANCH_CODE": "ID Pobočky",
     "BRANCH_NAME": "Název pobočky",
     "REGION_NAME": "Region",
+    "OBLAST":      "Oblast",
 
     # ── 📍 Adresa ─────────────────────────────────────────────────
     "CITY":              "Město",
@@ -1403,6 +1404,257 @@ def generate_revenue_curve_chart(df_reg, chart_id):
     }}
   }};
   new ApexCharts(document.getElementById("{chart_id}"), options).render();
+}})();
+</script>"""
+
+
+def generate_obchody_benchmark_chart(target_df, chart_id="obch-bench", region_df=None):
+    """
+    Interaktivní graf produktových skupin:
+    - Autocomplete našeptávač pro výběr pobočky
+    - ApexCharts sloupcový graf: vybraná pobočka vs průměr regionu vs průměr stejného formátu
+    - Přepínač: Počet prodejů 2025 / Objem výnosů 2025
+    """
+    import json as _json
+
+    d = target_df.copy()
+    # Benchmark region = target_df (regionální nebo celá síť)
+    d_bench = (region_df if region_df is not None else target_df).copy()
+
+    available_groups = [
+        (key, label) for key, label in PRODUCT_GROUPS
+        if f'POCET_PRODEJU_{key}_2025' in d.columns
+    ]
+    if not available_groups:
+        return ""
+
+    for key, _ in available_groups:
+        for col in [f'POCET_PRODEJU_{key}_2025', f'OBJEM_VYNOSU_CZK_{key}_2025']:
+            for df_ in [d, d_bench]:
+                if col in df_.columns:
+                    df_[col] = pd.to_numeric(df_[col], errors='coerce').fillna(0)
+
+    group_keys   = [g[0] for g in available_groups]
+    group_labels = [g[1] for g in available_groups]
+
+    # ── Průměr regionu ─────────────────────────────────────────────
+    reg_cnt_avg = {k: float(d_bench[f'POCET_PRODEJU_{k}_2025'].mean())
+                   if f'POCET_PRODEJU_{k}_2025' in d_bench.columns else 0.0
+                   for k in group_keys}
+    reg_obj_avg = {k: float(d_bench[f'OBJEM_VYNOSU_CZK_{k}_2025'].mean())
+                   if f'OBJEM_VYNOSU_CZK_{k}_2025' in d_bench.columns else 0.0
+                   for k in group_keys}
+
+    # ── Průměry dle formátu pobočky ────────────────────────────────
+    fmt_col = next((c for c in ['BRANCH_FORMAT', 'BRANCH_TYPE_NAME'] if c in d.columns), None)
+    fmt_cnt_avgs = {}
+    fmt_obj_avgs = {}
+    if fmt_col and fmt_col in d_bench.columns:
+        for fmt_val, grp in d_bench.groupby(fmt_col, observed=True):
+            fv = str(fmt_val)
+            fmt_cnt_avgs[fv] = {k: float(grp[f'POCET_PRODEJU_{k}_2025'].mean())
+                                 if f'POCET_PRODEJU_{k}_2025' in grp.columns else 0.0
+                                 for k in group_keys}
+            fmt_obj_avgs[fv] = {k: float(grp[f'OBJEM_VYNOSU_CZK_{k}_2025'].mean())
+                                 if f'OBJEM_VYNOSU_CZK_{k}_2025' in grp.columns else 0.0
+                                 for k in group_keys}
+
+    # ── Data pro každou pobočku ────────────────────────────────────
+    branches_data = {}
+    for _, row in d.iterrows():
+        bc  = int(row.get('BRANCH_CODE', 0))
+        bn  = str(row.get('BRANCH_NAME', bc))
+        fmt = str(row.get(fmt_col, '')) if fmt_col else ''
+        branches_data[bc] = {
+            'name': bn, 'format': fmt,
+            'cnt': {k: float(row.get(f'POCET_PRODEJU_{k}_2025', 0) or 0) for k in group_keys},
+            'obj': {k: float(row.get(f'OBJEM_VYNOSU_CZK_{k}_2025', 0) or 0) for k in group_keys},
+        }
+
+    branches_list = sorted(branches_data.items(), key=lambda x: x[1]['name'])  # (bc, {...})
+
+    data_json     = _json.dumps(branches_data)
+    reg_cnt_json  = _json.dumps(reg_cnt_avg)
+    reg_obj_json  = _json.dumps(reg_obj_avg)
+    fmt_cnt_json  = _json.dumps(fmt_cnt_avgs)
+    fmt_obj_json  = _json.dumps(fmt_obj_avgs)
+    keys_json     = _json.dumps(group_keys)
+    labels_json   = _json.dumps(group_labels)
+
+    # Datalist options
+    dl_options = "".join(
+        f'<option value="{row["name"]} ({bc})" data-bc="{bc}">'
+        for bc, row in branches_list
+    )
+
+    return f"""
+<div id="obch-bench-wrap-{chart_id}"
+     style="background:#fff;border-radius:10px;padding:16px 18px;
+            border:1px solid #e8edf5;box-shadow:0 2px 8px rgba(0,0,0,0.05);margin-top:16px;">
+  <div style="font-size:0.72rem;color:#2770f0;font-weight:700;text-transform:uppercase;
+              letter-spacing:.5px;margin-bottom:8px;">
+    📊 Interaktivní benchmark — produktové skupiny
+  </div>
+  <div style="font-size:0.75rem;color:#666;margin-bottom:12px;">
+    Vyber pobočku pro srovnání výkonu dle produktové skupiny vůči průměru regionu
+    a průměru poboček stejného formátu.
+  </div>
+
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+    <input id="obch-search-{chart_id}" type="text" list="obch-dl-{chart_id}"
+           placeholder="🔍 Vyhledej pobočku…"
+           style="padding:7px 12px;border:1px solid #ccc;border-radius:6px;
+                  font-size:0.88rem;width:300px;outline:none;">
+    <datalist id="obch-dl-{chart_id}">{dl_options}</datalist>
+
+    <div style="display:flex;gap:6px;">
+      <button id="obch-metric-cnt-{chart_id}"
+              style="padding:5px 14px;border:2px solid #2770f0;border-radius:6px;
+                     background:#2770f0;color:white;font-size:0.82rem;font-weight:600;cursor:pointer;">
+        Počet prodejů
+      </button>
+      <button id="obch-metric-obj-{chart_id}"
+              style="padding:5px 14px;border:2px solid #ccc;border-radius:6px;
+                     background:#f5f5f5;color:#555;font-size:0.82rem;font-weight:600;cursor:pointer;">
+        Objem výnosů
+      </button>
+    </div>
+    <span id="obch-fmt-info-{chart_id}"
+          style="font-size:0.78rem;color:#888;font-style:italic;"></span>
+  </div>
+
+  <div id="obch-chart-{chart_id}" style="min-height:340px;"></div>
+  <div id="obch-nosel-{chart_id}"
+       style="text-align:center;color:#aaa;font-style:italic;padding:60px 0;font-size:0.9rem;">
+    ← Vyber pobočku pro zobrazení grafu
+  </div>
+</div>
+
+<script>
+(function() {{
+  var branchData  = {data_json};
+  var regCntAvg   = {reg_cnt_json};
+  var regObjAvg   = {reg_obj_json};
+  var fmtCntAvgs  = {fmt_cnt_json};
+  var fmtObjAvgs  = {fmt_obj_json};
+  var gKeys       = {keys_json};
+  var gLabels     = {labels_json};
+
+  var searchEl    = document.getElementById("obch-search-{chart_id}");
+  var chartEl     = document.getElementById("obch-chart-{chart_id}");
+  var noSelEl     = document.getElementById("obch-nosel-{chart_id}");
+  var fmtInfoEl   = document.getElementById("obch-fmt-info-{chart_id}");
+  var btnCnt      = document.getElementById("obch-metric-cnt-{chart_id}");
+  var btnObj      = document.getElementById("obch-metric-obj-{chart_id}");
+  if (!searchEl || !chartEl) return;
+
+  var currentMetric = "cnt";  // "cnt" | "obj"
+  var currentBc     = null;
+  var apexChart     = null;
+
+  function fmtMoney(v) {{
+    if (v >= 1e9) return (v/1e9).toFixed(1) + " mld Kč";
+    if (v >= 1e6) return (v/1e6).toFixed(1) + " M Kč";
+    if (v >= 1e3) return (v/1e3).toFixed(0) + " K Kč";
+    return Math.round(v) + " Kč";
+  }}
+
+  function buildSeries(bc) {{
+    var b    = branchData[bc];
+    var avg  = currentMetric === "cnt" ? regCntAvg  : regObjAvg;
+    var fAvg = currentMetric === "cnt" ? fmtCntAvgs : fmtObjAvgs;
+    var bData  = currentMetric === "cnt" ? b.cnt  : b.obj;
+    var hasFmt = b.format && fAvg[b.format];
+    var branchVals = gKeys.map(function(k) {{ return Math.round(bData[k] || 0); }});
+    var regVals    = gKeys.map(function(k) {{ return Math.round(avg[k]  || 0); }});
+    var fmtVals    = hasFmt ? gKeys.map(function(k) {{ return Math.round(fAvg[b.format][k] || 0); }}) : null;
+
+    var series = [
+      {{ name: b.name,          data: branchVals, color: "#2770f0" }},
+      {{ name: "⌀ Průměr regionu", data: regVals,    color: "#94a3b8" }},
+    ];
+    if (fmtVals) {{
+      series.push({{ name: "⌀ Průměr formátu (" + b.format + ")", data: fmtVals, color: "#22c55e" }});
+    }}
+    return series;
+  }}
+
+  function renderChart(bc) {{
+    var b = branchData[bc];
+    if (!b) return;
+    var series = buildSeries(bc);
+    var isObj  = currentMetric === "obj";
+    var opts = {{
+      chart:  {{ type: "bar", height: 340, toolbar: {{ show: false }},
+                 animations: {{ enabled: true, speed: 280 }} }},
+      series: series,
+      xaxis:  {{ categories: gLabels,
+                 labels:     {{ style: {{ fontSize: "11px" }}, rotate: -25 }} }},
+      yaxis:  {{ labels: {{ formatter: isObj
+                  ? function(v) {{ return fmtMoney(v); }}
+                  : function(v) {{ return Math.round(v).toLocaleString("cs-CZ"); }} }} }},
+      plotOptions: {{ bar: {{ borderRadius: 4, columnWidth: "68%",
+                              dataLabels: {{ position: "top" }} }} }},
+      dataLabels: {{
+        enabled: true,
+        formatter: isObj
+          ? function(v) {{ return v >= 1e6 ? (v/1e6).toFixed(1)+"M" : v >= 1e3 ? (v/1e3).toFixed(0)+"k" : Math.round(v); }}
+          : function(v) {{ return Math.round(v).toLocaleString("cs-CZ"); }},
+        style: {{ fontSize: "10px", colors: ["#334"] }},
+        offsetY: -4,
+      }},
+      legend:  {{ position: "top" }},
+      tooltip: {{ y: {{ formatter: isObj
+                  ? function(v) {{ return fmtMoney(v); }}
+                  : function(v) {{ return Math.round(v).toLocaleString("cs-CZ") + " prodejů"; }} }} }},
+      grid:    {{ borderColor: "#f0f0f0" }},
+    }};
+
+    noSelEl.style.display = "none";
+    chartEl.style.display = "";
+
+    if (apexChart) {{
+      apexChart.updateOptions(opts, true, true);
+    }} else {{
+      apexChart = new ApexCharts(chartEl, opts);
+      apexChart.render();
+    }}
+
+    var hasFmt = b.format && (currentMetric === "cnt" ? fmtCntAvgs : fmtObjAvgs)[b.format];
+    fmtInfoEl.textContent = b.format
+      ? (hasFmt ? "Formát: " + b.format : "Formát: " + b.format + " (benchmark nedostupný)")
+      : "";
+  }}
+
+  function parseBc(val) {{
+    var m = val.match(/\((\d+)\)\s*$/);
+    return m ? parseInt(m[1]) : null;
+  }}
+
+  chartEl.style.display = "none";
+
+  searchEl.addEventListener("input", function() {{
+    var bc = parseBc(searchEl.value);
+    if (bc && branchData[bc]) {{ currentBc = bc; renderChart(bc); }}
+  }});
+  searchEl.addEventListener("change", function() {{
+    var bc = parseBc(searchEl.value);
+    if (bc && branchData[bc]) {{ currentBc = bc; renderChart(bc); }}
+  }});
+
+  function setMetric(m) {{
+    currentMetric = m;
+    if (m === "cnt") {{
+      btnCnt.style.background = "#2770f0"; btnCnt.style.color = "white"; btnCnt.style.borderColor = "#2770f0";
+      btnObj.style.background = "#f5f5f5"; btnObj.style.color = "#555";  btnObj.style.borderColor = "#ccc";
+    }} else {{
+      btnObj.style.background = "#2770f0"; btnObj.style.color = "white"; btnObj.style.borderColor = "#2770f0";
+      btnCnt.style.background = "#f5f5f5"; btnCnt.style.color = "#555";  btnCnt.style.borderColor = "#ccc";
+    }}
+    if (currentBc) renderChart(currentBc);
+  }}
+  btnCnt.addEventListener("click", function() {{ setMetric("cnt"); }});
+  btnObj.addEventListener("click", function() {{ setMetric("obj"); }});
 }})();
 </script>"""
 
@@ -2819,7 +3071,7 @@ def generate_atm_region_html(df_reg, export_atm=None, kapacita_atm=None):
     Přehled ATM pro region:
     - Souhrnné počty bankomatů
     - Top 10 nejhůře kapacitně zajištěných poboček
-    - Top 5 nejvytíženějších bankomatů (dle průměrného počtu výběrů + vkladů / měsíc)
+    - Top 10 nejvytíženějších bankomatů (dle průměrného počtu výběrů + vkladů / měsíc)
     """
     if export_atm is None or kapacita_atm is None:
         return ""
@@ -2958,7 +3210,7 @@ def generate_atm_region_html(df_reg, export_atm=None, kapacita_atm=None):
                     f'</table></div>'
                 )
 
-        # ── 3. Top 5 nejvytíženějších bankomatů ───────────────────
+        # ── 3. Top 10 nejvytíženějších bankomatů ──────────────────
         # Vytíženost = průměr výběrů + vkladů / měsíc z nových sloupců
         busy_html = ''
         _vyb_col = 'PRUMER._POCET_VYBERU_ATM_/_MESIC'
@@ -2979,7 +3231,7 @@ def generate_atm_region_html(df_reg, export_atm=None, kapacita_atm=None):
                 pd.to_numeric(atm_kap.get(_vyb_col, 0), errors='coerce').fillna(0)
                 + pd.to_numeric(atm_kap.get(_vkl_col, 0), errors='coerce').fillna(0)
             )
-            busy5 = atm_kap.sort_values('_busy', ascending=False).head(5)
+            busy5 = atm_kap.sort_values('_busy', ascending=False).head(10)
             if not busy5.empty:
                 rows = ''
                 for i, (_, r) in enumerate(busy5.iterrows()):
@@ -3007,7 +3259,7 @@ def generate_atm_region_html(df_reg, export_atm=None, kapacita_atm=None):
                     f'<div style="flex:1;min-width:320px;">'
                     f'<div style="font-size:0.75rem;font-weight:700;color:#2770f0;'
                     f'text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">'
-                    f'📈 Top 5 — nejvytíženější bankomaty (výběry + vklady / měsíc)</div>'
+                    f'📈 Top 10 — nejvytíženější bankomaty (výběry + vklady / měsíc)</div>'
                     f'<table style="width:100%;border-collapse:collapse;font-size:0.78rem;">'
                     f'<thead><tr style="background:#eef4ff;">'
                     f'<th style="padding:5px 10px;text-align:left;color:#888;">ATM ID</th>'
@@ -6827,7 +7079,7 @@ def write_excel_sheet(ws, df_excel, freeze="D2"):
 
 # Skupiny sloupců pro přepínání v hlavní tabulce regionu
 COL_GROUPS = [
-    ("📍 Adresa",              ["Město", "Obvod / část", "Ulice", "Č. popisné", "Č. orientační", "RUIAN ID", "ORP", "ORP kód"], "#f0f4f8"),
+    ("📍 Adresa",              ["Oblast", "Město", "Obvod / část", "Ulice", "Č. popisné", "Č. orientační", "RUIAN ID", "ORP", "ORP kód"], "#f0f4f8"),
     ("👥 Klienti",             ["Klienti EOY 2021", "Klienti EOY 2022", "Klienti EOY 2023",
                                 "Klienti EOY 2024", "Klienti EOY 2025", "Trend klientů 21–25",
                                 "Primární klienti", "Aktivní klienti",
@@ -6960,6 +7212,7 @@ def generate_column_map_html():
         ("BRANCH_CODE",             "dbs",              "BRANCH_CODE",              "primární klíč"),
         ("BRANCH_NAME",             "dbs",              "BRANCH_NAME",              ""),
         ("REGION_NAME",             "dbs",              "REGION_NAME",              ""),
+        ("OBLAST",                  "dbs",              "OBLAST",                   ""),
         ("CONCATENATED_HJ",         "dbs",              "CONCATENATED_HJ",          ""),
         # Adresa (dbs)
         ("CITY",                    "dbs",              "CITY",                     ""),
@@ -8408,64 +8661,132 @@ def generate_map_html(df, title="🗺️ Mapa poboček"):
 
 def _render_top_revenues_table(df, region_label="", n=10):
     """
-    Přehled oblastí s nejvyššími výnosy — dvě tabulky vedle sebe:
-    1) Top N dle celkových výnosů (VYNOSY)
-    2) Top N dle nových výnosů (OBJEM_VYNOSU_CZK)
+    Přehled oblastí s nejvyššími výnosy.
+    Pokud je k dispozici sloupec OBLAST, zobrazí agregát dle oblasti.
+    Jinak zobrazí top pobočky.
+    Dvě tabulky vedle sebe: dle celkových výnosů (VYNOSY) a nových výnosů (OBJEM_VYNOSU_CZK).
     """
     d = df.copy()
     for c in ['VYNOSY', 'OBJEM_VYNOSU_CZK', 'IR', 'PRIME_NAKLADY/VYNOSY']:
         if c in d.columns:
             d[c] = pd.to_numeric(d[c], errors='coerce')
 
-    def _tbl(sorted_df, val_col, val_label, accent):
-        rows = ''
-        top = sorted_df.dropna(subset=[val_col]).query(f'{val_col} > 0').sort_values(val_col, ascending=False).head(n)
-        if top.empty:
-            return f"<p style='color:#aaa;font-style:italic;font-size:0.82rem;'>Žádná data.</p>"
-        max_val = float(top[val_col].max()) or 1
-        for i, (_, r) in enumerate(top.iterrows()):
-            bc  = int(r.get('BRANCH_CODE', 0))
-            bn  = str(r.get('BRANCH_NAME', bc))
-            val = float(r[val_col])
-            ir  = r.get('IR'); ci = r.get('PRIME_NAKLADY/VYNOSY')
-            try: ir_s = str(int(float(ir)))
-            except: ir_s = '—'
-            try: ci_s = f"{float(ci)*100:.1f} %"
-            except: ci_s = '—'
-            pct = val / max_val * 100
-            bg  = '#fff' if i % 2 == 0 else '#fafbff'
-            medal = ['🥇','🥈','🥉'][i] if i < 3 else f'<span style="color:#aaa;font-size:0.72rem;">#{i+1}</span>'
-            rows += (
-                f'<tr style="background:{bg};">'
-                f'<td style="padding:5px 8px;text-align:center;width:28px;">{medal}</td>'
-                f'<td style="padding:5px 8px;font-weight:600;color:#0f172a;">'
-                f'{bn}<span style="color:#aaa;font-size:0.7rem;margin-left:5px;">({bc})</span></td>'
-                f'<td style="padding:5px 8px;">'
-                f'<div style="display:flex;align-items:center;gap:6px;">'
-                f'<div style="flex:1;background:#eee;border-radius:3px;height:6px;">'
-                f'<div style="width:{pct:.0f}%;background:{accent};height:100%;border-radius:3px;"></div></div>'
-                f'<span style="font-weight:700;color:{accent};white-space:nowrap;font-size:0.82rem;">'
-                f'{format_money(val)}</span></div></td>'
-                f'<td style="padding:5px 8px;text-align:center;color:#888;font-size:0.75rem;">{ir_s}</td>'
-                f'<td style="padding:5px 8px;text-align:center;color:#888;font-size:0.75rem;">{ci_s}</td>'
-                f'</tr>'
-            )
-        return (
-            f'<table style="width:100%;border-collapse:collapse;font-size:0.8rem;">'
-            f'<thead><tr style="background:#f4f8ff;">'
-            f'<th style="padding:5px 8px;"></th>'
-            f'<th style="padding:5px 8px;text-align:left;color:#555;">Pobočka</th>'
-            f'<th style="padding:5px 8px;text-align:left;color:{accent};">{val_label}</th>'
-            f'<th style="padding:5px 8px;text-align:center;color:#888;">Rating</th>'
-            f'<th style="padding:5px 8px;text-align:center;color:#888;">C/I</th>'
-            f'</tr></thead><tbody>{rows}</tbody></table>'
-        )
+    use_oblast = 'OBLAST' in d.columns and d['OBLAST'].notna().any() and (d['OBLAST'].astype(str).str.strip() != '').any()
 
-    left  = f'<div style="flex:1;min-width:300px;"><div style="font-size:0.75rem;font-weight:700;color:#0bb440;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">💰 Top {n} — celkové výnosy (VYNOSY)</div>{_tbl(d,"VYNOSY","Výnosy celkem","#0bb440")}</div>' if 'VYNOSY' in d.columns else ''
-    right = f'<div style="flex:1;min-width:300px;"><div style="font-size:0.75rem;font-weight:700;color:#2770f0;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">🆕 Top {n} — nové výnosy (OBJEM_VYNOSU_CZK)</div>{_tbl(d,"OBJEM_VYNOSU_CZK","Nové výnosy","#2770f0")}</div>' if 'OBJEM_VYNOSU_CZK' in d.columns else ''
+    if use_oblast:
+        # ── Oblast agregace ───────────────────────────────────────────
+        def _tbl(src_df, val_col, val_label, accent):
+            if val_col not in src_df.columns:
+                return "<p style='color:#aaa;font-style:italic;font-size:0.82rem;'>Žádná data.</p>"
+            g = (src_df.dropna(subset=[val_col])
+                 .groupby('OBLAST', observed=True)
+                 .agg(
+                     vynosy_sum = (val_col, 'sum'),
+                     pocet      = ('BRANCH_CODE', 'count'),
+                     ci_mean    = ('PRIME_NAKLADY/VYNOSY', 'mean') if 'PRIME_NAKLADY/VYNOSY' in src_df.columns else ('BRANCH_CODE', 'count'),
+                 )
+                 .reset_index()
+                 .sort_values('vynosy_sum', ascending=False)
+                 .head(n))
+            if g.empty:
+                return "<p style='color:#aaa;font-style:italic;font-size:0.82rem;'>Žádná data.</p>"
+            max_val = float(g['vynosy_sum'].max()) or 1
+            rows = ''
+            for i, (_, r) in enumerate(g.iterrows()):
+                oblast = str(r['OBLAST'])
+                val    = float(r['vynosy_sum'])
+                pocet  = int(r['pocet'])
+                pct    = val / max_val * 100
+                bg     = '#fff' if i % 2 == 0 else '#fafbff'
+                medal  = ['🥇','🥈','🥉'][i] if i < 3 else f'<span style="color:#aaa;font-size:0.72rem;">#{i+1}</span>'
+                try: ci_s = f"⌀ C/I {float(r['ci_mean'])*100:.1f} %" if 'PRIME_NAKLADY/VYNOSY' in src_df.columns else ''
+                except: ci_s = ''
+                rows += (
+                    f'<tr style="background:{bg};">'
+                    f'<td style="padding:5px 8px;text-align:center;width:28px;">{medal}</td>'
+                    f'<td style="padding:5px 8px;font-weight:600;color:#0f172a;">{oblast}'
+                    f'<span style="color:#aaa;font-size:0.7rem;margin-left:6px;">{pocet} pb.</span></td>'
+                    f'<td style="padding:5px 8px;">'
+                    f'<div style="display:flex;align-items:center;gap:6px;">'
+                    f'<div style="flex:1;background:#eee;border-radius:3px;height:6px;">'
+                    f'<div style="width:{pct:.0f}%;background:{accent};height:100%;border-radius:3px;"></div></div>'
+                    f'<span style="font-weight:700;color:{accent};white-space:nowrap;font-size:0.82rem;">'
+                    f'{format_money(val)}</span></div></td>'
+                    f'<td style="padding:5px 8px;text-align:right;color:#888;font-size:0.75rem;">{ci_s}</td>'
+                    f'</tr>'
+                )
+            return (
+                f'<table style="width:100%;border-collapse:collapse;font-size:0.8rem;">'
+                f'<thead><tr style="background:#f4f8ff;">'
+                f'<th style="padding:5px 8px;"></th>'
+                f'<th style="padding:5px 8px;text-align:left;color:#555;">Oblast</th>'
+                f'<th style="padding:5px 8px;text-align:left;color:{accent};">{val_label}</th>'
+                f'<th style="padding:5px 8px;text-align:right;color:#888;">C/I průměr</th>'
+                f'</tr></thead><tbody>{rows}</tbody></table>'
+            )
+        entity_label = "Oblast"
+    else:
+        # ── Fallback: top pobočky ─────────────────────────────────────
+        def _tbl(src_df, val_col, val_label, accent):
+            if val_col not in src_df.columns:
+                return "<p style='color:#aaa;font-style:italic;font-size:0.82rem;'>Žádná data.</p>"
+            top = src_df.dropna(subset=[val_col]).query(f'{val_col} > 0').sort_values(val_col, ascending=False).head(n)
+            if top.empty:
+                return "<p style='color:#aaa;font-style:italic;font-size:0.82rem;'>Žádná data.</p>"
+            max_val = float(top[val_col].max()) or 1
+            rows = ''
+            for i, (_, r) in enumerate(top.iterrows()):
+                bc  = int(r.get('BRANCH_CODE', 0))
+                bn  = str(r.get('BRANCH_NAME', bc))
+                val = float(r[val_col])
+                ir  = r.get('IR'); ci = r.get('PRIME_NAKLADY/VYNOSY')
+                try: ir_s = str(int(float(ir)))
+                except: ir_s = '—'
+                try: ci_s = f"{float(ci)*100:.1f} %"
+                except: ci_s = '—'
+                pct  = val / max_val * 100
+                bg   = '#fff' if i % 2 == 0 else '#fafbff'
+                medal = ['🥇','🥈','🥉'][i] if i < 3 else f'<span style="color:#aaa;font-size:0.72rem;">#{i+1}</span>'
+                rows += (
+                    f'<tr style="background:{bg};">'
+                    f'<td style="padding:5px 8px;text-align:center;width:28px;">{medal}</td>'
+                    f'<td style="padding:5px 8px;font-weight:600;color:#0f172a;">'
+                    f'{bn}<span style="color:#aaa;font-size:0.7rem;margin-left:5px;">({bc})</span></td>'
+                    f'<td style="padding:5px 8px;">'
+                    f'<div style="display:flex;align-items:center;gap:6px;">'
+                    f'<div style="flex:1;background:#eee;border-radius:3px;height:6px;">'
+                    f'<div style="width:{pct:.0f}%;background:{accent};height:100%;border-radius:3px;"></div></div>'
+                    f'<span style="font-weight:700;color:{accent};white-space:nowrap;font-size:0.82rem;">'
+                    f'{format_money(val)}</span></div></td>'
+                    f'<td style="padding:5px 8px;text-align:center;color:#888;font-size:0.75rem;">{ir_s}</td>'
+                    f'<td style="padding:5px 8px;text-align:center;color:#888;font-size:0.75rem;">{ci_s}</td>'
+                    f'</tr>'
+                )
+            return (
+                f'<table style="width:100%;border-collapse:collapse;font-size:0.8rem;">'
+                f'<thead><tr style="background:#f4f8ff;">'
+                f'<th style="padding:5px 8px;"></th>'
+                f'<th style="padding:5px 8px;text-align:left;color:#555;">Pobočka</th>'
+                f'<th style="padding:5px 8px;text-align:left;color:{accent};">{val_label}</th>'
+                f'<th style="padding:5px 8px;text-align:center;color:#888;">Rating</th>'
+                f'<th style="padding:5px 8px;text-align:center;color:#888;">C/I</th>'
+                f'</tr></thead><tbody>{rows}</tbody></table>'
+            )
+        entity_label = "Pobočka"
+
+    left  = (f'<div style="flex:1;min-width:300px;">'
+             f'<div style="font-size:0.75rem;font-weight:700;color:#0bb440;text-transform:uppercase;'
+             f'letter-spacing:.4px;margin-bottom:8px;">💰 Top {n} — celkové výnosy (VYNOSY)</div>'
+             f'{_tbl(d,"VYNOSY","Výnosy celkem","#0bb440")}</div>') if 'VYNOSY' in d.columns else ''
+    right = (f'<div style="flex:1;min-width:300px;">'
+             f'<div style="font-size:0.75rem;font-weight:700;color:#2770f0;text-transform:uppercase;'
+             f'letter-spacing:.4px;margin-bottom:8px;">🆕 Top {n} — nové výnosy (OBJEM_VYNOSU_CZK)</div>'
+             f'{_tbl(d,"OBJEM_VYNOSU_CZK","Nové výnosy","#2770f0")}</div>') if 'OBJEM_VYNOSU_CZK' in d.columns else ''
+
     if not left and not right:
         return "<p style='color:#aaa;font-style:italic;'>Žádná výnosová data.</p>"
-    return f'<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;">{left}{right}</div>'
+    src_note = f'<div style="font-size:0.72rem;color:#aaa;margin-bottom:10px;">{"Seskupeno dle oblasti — součet výnosů všech poboček v oblasti" if use_oblast else "Top pobočky dle výnosů — OBLAST není k dispozici"}</div>'
+    return f'{src_note}<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;">{left}{right}</div>'
 
 
 def generate_report(rating_status, mode='static', output_prefix="report"):
@@ -8711,11 +9032,14 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
         # --- obchodní tabulka ---
         obchody_cols  = ['BRANCH_CODE'] + [c for c in obchody_detail.columns if c != 'BRANCH_CODE']
         obchody_avail = [c for c in obchody_cols if c in obchody_detail.columns]
-        df_obchody = df_by_branch[['BRANCH_CODE', 'BRANCH_NAME']].merge(
+        _fmt_col_avail = [c for c in ['BRANCH_FORMAT', 'BRANCH_TYPE_NAME'] if c in df_by_branch.columns]
+        _obch_base_cols = ['BRANCH_CODE', 'BRANCH_NAME'] + _fmt_col_avail
+        df_obchody = df_by_branch[_obch_base_cols].merge(
             obchody_detail[obchody_avail], on='BRANCH_CODE', how='left'
         ).sort_values(by="BRANCH_CODE")
         obchody_raw  = generate_obchody_table(df_obchody, table_id="obchody-static")
         obchody_html = generate_sortable_table(obchody_raw, "obchody-sort-static")
+        obchody_bench_html = generate_obchody_benchmark_chart(df_obchody, chart_id="obch-bench-static")
 
         # --- přehledové tabulky ---
         branch_summary_html  = generate_branch_summary_tables(rating_status)
@@ -8950,6 +9274,7 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
       <b style="color:#e64343;">červená = pokles</b>.
     </p>
     <div class="age-section-card mb-4">{obchody_html}</div>
+    {obchody_bench_html}
 
     <div style="margin-bottom:20px;"></div>
 
@@ -9098,7 +9423,9 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
                 [c for c in obchody_detail.columns if c != 'BRANCH_CODE']
             )
             obchody_avail_cols = [c for c in obchody_avail_cols if c in obchody_detail.columns]
-            df_obchody_reg = df_reg[['BRANCH_CODE', 'BRANCH_NAME']].merge(
+            _fmt_reg_avail = [c for c in ['BRANCH_FORMAT', 'BRANCH_TYPE_NAME'] if c in df_reg.columns]
+            _obch_reg_base = ['BRANCH_CODE', 'BRANCH_NAME'] + _fmt_reg_avail
+            df_obchody_reg = df_reg[_obch_reg_base].merge(
                 obchody_detail[obchody_avail_cols], on='BRANCH_CODE', how='left'
             ).sort_values(by="BRANCH_CODE")
             obchody_html_reg_raw = generate_obchody_table(
@@ -9106,6 +9433,9 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
             )
             age_table_sortable    = age_table_html_raw
             obchody_html_sortable = generate_sortable_table(obchody_html_reg_raw, f"obchody-sort-{region_slug}")
+            obchody_bench_html_reg = generate_obchody_benchmark_chart(
+                df_obchody_reg, chart_id=f"obch-bench-{region_slug}"
+            )
 
             # Pre-výpočet věkové pyramidy a kohortové analýzy pro region
             _reg_age_pyramid_html = generate_age_pyramid(df_reg)
@@ -9346,6 +9676,7 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
       Sloupce <b>Δ</b>: <b style="color:#0ab33f;">zelená = růst</b>, <b style="color:#e64343;">červená = pokles</b>.
     </p>
     <div class="age-section-card mb-4">{obchody_html_sortable}</div>
+    {obchody_bench_html_reg}
 
     <div style="margin-bottom:20px;"></div>
 
@@ -9797,7 +10128,10 @@ try:
 # 3. MERGE
 # =============================================================================
 
-    dbs_final = dbs[["BRANCH_CODE", "CONCATENATED_HJ", "BRANCH_NAME", "REGION_NAME", "BNS_FLAG"]].copy()
+    _dbs_base_cols = ["BRANCH_CODE", "CONCATENATED_HJ", "BRANCH_NAME", "REGION_NAME", "BNS_FLAG"]
+    if "OBLAST" in dbs.columns:
+        _dbs_base_cols.insert(_dbs_base_cols.index("REGION_NAME") + 1, "OBLAST")
+    dbs_final = dbs[_dbs_base_cols].copy()
     _base_codes = set(dbs_final['BRANCH_CODE'].dropna().astype(int))
     _total = len(dbs_final)
 
