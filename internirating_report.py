@@ -1488,6 +1488,7 @@ def generate_obchody_benchmark_chart(target_df, chart_id="obch-bench", region_df
     )
 
     return f"""
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3"></script>
 <div id="obch-bench-wrap-{chart_id}"
      style="background:#fff;border-radius:10px;padding:16px 18px;
             border:1px solid #e8edf5;box-shadow:0 2px 8px rgba(0,0,0,0.05);margin-top:16px;">
@@ -8686,6 +8687,7 @@ def _render_top_revenues_table(df, region_label="", n=10):
                      ci_mean    = ('PRIME_NAKLADY/VYNOSY', 'mean') if 'PRIME_NAKLADY/VYNOSY' in src_df.columns else ('BRANCH_CODE', 'count'),
                  )
                  .reset_index()
+                 .query('vynosy_sum > 0')
                  .sort_values('vynosy_sum', ascending=False)
                  .head(n))
             if g.empty:
