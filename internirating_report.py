@@ -9836,6 +9836,14 @@ for jmeno, info in soubory.items():
             df = normalize_columns(df)
 
             if jmeno == "revenues":
+                # Pokud CSV obsahuje sloupec ROK nebo YEAR, filtruj jen data za rok 2025
+                _rok_col = next((c for c in df.columns if c in ('ROK', 'YEAR', 'YEAR_')), None)
+                if _rok_col:
+                    df[_rok_col] = pd.to_numeric(df[_rok_col], errors='coerce')
+                    _avail_years = sorted(df[_rok_col].dropna().unique())
+                    _target_year = 2025 if 2025 in _avail_years else (max(_avail_years) if _avail_years else None)
+                    if _target_year is not None:
+                        df = df[df[_rok_col] == _target_year].copy()
                 df = df.groupby('BRANCH_CODE').agg(
                     POCET_PRODEJU=('POCET_PRODEJU', 'sum'),
                     OBJEM_VYNOSU_CZK=('OBJEM_VYNOSU_CZK', 'sum'),
