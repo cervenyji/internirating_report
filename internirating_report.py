@@ -10313,27 +10313,27 @@ else:
 
 df = dbs_final
 
-# Explicitní přiřazení výnosových sloupců ze správných zdrojů
-# — přepíše hodnotu i kdyby merge proběhl s nesprávnými daty
+# Explicitní přiřazení výnosových sloupců ze správných zdrojů (přes map — bez merge, bez duplikátů)
 # Nové výnosy 2024: old_ir → NEW_BUSINESS_2024_-_OBJEM_VYNOSU
-if 'NEW_BUSINESS_2024_-_OBJEM_VYNOSU' in old_ir.columns and 'BRANCH_ID' in old_ir.columns:
-    _nb24_src = old_ir[['BRANCH_ID', 'NEW_BUSINESS_2024_-_OBJEM_VYNOSU']].copy()
-    _nb24_src['BRANCH_ID'] = pd.to_numeric(_nb24_src['BRANCH_ID'], errors='coerce').astype('Int64')
-    _nb24_src['NEW_BUSINESS_2024_-_OBJEM_VYNOSU'] = pd.to_numeric(
-        _nb24_src['NEW_BUSINESS_2024_-_OBJEM_VYNOSU'], errors='coerce')
-    _nb24_src = _nb24_src.rename(columns={'BRANCH_ID': 'BRANCH_CODE'})
-    if 'NEW_BUSINESS_2024_-_OBJEM_VYNOSU' in df.columns:
-        df = df.drop(columns=['NEW_BUSINESS_2024_-_OBJEM_VYNOSU'])
-    df = df.merge(_nb24_src, on='BRANCH_CODE', how='left')
+_nb24_key = next((c for c in old_ir.columns if c in ('BRANCH_ID', 'BRANCH_CODE')), None)
+if _nb24_key and 'NEW_BUSINESS_2024_-_OBJEM_VYNOSU' in old_ir.columns:
+    _nb24_map = (old_ir
+                 .dropna(subset=[_nb24_key])
+                 .assign(**{_nb24_key: lambda x: pd.to_numeric(x[_nb24_key], errors='coerce')})
+                 .dropna(subset=[_nb24_key])
+                 .set_index(_nb24_key)['NEW_BUSINESS_2024_-_OBJEM_VYNOSU'])
+    df['NEW_BUSINESS_2024_-_OBJEM_VYNOSU'] = (
+        pd.to_numeric(df['BRANCH_CODE'], errors='coerce').map(_nb24_map))
 
 # Nové výnosy 2025: revenues → OBJEM_VYNOSU_CZK
 if 'OBJEM_VYNOSU_CZK' in revenues.columns and 'BRANCH_CODE' in revenues.columns:
-    _rev25_src = revenues[['BRANCH_CODE', 'OBJEM_VYNOSU_CZK']].copy()
-    _rev25_src['BRANCH_CODE'] = pd.to_numeric(_rev25_src['BRANCH_CODE'], errors='coerce').astype('Int64')
-    _rev25_src['OBJEM_VYNOSU_CZK'] = pd.to_numeric(_rev25_src['OBJEM_VYNOSU_CZK'], errors='coerce')
-    if 'OBJEM_VYNOSU_CZK' in df.columns:
-        df = df.drop(columns=['OBJEM_VYNOSU_CZK'])
-    df = df.merge(_rev25_src, on='BRANCH_CODE', how='left')
+    _rev25_map = (revenues
+                  .dropna(subset=['BRANCH_CODE'])
+                  .assign(BRANCH_CODE=lambda x: pd.to_numeric(x['BRANCH_CODE'], errors='coerce'))
+                  .dropna(subset=['BRANCH_CODE'])
+                  .set_index('BRANCH_CODE')['OBJEM_VYNOSU_CZK'])
+    df['OBJEM_VYNOSU_CZK'] = (
+        pd.to_numeric(df['BRANCH_CODE'], errors='coerce').map(_rev25_map))
 
 condition_flag = (
     df['OBJEM_VYNOSU_CZK'].isna() | (df['OBJEM_VYNOSU_CZK'] == 0) |
