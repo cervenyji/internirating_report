@@ -9469,6 +9469,154 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
             invest_branches_html_reg      = generate_invest_branches_table(df_reg)
             cashierless_branches_html_reg = generate_cashierless_table(df_reg)
 
+            # ── Oblast filter setup ────────────────────────────────────────────────
+            import json as _json_ob
+            _oblasti_reg = []
+            if 'OBLAST' in df_reg.columns:
+                _oblasti_reg = sorted([
+                    str(o) for o in df_reg['OBLAST'].dropna().unique()
+                    if str(o).strip() and str(o).lower() not in ('nan', 'none', '')
+                ])
+            _has_oblasti = len(_oblasti_reg) > 1
+            _fn_slug = 'ob_' + re.sub(r'\W+', '_', region_slug)
+
+            # branch_code → oblast mapa pro JS
+            _bc_ob_map = {}
+            if _has_oblasti and 'OBLAST' in df_reg.columns:
+                for _, _r in df_reg[['BRANCH_CODE','OBLAST']].dropna().iterrows():
+                    try:
+                        _bc_ob_map[int(_r['BRANCH_CODE'])] = str(_r['OBLAST'])
+                    except Exception:
+                        pass
+
+            # Helper: pre-render sekce pro "all" + každou oblast
+            def _mk_ob_html(fn, oblasts, df_all, **kw):
+                slug = _fn_slug
+                parts = [f'<div class="ob-pre-{slug}" data-ob="__all__">{fn(df_all, **kw)}</div>']
+                for _ob in oblasts:
+                    if 'OBLAST' not in df_all.columns:
+                        break
+                    df_ob = df_all[df_all['OBLAST'] == _ob].copy()
+                    if df_ob.empty:
+                        continue
+                    _html = fn(df_ob, **kw)
+                    _safe = _ob.replace('"', '&quot;')
+                    parts.append(f'<div class="ob-pre-{slug}" data-ob="{_safe}" style="display:none">{_html}</div>')
+                return ''.join(parts)
+
+            # Pre-render oblastních variant klíčových sekcí
+            _ob_branch_summary = (
+                _mk_ob_html(generate_branch_summary_tables, _oblasti_reg, df_reg)
+                if _has_oblasti else branch_summary_html_reg
+            )
+            def _ob_top5_html(df_):
+                return (
+                    '<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;">'
+                    f'<div style="flex:1;min-width:280px;">{render_top5_cards(df_, "improve", "🚀 Největší zlepšení ratingu", "sestupně dle posunu pořadí nahoru")}</div>'
+                    f'<div style="flex:1;min-width:280px;">{render_top5_cards(df_, "worsen", "⚠️ Největší zhoršení ratingu", "sestupně dle posunu pořadí dolů")}</div>'
+                    '</div>'
+                )
+            _ob_top5_rating = (
+                _mk_ob_html(_ob_top5_html, _oblasti_reg, df_reg)
+                if _has_oblasti else _ob_top5_html(df_reg)
+            )
+            def _ob_top_inv_html(df_):
+                return (
+                    '<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;">'
+                    f'<div style="flex:1;min-width:280px;">{render_top5_cards(df_, "inv_new", "🕐 Nejnovější investice", "seřazeno dle data realizace")}</div>'
+                    f'<div style="flex:1;min-width:280px;">{render_top5_cards(df_, "inv_big", "💰 Největší investice", "seřazeno dle výše investice")}</div>'
+                    '</div>'
+                )
+            _ob_top_inv = (
+                _mk_ob_html(_ob_top_inv_html, _oblasti_reg, df_reg)
+                if _has_oblasti else _ob_top_inv_html(df_reg)
+            )
+            _ob_top_revenues = (
+                _mk_ob_html(lambda df_: _render_top_revenues_table(df_, region), _oblasti_reg, df_reg)
+                if _has_oblasti else _render_top_revenues_table(df_reg, region)
+            )
+            def _ob_ie_html(df_):
+                h = generate_ie_top5_html(df_, "Top 5 — Index expozice")
+                return f'<div style="display:flex;gap:20px;flex-wrap:wrap;">{h}</div>' if h else ''
+            _ob_ie = (
+                _mk_ob_html(_ob_ie_html, _oblasti_reg, df_reg)
+                if _has_oblasti else (f'<div style="display:flex;gap:20px;flex-wrap:wrap;">{_ie_top5_reg}</div>' if _ie_top5_reg else '')
+            )
+            def _ob_strat_html(df_):
+                return render_strategy_columns(df_)
+            _ob_strategie = (
+                _mk_ob_html(_ob_strat_html, _oblasti_reg, df_reg)
+                if _has_oblasti else render_strategy_columns(df_reg)
+            )
+
+            # Oblast filter bar HTML
+            if _has_oblasti:
+                _ob_btns = ''
+                for _ob_item in ['__all__'] + list(_oblasti_reg):
+                    _lbl = '🗺️ Celý region' if _ob_item == '__all__' else _ob_item
+                    _cnt = len(df_reg) if _ob_item == '__all__' else int((df_reg['OBLAST'] == _ob_item).sum())
+                    _active_cls = ' ob-btn-active' if _ob_item == '__all__' else ''
+                    _safe_ob_js = _ob_item.replace("'", "\\'")
+                    _ob_btns += (
+                        f'<button class="ob-btn{_active_cls}" data-ob="{_ob_item}" '
+                        f'onclick="obSet_{_fn_slug}(this,\'{_safe_ob_js}\')">'
+                        f'{_lbl} <span class="ob-cnt">({_cnt})</span></button>'
+                    )
+                _ob_filter_html = f"""
+<div id="ob-filter-{region_slug}" style="margin:12px 0 20px;padding:10px 14px;
+    background:#f0f6ff;border:1px solid #c7d9fb;border-radius:8px;">
+  <div style="font-size:0.78rem;color:#2770f0;font-weight:700;margin-bottom:8px;
+      text-transform:uppercase;letter-spacing:.5px;">🏙️ Filtr dle oblasti</div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;">{_ob_btns}</div>
+  <div style="font-size:0.72rem;color:#888;margin-top:7px;">
+    Tabulka ratingů zůstává za celý region. Ostatní sekce se aktualizují dle výběru.
+  </div>
+</div>
+<style>
+  #ob-filter-{region_slug} .ob-btn {{
+    padding:4px 12px;border:1px solid #c7d9fb;border-radius:16px;
+    background:#fff;color:#2770f0;font-size:0.82rem;cursor:pointer;
+    transition:background .15s,color .15s;white-space:nowrap;
+  }}
+  #ob-filter-{region_slug} .ob-btn-active {{
+    background:#2770f0;color:#fff;border-color:#2770f0;
+  }}
+  .ob-cnt{{font-size:0.72rem;opacity:.65;margin-left:3px;}}
+</style>
+<script>
+(function(){{
+  var bcOb = {_json_ob.dumps(_bc_ob_map)};
+  function initOb(){{
+    // Taguj řádky obchody tabulky (data-row = branch_code)
+    document.querySelectorAll('tr[data-row]').forEach(function(tr){{
+      var bc = parseInt(tr.getAttribute('data-row'));
+      if(bcOb[bc]) tr.setAttribute('data-ob-reg',bcOb[bc]);
+    }});
+  }}
+  if(document.readyState==='loading'){{
+    document.addEventListener('DOMContentLoaded',initOb);
+  }} else {{ initOb(); }}
+}})();
+
+function obSet_{_fn_slug}(btn, ob){{
+  // Přepínač tlačítek
+  document.querySelectorAll('#ob-filter-{region_slug} .ob-btn').forEach(function(b){{
+    b.classList.toggle('ob-btn-active', b.getAttribute('data-ob')===ob);
+  }});
+  // Zobraz/skryj pre-renderované blokové sekce
+  document.querySelectorAll('.ob-pre-{_fn_slug}').forEach(function(el){{
+    el.style.display = el.getAttribute('data-ob')===ob ? '' : 'none';
+  }});
+  // Filtruj řádky obchody tabulky (data-ob-reg)
+  document.querySelectorAll('tr[data-row]').forEach(function(tr){{
+    var trOb = tr.getAttribute('data-ob-reg')||'';
+    tr.style.display = (ob==='__all__' || trOb===ob) ? '' : 'none';
+  }});
+}}
+</script>"""
+            else:
+                _ob_filter_html = ''
+
             def bench_diff(val_reg, val_others, mode='num'):
                 diff = val_reg - val_others
                 return get_change_html(diff, mode=mode)
@@ -9658,6 +9806,8 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
       DBS ke dni <strong>{DBS_DATE}</strong>
     </div>
 
+    {_ob_filter_html}
+
     <!-- ═══ ČÁST 1: Vždy viditelné ═══ -->
 
     <!-- 1. Celkový přehled -->
@@ -9687,7 +9837,7 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
     <p style="font-size:0.82rem;color:#666;margin:-6px 0 10px 0;">
       Počty poboček v regionu {region} rozdělené dle typu budovy, cashless statusu a formátu NF/SF.
     </p>
-    <div style="margin:0 0 20px 0;width:100%;">{branch_summary_html_reg}</div>
+    <div style="margin:0 0 20px 0;width:100%;">{_ob_branch_summary}</div>
 
     <!-- 4. Mapa -->
     {generate_map_html(df_reg.sort_values(by="IR"), title=f"🗺️ Mapa poboček — {region}")}
@@ -9704,21 +9854,18 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
     <!-- 6. Strategie -->
     {make_collapsible(f"strategy-{region_slug}", "📋 Strategie poboček — Close · Investice · Cashless",
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Přehled plánovaných uzavření, investic a přechodů na bezhotovostní provoz v regionu {region}.</p>"
-        + render_strategy_columns(df_reg), default_open=False)}
+        + _ob_strategie, default_open=False)}
 
     <!-- 7. Nejvyšší výnosy a nové výnosy -->
     {make_collapsible(f"top-revenue-{region_slug}", "💰 Přehled oblastí s nejvyššími výnosy",
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Top pobočky regionu {region} dle celkových výnosů (VYNOSY) a nových výnosů (OBJEM_VYNOSU_CZK) v roce 2025.</p>"
-        + _render_top_revenues_table(df_reg, region),
+        + _ob_top_revenues,
         default_open=False)}
 
     <!-- 8. Top 5 zlepšení a zhoršení -->
     {make_collapsible(f"top-rating-{region_slug}", "🚀⚠️ Top 5: Zlepšení a zhoršení ratingu", f"""
 <p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Pobočky regionu {region} s největším pohybem v ratingu oproti předchozímu roku.</p>
-<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;">
-  <div style="flex:1;min-width:280px;">{render_top5_cards(df_reg, 'improve', '🚀 Největší zlepšení ratingu', 'sestupně dle posunu pořadí nahoru')}</div>
-  <div style="flex:1;min-width:280px;">{render_top5_cards(df_reg, 'worsen', '⚠️ Největší zhoršení ratingu', 'sestupně dle posunu pořadí dolů')}</div>
-</div>""", default_open=False)}
+{_ob_top5_rating}""", default_open=False)}
 
     <!-- 9. Věkové segmenty -->
     {make_collapsible(f"age-{region_slug}", "👥 Věkové segmenty klientů",
@@ -9728,10 +9875,7 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
     <!-- 10. Top investice -->
     {make_collapsible(f"top-inv-{region_slug}", f"🔨 Top investice — {region}", f"""
 <p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Největší a nejnovější investice do poboček v regionu {region}.</p>
-<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;">
-  <div style="flex:1;min-width:280px;">{render_top5_cards(df_reg, 'inv_new', '🕐 Nejnovější investice', 'seřazeno dle data realizace')}</div>
-  <div style="flex:1;min-width:280px;">{render_top5_cards(df_reg, 'inv_big', '💰 Největší investice', 'seřazeno dle výše investice')}</div>
-</div>""", default_open=False)}
+{_ob_top_inv}""", default_open=False)}
 
     <!-- 11. Věková pyramida -->
     {make_collapsible(f"age-pyramid-{region_slug}", f"👥 Věková pyramida klientů — {region}",
@@ -9752,7 +9896,7 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
     <!-- 14. Index expozice -->
     {make_collapsible(f"ie-{region_slug}", f"📡 Index expozice — top 5 {region}",
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Top 5 poboček regionu {region} s nejlepším indexem expozice — demografická dostupnost, konkurence a spád. Q1 = nejlepší.</p>"
-        + (f'<div style="display:flex;gap:20px;flex-wrap:wrap;">{_ie_top5_reg}</div>' if _ie_top5_reg else ''),
+        + _ob_ie,
         default_open=False)}
 
     <!-- 15. Obsazení pozic -->
