@@ -9549,6 +9549,49 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
                 if _has_oblasti else render_strategy_columns(df_reg)
             )
 
+            # Pre-render obchody table + benchmark per Oblast (unikátní IDs)
+            if _has_oblasti:
+                _ob_obchody_parts = []
+                for _i, _ob_item in enumerate(['__all__'] + list(_oblasti_reg)):
+                    _df_ob_ = df_reg if _ob_item == '__all__' else df_reg[df_reg['OBLAST'] == _ob_item].copy()
+                    _sfx = f"-ob{_i}"
+                    _fmt_av = [c for c in ['BRANCH_FORMAT', 'BRANCH_TYPE_NAME'] if c in _df_ob_.columns]
+                    _ob_base = ['BRANCH_CODE', 'BRANCH_NAME'] + _fmt_av
+                    _df_om = _df_ob_[_ob_base].merge(
+                        obchody_detail[obchody_avail_cols], on='BRANCH_CODE', how='left'
+                    ).sort_values('BRANCH_CODE')
+                    _raw = generate_obchody_table(_df_om, table_id=f"obchody-{region_slug}{_sfx}")
+                    _srt = generate_sortable_table(_raw, f"obchody-sort-{region_slug}{_sfx}")
+                    _bc  = generate_obchody_benchmark_chart(
+                        _df_om, chart_id=f"obch-bench-{region_slug}{_sfx}", region_df=df_reg
+                    )
+                    _safe_ob = _ob_item.replace('"', '&quot;')
+                    _disp = '' if _ob_item == '__all__' else 'display:none;'
+                    _ob_obchody_parts.append(
+                        f'<div class="ob-pre-{_fn_slug}" data-ob="{_safe_ob}" style="{_disp}">{_srt}{_bc}</div>'
+                    )
+                _ob_obchody = ''.join(_ob_obchody_parts)
+            else:
+                _ob_obchody = obchody_html_sortable + obchody_bench_html_reg
+
+            # Pre-render věkové segmenty per Oblast (unikátní IDs)
+            if _has_oblasti:
+                _ob_age_parts = []
+                for _i, _ob_item in enumerate(['__all__'] + list(_oblasti_reg)):
+                    _df_age_ = df_reg if _ob_item == '__all__' else df_reg[df_reg['OBLAST'] == _ob_item].copy()
+                    _sfx = f"-ob{_i}"
+                    _age_raw = generate_age_segment_table(
+                        _df_age_.sort_values('BRANCH_CODE'), table_id=f"age-tbl-{region_slug}{_sfx}"
+                    )
+                    _safe_ob = _ob_item.replace('"', '&quot;')
+                    _disp = '' if _ob_item == '__all__' else 'display:none;'
+                    _ob_age_parts.append(
+                        f'<div class="ob-pre-{_fn_slug}" data-ob="{_safe_ob}" style="{_disp}">{_age_raw}</div>'
+                    )
+                _ob_age_table = ''.join(_ob_age_parts)
+            else:
+                _ob_age_table = age_table_sortable
+
             # Oblast filter bar HTML
             if _has_oblasti:
                 _ob_btns = ''
@@ -9664,7 +9707,8 @@ function obSet_{_fn_slug}(btn, ob){{
                     )
                 return "\n".join(rows)
 
-            html_benchmark = f'''
+            def _make_bench_html(df_r, df_o, col1_hdr, col2_hdr):
+                return f'''
 <style>
   .benchmark-hover-tbl tbody tr:hover td {{ background-color: #d1fae5 !important; }}
 </style>
@@ -9675,8 +9719,8 @@ function obSet_{_fn_slug}(btn, ob){{
         <thead class="table-dark">
           <tr>
             <th style="text-align:left;">Ukazatel</th>
-            <th style="color:#7ec8f7;text-align:right;">Region&nbsp;{region}</th>
-            <th style="text-align:right;">Ostatní regiony</th>
+            <th style="color:#7ec8f7;text-align:right;">{col1_hdr}</th>
+            <th style="text-align:right;">{col2_hdr}</th>
             <th style="text-align:right;">Rozdíl</th>
           </tr>
         </thead>
@@ -9684,67 +9728,67 @@ function obSet_{_fn_slug}(btn, ob){{
           <tr><td colspan="4" style="background:#f0f4ff;font-weight:600;font-size:0.78rem;color:#2770f0;padding:4px 8px;text-align:left;">💰 Finanční ukazatele</td></tr>
           <tr>
             <td style="text-align:left;">Výnosy 25</td>
-            <td class="benchmark-val" style="text-align:right;">{format_money(df_reg["VYNOSY"].mean())}</td>
-            <td style="text-align:right;">{format_money(df_others["VYNOSY"].mean())}</td>
-            <td style="text-align:right;">{bench_diff(df_reg["VYNOSY"].mean(), df_others["VYNOSY"].mean(), mode="money")}</td>
+            <td class="benchmark-val" style="text-align:right;">{format_money(df_r["VYNOSY"].mean())}</td>
+            <td style="text-align:right;">{format_money(df_o["VYNOSY"].mean())}</td>
+            <td style="text-align:right;">{bench_diff(df_r["VYNOSY"].mean(), df_o["VYNOSY"].mean(), mode="money")}</td>
           </tr>
           <tr>
             <td style="text-align:left;">Nové výnosy 25</td>
-            <td class="benchmark-val" style="text-align:right;">{format_money(df_reg["OBJEM_VYNOSU_CZK"].mean())}</td>
-            <td style="text-align:right;">{format_money(df_others["OBJEM_VYNOSU_CZK"].mean())}</td>
-            <td style="text-align:right;">{bench_diff(df_reg["OBJEM_VYNOSU_CZK"].mean(), df_others["OBJEM_VYNOSU_CZK"].mean(), mode="money")}</td>
+            <td class="benchmark-val" style="text-align:right;">{format_money(df_r["OBJEM_VYNOSU_CZK"].mean())}</td>
+            <td style="text-align:right;">{format_money(df_o["OBJEM_VYNOSU_CZK"].mean())}</td>
+            <td style="text-align:right;">{bench_diff(df_r["OBJEM_VYNOSU_CZK"].mean(), df_o["OBJEM_VYNOSU_CZK"].mean(), mode="money")}</td>
           </tr>
           <tr>
             <td style="text-align:left;">C/I Ratio 25</td>
-            <td class="benchmark-val" style="text-align:right;">{format_pct(df_reg["PRIME_NAKLADY/VYNOSY"].mean())}</td>
-            <td style="text-align:right;">{format_pct(df_others["PRIME_NAKLADY/VYNOSY"].mean())}</td>
-            <td style="text-align:right;">{bench_diff(df_reg["PRIME_NAKLADY/VYNOSY"].mean(), df_others["PRIME_NAKLADY/VYNOSY"].mean(), mode="pct")}</td>
+            <td class="benchmark-val" style="text-align:right;">{format_pct(df_r["PRIME_NAKLADY/VYNOSY"].mean())}</td>
+            <td style="text-align:right;">{format_pct(df_o["PRIME_NAKLADY/VYNOSY"].mean())}</td>
+            <td style="text-align:right;">{bench_diff(df_r["PRIME_NAKLADY/VYNOSY"].mean(), df_o["PRIME_NAKLADY/VYNOSY"].mean(), mode="pct")}</td>
           </tr>
 
           <tr><td colspan="4" style="background:#e8f5e9;font-weight:600;font-size:0.78rem;color:#1a7a4a;padding:4px 8px;text-align:left;">🛒 Obchody dle produktů — průměrné výnosy a počty prodejů 2025</td></tr>
           {"".join(
             f"<tr style='background:#f9fffe;'>"
             f"<td style='text-align:left;padding-left:16px;'>{label} — výnosy 25</td>"
-            f"<td class='benchmark-val' style='text-align:right;'>{format_money(df_reg[f'OBJEM_VYNOSU_CZK_{key}_2025'].mean()) if f'OBJEM_VYNOSU_CZK_{key}_2025' in df_reg.columns else '—'}</td>"
-            f"<td style='text-align:right;'>{format_money(df_others[f'OBJEM_VYNOSU_CZK_{key}_2025'].mean()) if f'OBJEM_VYNOSU_CZK_{key}_2025' in df_others.columns else '—'}</td>"
-            f"<td style='text-align:right;'>{bench_diff(df_reg[f'OBJEM_VYNOSU_CZK_{key}_2025'].mean(), df_others[f'OBJEM_VYNOSU_CZK_{key}_2025'].mean(), mode='money') if f'OBJEM_VYNOSU_CZK_{key}_2025' in df_reg.columns and f'OBJEM_VYNOSU_CZK_{key}_2025' in df_others.columns else '—'}</td>"
+            f"<td class='benchmark-val' style='text-align:right;'>{format_money(df_r[f'OBJEM_VYNOSU_CZK_{key}_2025'].mean()) if f'OBJEM_VYNOSU_CZK_{key}_2025' in df_r.columns else '—'}</td>"
+            f"<td style='text-align:right;'>{format_money(df_o[f'OBJEM_VYNOSU_CZK_{key}_2025'].mean()) if f'OBJEM_VYNOSU_CZK_{key}_2025' in df_o.columns else '—'}</td>"
+            f"<td style='text-align:right;'>{bench_diff(df_r[f'OBJEM_VYNOSU_CZK_{key}_2025'].mean(), df_o[f'OBJEM_VYNOSU_CZK_{key}_2025'].mean(), mode='money') if f'OBJEM_VYNOSU_CZK_{key}_2025' in df_r.columns and f'OBJEM_VYNOSU_CZK_{key}_2025' in df_o.columns else '—'}</td>"
             f"</tr>"
             f"<tr style='background:#f5fffc;'>"
             f"<td style='text-align:left;padding-left:16px;'>{label} — počet prodejů 25</td>"
-            f"<td class='benchmark-val' style='text-align:right;'>{format_num_round(df_reg[f'POCET_PRODEJU_{key}_2025'].mean()) if f'POCET_PRODEJU_{key}_2025' in df_reg.columns else '—'}</td>"
-            f"<td style='text-align:right;'>{format_num_round(df_others[f'POCET_PRODEJU_{key}_2025'].mean()) if f'POCET_PRODEJU_{key}_2025' in df_others.columns else '—'}</td>"
-            f"<td style='text-align:right;'>{bench_diff(df_reg[f'POCET_PRODEJU_{key}_2025'].mean(), df_others[f'POCET_PRODEJU_{key}_2025'].mean(), mode='num') if f'POCET_PRODEJU_{key}_2025' in df_reg.columns and f'POCET_PRODEJU_{key}_2025' in df_others.columns else '—'}</td>"
+            f"<td class='benchmark-val' style='text-align:right;'>{format_num_round(df_r[f'POCET_PRODEJU_{key}_2025'].mean()) if f'POCET_PRODEJU_{key}_2025' in df_r.columns else '—'}</td>"
+            f"<td style='text-align:right;'>{format_num_round(df_o[f'POCET_PRODEJU_{key}_2025'].mean()) if f'POCET_PRODEJU_{key}_2025' in df_o.columns else '—'}</td>"
+            f"<td style='text-align:right;'>{bench_diff(df_r[f'POCET_PRODEJU_{key}_2025'].mean(), df_o[f'POCET_PRODEJU_{key}_2025'].mean(), mode='num') if f'POCET_PRODEJU_{key}_2025' in df_r.columns and f'POCET_PRODEJU_{key}_2025' in df_o.columns else '—'}</td>"
             f"</tr>"
             for key, label in PRODUCT_GROUPS
-            if f'OBJEM_VYNOSU_CZK_{key}_2025' in df_reg.columns or f'POCET_PRODEJU_{key}_2025' in df_reg.columns
+            if f'OBJEM_VYNOSU_CZK_{key}_2025' in df_r.columns or f'POCET_PRODEJU_{key}_2025' in df_r.columns
           )}
 
           <tr><td colspan="4" style="background:#f0f4ff;font-weight:600;font-size:0.78rem;color:#2770f0;padding:4px 8px;text-align:left;">🚶 Návštěvnost</td></tr>
           <tr>
             <td style="text-align:left;">Návštěvy celkem</td>
-            <td class="benchmark-val" style="text-align:right;">{format_num_round(df_reg["POCET_NAVSTEV_CELKEM"].mean())}</td>
-            <td style="text-align:right;">{format_num_round(df_others["POCET_NAVSTEV_CELKEM"].mean())}</td>
-            <td style="text-align:right;">{bench_diff(df_reg["POCET_NAVSTEV_CELKEM"].mean(), df_others["POCET_NAVSTEV_CELKEM"].mean(), mode="num")}</td>
+            <td class="benchmark-val" style="text-align:right;">{format_num_round(df_r["POCET_NAVSTEV_CELKEM"].mean())}</td>
+            <td style="text-align:right;">{format_num_round(df_o["POCET_NAVSTEV_CELKEM"].mean())}</td>
+            <td style="text-align:right;">{bench_diff(df_r["POCET_NAVSTEV_CELKEM"].mean(), df_o["POCET_NAVSTEV_CELKEM"].mean(), mode="num")}</td>
           </tr>
           <tr>
             <td style="text-align:left;">Hotovostní walk-in</td>
-            <td class="benchmark-val" style="text-align:right;">{format_num_round(df_reg["POCET_HOT_WALK_IN"].mean())}</td>
-            <td style="text-align:right;">{format_num_round(df_others["POCET_HOT_WALK_IN"].mean())}</td>
-            <td style="text-align:right;">{bench_diff(df_reg["POCET_HOT_WALK_IN"].mean(), df_others["POCET_HOT_WALK_IN"].mean(), mode="num")}</td>
+            <td class="benchmark-val" style="text-align:right;">{format_num_round(df_r["POCET_HOT_WALK_IN"].mean())}</td>
+            <td style="text-align:right;">{format_num_round(df_o["POCET_HOT_WALK_IN"].mean())}</td>
+            <td style="text-align:right;">{bench_diff(df_r["POCET_HOT_WALK_IN"].mean(), df_o["POCET_HOT_WALK_IN"].mean(), mode="num")}</td>
           </tr>
           <tr>
             <td style="text-align:left;">Bezhotovostní walk-in</td>
-            <td class="benchmark-val" style="text-align:right;">{format_num_round(df_reg["POCET_BEZHOT_WALK_IN"].mean())}</td>
-            <td style="text-align:right;">{format_num_round(df_others["POCET_BEZHOT_WALK_IN"].mean())}</td>
-            <td style="text-align:right;">{bench_diff(df_reg["POCET_BEZHOT_WALK_IN"].mean(), df_others["POCET_BEZHOT_WALK_IN"].mean(), mode="num")}</td>
+            <td class="benchmark-val" style="text-align:right;">{format_num_round(df_r["POCET_BEZHOT_WALK_IN"].mean())}</td>
+            <td style="text-align:right;">{format_num_round(df_o["POCET_BEZHOT_WALK_IN"].mean())}</td>
+            <td style="text-align:right;">{bench_diff(df_r["POCET_BEZHOT_WALK_IN"].mean(), df_o["POCET_BEZHOT_WALK_IN"].mean(), mode="num")}</td>
           </tr>
 
           <tr><td colspan="4" style="background:#f0e6ff;font-weight:600;font-size:0.78rem;color:#6c3483;padding:4px 8px;text-align:left;">🌍 Cizinci</td></tr>
           {"".join(
             f"<tr><td style='text-align:left;'>{lbl}</td>"
-            f"<td class='benchmark-val' style='text-align:right;'>{format_num_round(df_reg[col].mean()) if col in df_reg.columns else '—'}</td>"
-            f"<td style='text-align:right;'>{format_num_round(df_others[col].mean()) if col in df_others.columns else '—'}</td>"
-            f"<td style='text-align:right;'>{bench_diff(df_reg[col].mean(), df_others[col].mean(), mode='num') if col in df_reg.columns and col in df_others.columns else '—'}</td>"
+            f"<td class='benchmark-val' style='text-align:right;'>{format_num_round(df_r[col].mean()) if col in df_r.columns else '—'}</td>"
+            f"<td style='text-align:right;'>{format_num_round(df_o[col].mean()) if col in df_o.columns else '—'}</td>"
+            f"<td style='text-align:right;'>{bench_diff(df_r[col].mean(), df_o[col].mean(), mode='num') if col in df_r.columns and col in df_o.columns else '—'}</td>"
             f"</tr>"
             for col, lbl in [('CIZINCI','Cizinci celkem'),('CIZINCI_SLOVENSKO','Cizinci SK'),('CIZINCI_UKRAJINA','Cizinci UA')]
           )}
@@ -9753,40 +9797,40 @@ function obSet_{_fn_slug}(btn, ob){{
           {"".join(
             f"<tr>"
             f"<td style='text-align:left;'>{g} — počet</td>"
-            f"<td class='benchmark-val' style='text-align:right;'>{format_num_round(df_reg[f'{g}_POCET_KLIENTU'].mean()) if f'{g}_POCET_KLIENTU' in df_reg.columns else '—'}</td>"
-            f"<td style='text-align:right;'>{format_num_round(df_others[f'{g}_POCET_KLIENTU'].mean()) if f'{g}_POCET_KLIENTU' in df_others.columns else '—'}</td>"
-            f"<td style='text-align:right;'>{bench_diff(df_reg[f'{g}_POCET_KLIENTU'].mean(), df_others[f'{g}_POCET_KLIENTU'].mean(), mode='num') if f'{g}_POCET_KLIENTU' in df_reg.columns and f'{g}_POCET_KLIENTU' in df_others.columns else '—'}</td>"
+            f"<td class='benchmark-val' style='text-align:right;'>{format_num_round(df_r[f'{g}_POCET_KLIENTU'].mean()) if f'{g}_POCET_KLIENTU' in df_r.columns else '—'}</td>"
+            f"<td style='text-align:right;'>{format_num_round(df_o[f'{g}_POCET_KLIENTU'].mean()) if f'{g}_POCET_KLIENTU' in df_o.columns else '—'}</td>"
+            f"<td style='text-align:right;'>{bench_diff(df_r[f'{g}_POCET_KLIENTU'].mean(), df_o[f'{g}_POCET_KLIENTU'].mean(), mode='num') if f'{g}_POCET_KLIENTU' in df_r.columns and f'{g}_POCET_KLIENTU' in df_o.columns else '—'}</td>"
             f"</tr>"
             f"<tr>"
             f"<td style='text-align:left;'>{g} — prům. výnos</td>"
-            f"<td class='benchmark-val' style='text-align:right;'>{format_money(df_reg[f'{g}_PRUMERNY_VYNOS'].mean()) if f'{g}_PRUMERNY_VYNOS' in df_reg.columns else '—'}</td>"
-            f"<td style='text-align:right;'>{format_money(df_others[f'{g}_PRUMERNY_VYNOS'].mean()) if f'{g}_PRUMERNY_VYNOS' in df_others.columns else '—'}</td>"
-            f"<td style='text-align:right;'>{bench_diff(df_reg[f'{g}_PRUMERNY_VYNOS'].mean(), df_others[f'{g}_PRUMERNY_VYNOS'].mean(), mode='money') if f'{g}_PRUMERNY_VYNOS' in df_reg.columns and f'{g}_PRUMERNY_VYNOS' in df_others.columns else '—'}</td>"
+            f"<td class='benchmark-val' style='text-align:right;'>{format_money(df_r[f'{g}_PRUMERNY_VYNOS'].mean()) if f'{g}_PRUMERNY_VYNOS' in df_r.columns else '—'}</td>"
+            f"<td style='text-align:right;'>{format_money(df_o[f'{g}_PRUMERNY_VYNOS'].mean()) if f'{g}_PRUMERNY_VYNOS' in df_o.columns else '—'}</td>"
+            f"<td style='text-align:right;'>{bench_diff(df_r[f'{g}_PRUMERNY_VYNOS'].mean(), df_o[f'{g}_PRUMERNY_VYNOS'].mean(), mode='money') if f'{g}_PRUMERNY_VYNOS' in df_r.columns and f'{g}_PRUMERNY_VYNOS' in df_o.columns else '—'}</td>"
             f"</tr>"
             for g in AGE_GROUPS
           )}
 
-          {cash_bench_rows(df_reg, df_others)}
+          {cash_bench_rows(df_r, df_o)}
 
-          {"" if "PLOCHA_POUZE_D5" in df_reg.columns else f"""
+          {"" if "PLOCHA_POUZE_D5" in df_r.columns else f"""
           <tr><td colspan='4' style='background:#fce4ec;font-weight:600;font-size:0.78rem;color:#c2185b;padding:4px 8px;text-align:left;'>📐 Alokační report</td></tr>
           <tr style='background:#fff5f8;'>
             <td style='text-align:left;'>Plocha pouze D5 (průměr)</td>
-            <td class='benchmark-val' style='text-align:right;'>{float(df_reg['PLOCHA_POUZE_D5'].mean()):.1f} m²</td>
-            <td style='text-align:right;'>{float(df_others['PLOCHA_POUZE_D5'].mean()) if 'PLOCHA_POUZE_D5' in df_others.columns else 0:.1f} m²</td>
-            <td style='text-align:right;'>{bench_diff(df_reg['PLOCHA_POUZE_D5'].mean(), df_others['PLOCHA_POUZE_D5'].mean() if 'PLOCHA_POUZE_D5' in df_others.columns else 0, mode='num')}</td>
+            <td class='benchmark-val' style='text-align:right;'>{float(df_r['PLOCHA_POUZE_D5'].mean()):.1f} m²</td>
+            <td style='text-align:right;'>{float(df_o['PLOCHA_POUZE_D5'].mean()) if 'PLOCHA_POUZE_D5' in df_o.columns else 0:.1f} m²</td>
+            <td style='text-align:right;'>{bench_diff(df_r['PLOCHA_POUZE_D5'].mean(), df_o['PLOCHA_POUZE_D5'].mean() if 'PLOCHA_POUZE_D5' in df_o.columns else 0, mode='num')}</td>
           </tr>
           <tr style='background:#fff5f8;'>
             <td style='text-align:left;'>Celková plocha pobočky (průměr)</td>
-            <td class='benchmark-val' style='text-align:right;'>{float(df_reg['CELK_PLOCHA_POBOCKY_2026'].mean()):.1f} m²</td>
-            <td style='text-align:right;'>{float(df_others['CELK_PLOCHA_POBOCKY_2026'].mean()) if 'CELK_PLOCHA_POBOCKY_2026' in df_others.columns else 0:.1f} m²</td>
-            <td style='text-align:right;'>{bench_diff(df_reg['CELK_PLOCHA_POBOCKY_2026'].mean(), df_others['CELK_PLOCHA_POBOCKY_2026'].mean() if 'CELK_PLOCHA_POBOCKY_2026' in df_others.columns else 0, mode='num')}</td>
+            <td class='benchmark-val' style='text-align:right;'>{float(df_r['CELK_PLOCHA_POBOCKY_2026'].mean()):.1f} m²</td>
+            <td style='text-align:right;'>{float(df_o['CELK_PLOCHA_POBOCKY_2026'].mean()) if 'CELK_PLOCHA_POBOCKY_2026' in df_o.columns else 0:.1f} m²</td>
+            <td style='text-align:right;'>{bench_diff(df_r['CELK_PLOCHA_POBOCKY_2026'].mean(), df_o['CELK_PLOCHA_POBOCKY_2026'].mean() if 'CELK_PLOCHA_POBOCKY_2026' in df_o.columns else 0, mode='num')}</td>
           </tr>
           <tr style='background:#fff5f8;'>
             <td style='text-align:left;'>Plocha nad optimální pobočku (průměr)</td>
-            <td class='benchmark-val' style='text-align:right;'>{float(df_reg['PLOCHA_NAD_OPTIMALNI_POBOCKU'].mean()):.1f} m²</td>
-            <td style='text-align:right;'>{float(df_others['PLOCHA_NAD_OPTIMALNI_POBOCKU'].mean()) if 'PLOCHA_NAD_OPTIMALNI_POBOCKU' in df_others.columns else 0:.1f} m²</td>
-            <td style='text-align:right;'>{bench_diff(df_reg['PLOCHA_NAD_OPTIMALNI_POBOCKU'].mean(), df_others['PLOCHA_NAD_OPTIMALNI_POBOCKU'].mean() if 'PLOCHA_NAD_OPTIMALNI_POBOCKU' in df_others.columns else 0, mode='num')}</td>
+            <td class='benchmark-val' style='text-align:right;'>{float(df_r['PLOCHA_NAD_OPTIMALNI_POBOCKU'].mean()):.1f} m²</td>
+            <td style='text-align:right;'>{float(df_o['PLOCHA_NAD_OPTIMALNI_POBOCKU'].mean()) if 'PLOCHA_NAD_OPTIMALNI_POBOCKU' in df_o.columns else 0:.1f} m²</td>
+            <td style='text-align:right;'>{bench_diff(df_r['PLOCHA_NAD_OPTIMALNI_POBOCKU'].mean(), df_o['PLOCHA_NAD_OPTIMALNI_POBOCKU'].mean() if 'PLOCHA_NAD_OPTIMALNI_POBOCKU' in df_o.columns else 0, mode='num')}</td>
           </tr>"""}
 
         </tbody>
@@ -9794,6 +9838,25 @@ function obSet_{_fn_slug}(btn, ob){{
     </div>
   </div>
 </div>'''
+            # Celý region (vs ostatní regiony) + Oblast varianty (Oblast vs zbytek regionu)
+            html_benchmark = _make_bench_html(df_reg, df_others, f"Region {region}", "Ostatní regiony")
+            if _has_oblasti:
+                _ob_bench_parts = [
+                    f'<div class="ob-pre-{_fn_slug}" data-ob="__all__">{html_benchmark}</div>'
+                ]
+                for _ob_item in _oblasti_reg:
+                    _df_ob_r = df_reg[df_reg['OBLAST'] == _ob_item].copy()
+                    _df_ob_o = df_reg[df_reg['OBLAST'] != _ob_item].copy()
+                    if _df_ob_r.empty or _df_ob_o.empty:
+                        continue
+                    _bh = _make_bench_html(_df_ob_r, _df_ob_o, _ob_item, "Ostatní oblasti regionu")
+                    _safe_ob = _ob_item.replace('"', '&quot;')
+                    _ob_bench_parts.append(
+                        f'<div class="ob-pre-{_fn_slug}" data-ob="{_safe_ob}" style="display:none;">{_bh}</div>'
+                    )
+                _ob_benchmark = ''.join(_ob_bench_parts)
+            else:
+                _ob_benchmark = html_benchmark
 
             full_html = f'''
 <div class="report-wrapper">
@@ -9827,8 +9890,7 @@ function obSet_{_fn_slug}(btn, ob){{
       Meziroční srovnání počtu obchodů a objemu nových výnosů dle produktové skupiny v regionu {region}.
       Sloupce <b>Δ</b>: <b style="color:#0ab33f;">zelená = růst</b>, <b style="color:#e64343;">červená = pokles</b>.
     </p>
-    <div class="age-section-card mb-4">{obchody_html_sortable}</div>
-    {obchody_bench_html_reg}
+    {_ob_obchody}
 
     <div style="margin-bottom:20px;"></div>
 
@@ -9848,8 +9910,8 @@ function obSet_{_fn_slug}(btn, ob){{
 
     <!-- 5. Benchmark -->
     {make_collapsible(f"bench-{region_slug}", "📊 Regionální benchmark",
-        f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Porovnání průměrných hodnot klíčových metrik regionu {region} vůči zbytku sítě — výnosy, C/I, FTE, návštěvy.</p>"
-        + html_benchmark, default_open=False)}
+        f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Porovnání průměrných hodnot klíčových metrik regionu {region} vůči zbytku sítě — výnosy, C/I, FTE, návštěvy. Oblast vs Oblast: přepínač nad filtrem oblasti.</p>"
+        + _ob_benchmark, default_open=False)}
 
     <!-- 6. Strategie -->
     {make_collapsible(f"strategy-{region_slug}", "📋 Strategie poboček — Close · Investice · Cashless",
@@ -9869,7 +9931,7 @@ function obSet_{_fn_slug}(btn, ob){{
 
     <!-- 9. Věkové segmenty -->
     {make_collapsible(f"age-{region_slug}", "👥 Věkové segmenty klientů",
-        f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Rozložení klientů regionu {region} dle věkových skupin a průměrné výnosy na klienta v každém segmentu.</p><div class='age-section-card mb-4'>{age_table_sortable}</div>",
+        f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Rozložení klientů regionu {region} dle věkových skupin a průměrné výnosy na klienta v každém segmentu.</p><div class='age-section-card mb-4'>{_ob_age_table}</div>",
         default_open=False)}
 
     <!-- 10. Top investice -->
