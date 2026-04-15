@@ -8621,24 +8621,28 @@ setTimeout(function() {{
     'position:sticky;bottom:0;z-index:11;';
   _tf.appendChild(_sRow);
 
-  // Checkbox placeholder
+  // Checkbox placeholder (col 0 — matches the prepended checkbox TD in every tbody row)
   var _sCb = document.createElement('td');
   _sCb.style.cssText = 'padding:5px 8px;text-align:center;border-right:1px solid rgba(255,255,255,.2);width:34px;';
   _sCb.textContent = '\u03a3';
   _sRow.appendChild(_sCb);
 
-  // Label cell (matches "Název pobočky" column width)
-  var _sLbl = document.createElement('td');
-  _sLbl.style.cssText = 'padding:5px 10px;white-space:nowrap;border-right:1px solid rgba(255,255,255,.2);font-size:0.79rem;';
-  _sRow.appendChild(_sLbl);
-
-  // One cell per data column
+  // One cell per headerCell — same count as data TDs in each tbody row
+  // _sCells[0] = "ID pobočky" slot → used as the Σ N pob. label
   var _sCells = [];
-  headerCells.forEach(function(th) {{
+  var _sLbl = null;
+  headerCells.forEach(function(th, _hi) {{
     var stf = document.createElement('td');
     stf.setAttribute('data-col-idx', th.getAttribute('data-col-idx') || '');
-    stf.style.cssText = 'padding:5px 8px;text-align:right;white-space:nowrap;' +
-                        'border-left:1px solid rgba(255,255,255,.1);font-size:0.79rem;';
+    if (_hi === 0) {{
+      // First slot (ID pobočky) — left-aligned label
+      stf.style.cssText = 'padding:5px 10px;white-space:nowrap;text-align:left;' +
+                          'border-right:1px solid rgba(255,255,255,.2);font-size:0.79rem;';
+      _sLbl = stf;
+    }} else {{
+      stf.style.cssText = 'padding:5px 8px;text-align:right;white-space:nowrap;' +
+                          'border-left:1px solid rgba(255,255,255,.1);font-size:0.79rem;';
+    }}
     _sRow.appendChild(stf);
     _sCells.push({{stf: stf, th: th}});
   }});
@@ -8655,8 +8659,12 @@ setTimeout(function() {{
   function updateSummary() {{
     if (!document.getElementById('sum-row-{table_id}')) return;
     var _visR = rows.filter(function(r) {{ return r.style.display !== 'none'; }});
-    _sLbl.textContent = '\u03a3\u00a0' + _visR.length + '\u00a0pob.';
-    _sCells.forEach(function(sc) {{
+    // _sCells[0] = ID pobočky slot → always show as label (never hide)
+    if (_sLbl) {{
+      _sLbl.textContent = '\u03a3\u00a0' + _visR.length + '\u00a0pob.';
+      _sLbl.style.display = '';
+    }}
+    _sCells.slice(1).forEach(function(sc) {{
       // mirror column visibility
       sc.stf.style.display = sc.th.style.display;
       var label = sc.th.textContent.replace(/[\u2195\u2191\u2193\u2195↕↑↓]/g, '').trim();
