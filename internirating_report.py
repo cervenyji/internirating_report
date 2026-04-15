@@ -1246,6 +1246,67 @@ def generate_age_segment_table(target_df, table_id="age-tbl"):
       doSort(parseInt(th.getAttribute("data-col")));
     }});
   }});
+
+  // ─── Sumarizační řádek (tfoot) ───────────────────────────────────────────
+  (function() {{
+    var _aTf = tbl.querySelector('tfoot');
+    if (!_aTf) {{ _aTf = document.createElement('tfoot'); tbl.appendChild(_aTf); }}
+    var _aSRow = document.createElement('tr');
+    _aSRow.style.cssText =
+      'background:#1a3a6b;color:#dbeafe;font-weight:700;font-size:0.79rem;' +
+      'position:sticky;bottom:0;z-index:11;';
+    _aTf.appendChild(_aSRow);
+
+    var _a1stRow = tbl.querySelector('tbody tr');
+    var _aNcols  = _a1stRow ? _a1stRow.cells.length : 0;
+    var _aLbl    = null;
+    for (var _ai = 0; _ai < _aNcols; _ai++) {{
+      var _atf = document.createElement('td');
+      _atf.style.cssText = 'padding:5px 8px;text-align:right;white-space:nowrap;' +
+                           'border:1px solid rgba(255,255,255,.1);';
+      if (_ai === 0) {{ _atf.textContent = '\u03a3'; _atf.style.textAlign = 'center'; }}
+      else if (_ai === 1) {{ _atf.style.textAlign = 'left'; _aLbl = _atf; }}
+      _aSRow.appendChild(_atf);
+    }}
+
+    // Determine aggregation per sub-header column
+    // Age table structure: col0=ID, col1=Název, then per-group: [počet kl., prům. výnos], then cizinci: [počet]
+    var _aSubThs = Array.from(tbl.querySelectorAll('thead tr:nth-child(2) th'));
+    var _aAgg = _aSubThs.map(function(th) {{
+      var t = th.textContent.trim().toLowerCase();
+      if (t.indexOf('po\u010det kl') === 0 || t === 'po\u010det') return 'sum';
+      if (t.indexOf('pr\u016fm') === 0)  return 'avg_money';
+      return 'skip';
+    }});
+
+    function _fmtA(v, isAvgMon) {{
+      if (!isFinite(v) || isNaN(v)) return '\u2014';
+      var s = Math.round(v).toLocaleString('cs-CZ').replace(/\s/g, '\u00a0');
+      return isAvgMon ? s + '\u00a0K\u010d' : s;
+    }}
+
+    function updateAgeSummary() {{
+      var _aAllR = Array.from(tbl.querySelectorAll('tbody tr'));
+      var _aVis  = _aAllR.filter(function(r) {{ return r.style.display !== 'none'; }});
+      if (_aLbl) _aLbl.textContent = '\u03a3\u00a0' + _aVis.length + '\u00a0pob.';
+      for (var _ci = 2; _ci < _aNcols; _ci++) {{
+        var _agg = _aAgg[_ci - 2];
+        var _astf = _aSRow.cells[_ci];
+        if (!_astf || !_agg || _agg === 'skip') {{ if (_astf) _astf.textContent = ''; continue; }}
+        var _tot = 0, _cnt = 0;
+        _aVis.forEach(function(row) {{
+          var td = row.cells[_ci];
+          if (!td) return;
+          var n = parseFloat(td.getAttribute('data-sort') || '');
+          if (!isNaN(n) && isFinite(n)) {{ _tot += n; _cnt++; }}
+        }});
+        _astf.textContent = _cnt > 0 ? _fmtA(_agg === 'avg_money' ? _tot / _cnt : _tot, _agg === 'avg_money') : '\u2014';
+      }}
+    }}
+    updateAgeSummary();
+  }})();
+  // ─────────────────────────────────────────────────────────────────────────
+
 }})();
 </script>"""
 
@@ -2044,6 +2105,7 @@ def generate_obchody_table(target_df, table_id="obchody-tbl"):
     if (obSearchCount) {{
       obSearchCount.textContent = q ? ('Zobrazeno: ' + visible + ' z ' + rows.length) : '';
     }}
+    updateObSummary();
   }}
 
   if (obSearchInput) {{
@@ -2058,6 +2120,60 @@ def generate_obchody_table(target_df, table_id="obchody-tbl"):
     }});
   }}
   // ────────────────────────────────────────────────────────────────────────
+
+  // ─── Sumarizační řádek (tfoot) ───────────────────────────────────────────
+  var _obTf = tbl.querySelector('tfoot');
+  if (!_obTf) {{ _obTf = document.createElement('tfoot'); tbl.appendChild(_obTf); }}
+  var _obSRow = document.createElement('tr');
+  _obSRow.style.cssText =
+    'background:#1a3a6b;color:#dbeafe;font-weight:700;font-size:0.79rem;' +
+    'position:sticky;bottom:0;z-index:11;';
+  _obTf.appendChild(_obSRow);
+
+  var _ob1stRow = tbl.querySelector('tbody tr');
+  var _obNCols  = _ob1stRow ? _ob1stRow.cells.length : 0;
+  var _obSLbl   = null;
+  for (var _oci = 0; _oci < _obNCols; _oci++) {{
+    var _ostf = document.createElement('td');
+    _ostf.style.cssText = 'padding:5px 8px;text-align:right;white-space:nowrap;' +
+                          'border:1px solid rgba(255,255,255,.1);';
+    if (_oci === 0) {{ _ostf.textContent = '\u03a3'; _ostf.style.textAlign = 'center'; }}
+    else if (_oci === 1) {{ _ostf.style.textAlign = 'left'; _obSLbl = _ostf; }}
+    _obSRow.appendChild(_ostf);
+  }}
+
+  function _fmtObS(v, isMoney) {{
+    if (!isFinite(v) || isNaN(v)) return '\u2014';
+    var s = Math.round(v).toLocaleString('cs-CZ').replace(/\s/g, '\u00a0');
+    return isMoney ? s + '\u00a0K\u010d' : s;
+  }}
+
+  function updateObSummary() {{
+    var _obAllRows = Array.from(tbl.querySelectorAll('tbody tr'));
+    var _obVis = _obAllRows.filter(function(r) {{ return r.style.display !== 'none'; }});
+    if (_obSLbl) _obSLbl.textContent = '\u03a3\u00a0' + _obVis.length + '\u00a0pob.';
+    for (var _ci2 = 2; _ci2 < _obNCols; _ci2++) {{
+      var _pos = (_ci2 - 2) % 7;  // 0=cnt24,1=cnt25,2=Δcnt,3=kvint,4=obj24,5=obj25,6=Δobj
+      var _ostfCell = _obSRow.cells[_ci2];
+      if (!_ostfCell) continue;
+      // Mirror column visibility from first body row
+      var _refTd = _ob1stRow ? _ob1stRow.cells[_ci2] : null;
+      if (_refTd) _ostfCell.style.display = _refTd.style.display;
+      // Skip Δ and Kvintil columns
+      if (_pos === 2 || _pos === 3 || _pos === 6) {{ _ostfCell.textContent = ''; continue; }}
+      var _isMon = (_pos === 4 || _pos === 5);
+      var _tot = 0, _cnt = 0;
+      _obVis.forEach(function(row) {{
+        var td = row.cells[_ci2];
+        if (!td || td.style.display === 'none') return;
+        var n = parseFloat(td.getAttribute('data-sort') || '');
+        if (!isNaN(n) && isFinite(n)) {{ _tot += n; _cnt++; }}
+      }});
+      _ostfCell.textContent = _cnt > 0 ? _fmtObS(_tot, _isMon) : '\u2014';
+    }}
+  }}
+  updateObSummary();
+  // ─────────────────────────────────────────────────────────────────────────
 
 }})();
 </script>"""
@@ -7655,6 +7771,49 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
     html_table = html_table.replace('<table ', f'<table id="{table_id}" ', 1)
 
     import json
+    # ── Aggregation config for summary tfoot row ──────────────────────────────
+    _TECH_AGG_SUM = [
+        "POCET_KLIENTU_EOY_2021","POCET_KLIENTU_EOY_2022","POCET_KLIENTU_EOY_2023",
+        "POCET_KLIENTU_EOY_2024","POCET_KLIENTU","PRIMARNI_KLIENTI","AKTIVNI_KLIENTI",
+        "CIZINCI","CIZINCI_SLOVENSKO","CIZINCI_UKRAJINA",
+        "REVENUES_2021","REVENUES_2022","REVENUES_2023","REVENUES_2024","VYNOSY",
+        "NEW_BUSINESS_2024_-_OBJEM_VYNOSU","OBJEM_VYNOSU_CZK",
+        "FTE","OBCHODNI_FTE","BANKERS_COUNT","BANKERS_NEEDED",
+        "POCET_SCHUZEK_ONLINE","POCET_SCHUZEK_FYZICKY","POCET_BEZHOT_WALK_IN",
+        "POCET_HOT_WALK_IN","POCET_NAVSTEV_CELKEM",
+        "TRN_POCET_CELKEM","TRN_CASTKA_CELKEM",
+        "CASH_IN_PREVODITELNA_CASTKA","CASH_IN_NEPREVODITELNA_CASTKA",
+        "CASH_OUT_PREVODITELNA_CASTKA","CASH_OUT_NEPREVODITELNA_CASTKA",
+        "CASH_IN_PREVODITELNA_POCET","CASH_IN_NEPREVODITELNA_POCET",
+        "CASH_OUT_PREVODITELNA_POCET","CASH_OUT_NEPREVODITELNA_POCET",
+        "LAST_INV","BIGGEST_INV","TOTAL_INV","ROCNI_SPLATKY_S_DPH_CZK",
+        "CELK_PLOCHA_POBOCKY_2026","PLOCHA_POUZE_D5","PLOCHA_NAD_OPTIMALNI_POBOCKU",
+        "WPL_MAX_2026","WPL_IN_USE_2026",
+    ]
+    _TECH_AGG_AVG = [
+        "INTERNI_RATING_2023","INTERNI_RATING_2024","IR",
+        "C/I_RATIO_(YTD_2021)","C/I_RATIO_(YTD_2022)","C/I_RATIO_(YTD_2023)",
+        "C/I_RATIO_(YTD_2024)","PRIME_NAKLADY/VYNOSY",
+        "CAP_REV_FTE","CAP_NEWCLI_FTE","CAP_PRIMCLI_FTE","CAP_SCHUZKY_FTE","CAP_PEREX",
+        "PRIM_RATIO","AKTIVNI_RATIO","CASH_PREVODITELNOST_PCT","TRN_DENNI_POCET",
+    ]
+    _MONEY_TECH = {
+        "REVENUES_2021","REVENUES_2022","REVENUES_2023","REVENUES_2024","VYNOSY",
+        "NEW_BUSINESS_2024_-_OBJEM_VYNOSU","OBJEM_VYNOSU_CZK",
+        "LAST_INV","BIGGEST_INV","TOTAL_INV","ROCNI_SPLATKY_S_DPH_CZK","TRN_CASTKA_CELKEM",
+        "CASH_IN_PREVODITELNA_CASTKA","CASH_IN_NEPREVODITELNA_CASTKA",
+        "CASH_OUT_PREVODITELNA_CASTKA","CASH_OUT_NEPREVODITELNA_CASTKA",
+        "CAP_REV_FTE",
+    }
+    _agg_dict = {}
+    for _k in _TECH_AGG_SUM:
+        if _k in NOVE_NAZVY: _agg_dict[NOVE_NAZVY[_k]] = "sum"
+    for _k in _TECH_AGG_AVG:
+        if _k in NOVE_NAZVY: _agg_dict[NOVE_NAZVY[_k]] = "avg"
+    agg_config_js = json.dumps(_agg_dict)
+    agg_money_js  = json.dumps([NOVE_NAZVY[_k] for _k in _MONEY_TECH if _k in NOVE_NAZVY])
+    # ──────────────────────────────────────────────────────────────────────────
+
     col_groups_js = json.dumps([
         (label, [c for c in cols if c not in _excl_display], color, COL_GROUP_ACCENT[i % len(COL_GROUP_ACCENT)])
         for i, (label, cols, color) in enumerate(COL_GROUPS)
@@ -7916,6 +8075,7 @@ setTimeout(function() {{
         td.style.display = visible.has(idx) ? "" : "none";
       }});
     }});
+    updateSummary();
   }}
 
   groupColIdxs.forEach(function(g) {{
@@ -7966,6 +8126,7 @@ setTimeout(function() {{
   function updateCount() {{
     var vis = rows.filter(function(r) {{ return r.style.display !== "none"; }}).length;
     countEl.textContent = vis + "\u00a0/\u00a0" + rows.length + " poboček";
+    updateSummary();
   }}
 
   function doFilter() {{
@@ -8446,6 +8607,80 @@ setTimeout(function() {{
   }});
 
   updateCount();
+
+  // ─── Sumarizační řádek (tfoot) ───────────────────────────────────────────
+  var _aggCfg  = {agg_config_js};
+  var _moneyS  = new Set({agg_money_js});
+
+  var _tf = tbl.querySelector('tfoot');
+  if (!_tf) {{ _tf = document.createElement('tfoot'); tbl.appendChild(_tf); }}
+  var _sRow = document.createElement('tr');
+  _sRow.id = 'sum-row-{table_id}';
+  _sRow.style.cssText =
+    'background:#1a3a6b;color:#dbeafe;font-weight:700;font-size:0.82rem;' +
+    'position:sticky;bottom:0;z-index:11;';
+  _tf.appendChild(_sRow);
+
+  // Checkbox placeholder
+  var _sCb = document.createElement('td');
+  _sCb.style.cssText = 'padding:5px 8px;text-align:center;border-right:1px solid rgba(255,255,255,.2);width:34px;';
+  _sCb.textContent = '\u03a3';
+  _sRow.appendChild(_sCb);
+
+  // Label cell (matches "Název pobočky" column width)
+  var _sLbl = document.createElement('td');
+  _sLbl.style.cssText = 'padding:5px 10px;white-space:nowrap;border-right:1px solid rgba(255,255,255,.2);font-size:0.79rem;';
+  _sRow.appendChild(_sLbl);
+
+  // One cell per data column
+  var _sCells = [];
+  headerCells.forEach(function(th) {{
+    var stf = document.createElement('td');
+    stf.setAttribute('data-col-idx', th.getAttribute('data-col-idx') || '');
+    stf.style.cssText = 'padding:5px 8px;text-align:right;white-space:nowrap;' +
+                        'border-left:1px solid rgba(255,255,255,.1);font-size:0.79rem;';
+    _sRow.appendChild(stf);
+    _sCells.push({{stf: stf, th: th}});
+  }});
+
+  function _fmtS(v, isMoney, isAvg) {{
+    if (!isFinite(v) || isNaN(v)) return '\u2014';
+    if (isMoney) {{
+      return Math.round(v).toLocaleString('cs-CZ').replace(/\s/g,'\u00a0') + '\u00a0K\u010d';
+    }}
+    if (isAvg) return v.toFixed(1).replace('.', ',');
+    return Math.round(v).toLocaleString('cs-CZ').replace(/\s/g,'\u00a0');
+  }}
+
+  function updateSummary() {{
+    if (!document.getElementById('sum-row-{table_id}')) return;
+    var _visR = rows.filter(function(r) {{ return r.style.display !== 'none'; }});
+    _sLbl.textContent = '\u03a3\u00a0' + _visR.length + '\u00a0pob.';
+    _sCells.forEach(function(sc) {{
+      // mirror column visibility
+      sc.stf.style.display = sc.th.style.display;
+      var label = sc.th.textContent.replace(/[\u2195\u2191\u2193\u2195↕↑↓]/g, '').trim();
+      var agg = _aggCfg[label];
+      if (!agg) {{ sc.stf.textContent = ''; return; }}
+      var colIdx = sc.th.getAttribute('data-col-idx');
+      var vals = [];
+      _visR.forEach(function(row) {{
+        var td = row.querySelector('td[data-col-idx="' + colIdx + '"]');
+        if (!td || td.style.display === 'none') return;
+        var n = parseFloat((td.getAttribute('data-sort') || '').replace(',', '.'));
+        if (!isNaN(n) && isFinite(n)) vals.push(n);
+      }});
+      if (!vals.length) {{ sc.stf.textContent = '\u2014'; return; }}
+      var tot = vals.reduce(function(a, b) {{ return a + b; }}, 0);
+      sc.stf.textContent = _fmtS(
+        agg === 'avg' ? tot / vals.length : tot,
+        _moneyS.has(label),
+        agg === 'avg'
+      );
+    }});
+  }}
+  // ─────────────────────────────────────────────────────────────────────────
+
 }}, 0);
 </script>
 """
