@@ -46,6 +46,80 @@ except ImportError:
 # Populace poboček zůstane uzamčena dle branch_snapshot.csv bez ohledu na datum.
 DBS_DATE = "2026-02-10"
 
+# =============================================================================
+# KONFIGURACE GENEROVÁNÍ REPORTŮ
+# =============================================================================
+# Tuto sekci upravte před spuštěním generování.
+
+# ── Výběr poboček ─────────────────────────────────────────────────────────────
+# None  → generují se reporty pro všechny pobočky
+# seznam ID → generují se pouze reporty pro vybrané pobočky, např. [101, 205, 310]
+POBOCKY_FILTR: list | None = None
+
+# ── Sekce v reportu jednotlivé pobočky ───────────────────────────────────────
+# True = sekce bude v reportu zahrnuta, False = sekce bude vynechána
+SEKCE_POBOCKA = {
+    "scorecards":      True,   # Ratingové karty + KPI metriky
+    "rating_history":  True,   # Vývoj a změna ratingu
+    "cash_detail":     True,   # Detail hotovostního provozu
+    "strategie":       True,   # 🏢 Strategické informace (BNS plán)
+    "investice":       True,   # 🔨 Historie investic
+    "benchmark":       True,   # 📊 Benchmark (pobočka vs. region vs. síť)
+    "podobne":         True,   # 🔍 Datově podobné pobočky
+    "obchody":         True,   # 🛒 Obchody dle produktové skupiny 2024/2025
+    "vekove_segmenty": True,   # 👥 Věkové segmenty klientů & cizinci
+    "metriky":         True,   # 📊 Výkonnostní metriky
+    "specialiste":     True,   # 👷 Obsazení pozic + spádové pobočky
+    "navstevnost":     True,   # 🚶 Mapa návštěvnosti 2025
+    "atm":             True,   # 🏧 Bankomaty na pobočce
+}
+
+# ── Sekce v celkovém reportu (celá síť) ──────────────────────────────────────
+SEKCE_CELKOVY = {
+    "prehled":         True,   # 📋 Celkový přehled pobočkových ratingů
+    "obchody":         True,   # 🛒 Přehled obchodů dle produktové skupiny
+    "typologie":       True,   # 🏢 Přehled poboček dle regionu
+    "orp":             True,   # 🗺️ Pokrytí ORP — analýza
+    "mapa":            True,   # 🗺️ Mapa poboček — celá síť
+    "benchmark":       True,   # 📊 Síťový benchmark
+    "strategie":       True,   # 📋 Strategie poboček (Close / Investice / Cashless)
+    "top_vynosy":      True,   # 💰 Nejvyšší nové výnosy
+    "top_rating":      True,   # 🚀⚠️ Top 5: Zlepšení a zhoršení ratingu
+    "vekove_segmenty": True,   # 👥 Věková struktura klientů
+    "top_investice":   True,   # 🔨 Top investice — celá síť
+    "nebezpecna_zona": True,   # 🚨 Pobočky v nebezpečné zóně
+    "kohortova":       True,   # 📊 Kohortová analýza výnosů
+    "atm":             True,   # 🏧 Bankomaty — celková síť
+    "index_expozice":  True,   # 📡 Index expozice — top 5
+    "klienti_heatmapa":True,   # 💎 Kde bydlí klienti s nejvyššími výnosy
+    "simulace":        True,   # 🏦 Simulace sítě 250 poboček
+    "specialiste":     True,   # 👷 Přehled obsazení pozic
+    "metriky":         True,   # 📊 Přehled výkonnostních metrik
+}
+
+# ── Sekce v regionálním reportu ───────────────────────────────────────────────
+SEKCE_REGION = {
+    "prehled":         True,   # 📋 Celkový přehled pobočkových ratingů
+    "obchody":         True,   # 🛒 Přehled obchodů dle produktové skupiny
+    "typologie":       True,   # 🏢 Přehled poboček regionu
+    "mapa":            True,   # 🗺️ Mapa poboček
+    "benchmark":       True,   # 📊 Regionální benchmark
+    "strategie":       True,   # 📋 Strategie poboček
+    "top_vynosy":      True,   # 💰 Přehled oblastí s nejvyššími výnosy
+    "top_rating":      True,   # 🚀⚠️ Top 5: Zlepšení a zhoršení ratingu
+    "vekove_segmenty": True,   # 👥 Věkové segmenty klientů
+    "top_investice":   True,   # 🔨 Top investice
+    "vekova_pyramida": True,   # 👥 Věková pyramida klientů
+    "kohortova":       True,   # 📊 Kohortová analýza výnosů
+    "atm":             True,   # 🏧 Bankomaty
+    "index_expozice":  True,   # 📡 Index expozice — top 5
+    "specialiste":     True,   # 👷 Obsazení pozic
+    "metriky":         True,   # 📊 Výkonnostní metriky
+    "orp":             True,   # 🗺️ Pokrytí ORP
+}
+
+# =============================================================================
+
 # Definice souborů
 soubory = {
     "profitabilita": {
@@ -9488,6 +9562,10 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
         _rev_heatmap_html = generate_revenue_client_heatmap(df_sorted, _pf_arg)
         print("  ✅ Bloky připraveny, sestavuji HTML...")
 
+        # ── Aplikace SEKCE_CELKOVY konfigurace ────────────────────────────────
+        _SC = SEKCE_CELKOVY
+        def _sc(key, html): return html if _SC.get(key, True) else ''
+
         full_html = f'''
 <div class="report-wrapper">
     {bootstrap_css}
@@ -9502,18 +9580,17 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
     <!-- ═══ ČÁST 1: Vždy viditelné ═══ -->
 
     <!-- 1. Celkový přehled -->
-    <div class="section-header">📋 Celkový přehled pobočkových ratingů</div>
+    {_sc('prehled', f"""<div class="section-header">📋 Celkový přehled pobočkových ratingů</div>
     <p style="font-size:0.82rem;color:#666;margin:-6px 0 10px 0;">
       Kompletní tabulka všech poboček s ratingy, výnosy, C/I, klienty a dalšími metrikami.
       Seřazeno vzestupně dle <strong>Ratingu 25</strong> — nejlepší rating nahoře.
       Pomocí tlačítek nad tabulkou přepínáte viditelné skupiny sloupců.
     </p>
     {generate_filterable_table(df_sorted, "main-static-tbl")}
-
-    <div style="margin-bottom:28px;"></div>
+    <div style="margin-bottom:28px;"></div>""")}
 
     <!-- 2. Obchody -->
-    <div class="section-header">🛒 Přehled obchodů dle produktové skupiny — srovnání 2024 / 2025</div>
+    {_sc('obchody', f"""<div class="section-header">🛒 Přehled obchodů dle produktové skupiny — srovnání 2024 / 2025</div>
     <p style="font-size:0.82rem;color:#666;margin:-6px 0 10px 0;">
       Meziroční srovnání počtu obchodů a objemu nových výnosů dle produktové skupiny.
       Sloupce <b>Δ</b> ukazují změnu: <b style="color:#0ab33f;">zelená = růst</b>,
@@ -9521,109 +9598,108 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
     </p>
     <div class="age-section-card mb-4">{obchody_html}</div>
     {obchody_bench_html}
-
-    <div style="margin-bottom:20px;"></div>
+    <div style="margin-bottom:20px;"></div>""")}
 
     <!-- 3. Přehled poboček dle regionu -->
-    <div class="section-header">🏢 Přehled poboček dle regionu — Typologie, Bezhotovostní provoz, Formát NF/SF</div>
+    {_sc('typologie', f"""<div class="section-header">🏢 Přehled poboček dle regionu — Typologie, Bezhotovostní provoz, Formát NF/SF</div>
     <p style="font-size:0.82rem;color:#666;margin:-6px 0 10px 0;">
       Počty poboček v jednotlivých regionech rozdělené dle typu budovy, cashless statusu a formátu NF/SF.
     </p>
-    <div style="margin:0 0 20px 0;width:100%;">{branch_summary_html}</div>
+    <div style="margin:0 0 20px 0;width:100%;">{branch_summary_html}</div>""")}
 
     <!-- 3b. ORP pokrytí -->
-    {make_collapsible("orp-static", "&#x1F5FA; Pokrytí ORP — analýza",
+    {_sc('orp', make_collapsible("orp-static", "&#x1F5FA; Pokrytí ORP — analýza",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Přiřazení poboček k ORP (obce s rozšířenou působností) dle GPS souřadnic. Přehled pokrytí: ve kterých ORP pobočku máme a kde chybí.</p>'
-        + _orp_coverage_html, default_open=False)}
+        + _orp_coverage_html, default_open=False))}
 
     <!-- 4. Mapa -->
-    {generate_map_html(df_sorted, title="🗺️ Mapa poboček — celá síť")}
+    {_sc('mapa', generate_map_html(df_sorted, title="🗺️ Mapa poboček — celá síť"))}
 
     <hr class="report-divider">
 
     <!-- ═══ ČÁST 2: Rozbalovací sekce ═══ -->
 
     <!-- 5. Benchmark -->
-    {make_collapsible("bench-static", "📊 Síťový benchmark",
+    {_sc('benchmark', make_collapsible("bench-static", "📊 Síťový benchmark",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Porovnání průměrných hodnot klíčových metrik napříč celou sítí — výnosy, C/I, FTE, návštěvy a další.</p>'
-        + html_benchmark_static, default_open=False)}
+        + html_benchmark_static, default_open=False))}
 
     <!-- 6. Strategie -->
-    {make_collapsible("strategy-static", "📋 Strategie poboček — Close · Investice · Cashless",
+    {_sc('strategie', make_collapsible("strategy-static", "📋 Strategie poboček — Close · Investice · Cashless",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Přehled plánovaných uzavření, investic do nových formátů a přechodů na bezhotovostní provoz dle schváleného footprintu BNS.</p>'
-        + render_strategy_columns(rating_status), default_open=False)}
+        + render_strategy_columns(rating_status), default_open=False))}
 
     <!-- 7. Nejvyšší nové výnosy -->
-    {make_collapsible("top-revenue-static", "💰 Nejvyšší nové výnosy",
+    {_sc('top_vynosy', make_collapsible("top-revenue-static", "💰 Nejvyšší nové výnosy",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Top 5 poboček s nejvyššími novými výnosy v roce 2025 — výnosy z nově uzavřených obchodů.</p>'
         + render_top5_cards(df_sorted, "revenue", "💰 Nejvyšší nové výnosy 2025", "seřazeno sestupně dle objemu nových výnosů", n=5),
-        default_open=False)}
+        default_open=False))}
 
     <!-- 8. Top 5 zlepšení a zhoršení -->
-    {make_collapsible("top-rating-static", "🚀⚠️ Top 5: Zlepšení a zhoršení ratingu", f"""
+    {_sc('top_rating', make_collapsible("top-rating-static", "🚀⚠️ Top 5: Zlepšení a zhoršení ratingu", f"""
 <p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Pobočky s největším pohybem v ratingu oproti předchozímu roku — jak nahoru (zlepšení), tak dolů (zhoršení).</p>
 <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;">
   <div style="flex:1;min-width:280px;">{render_top5_cards(df_sorted, 'improve', '🚀 Největší zlepšení ratingu', 'sestupně dle posunu pořadí nahoru')}</div>
   <div style="flex:1;min-width:280px;">{render_top5_cards(df_sorted, 'worsen', '⚠️ Největší zhoršení ratingu', 'sestupně dle posunu pořadí dolů')}</div>
-</div>""", default_open=False)}
+</div>""", default_open=False))}
 
     <!-- 9. Věkové segmenty + pyramida (sloučené) -->
-    {make_collapsible("age-static", "👥 Věková struktura klientů",
+    {_sc('vekove_segmenty', make_collapsible("age-static", "👥 Věková struktura klientů",
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Rozložení klientů dle věkových skupin a průměrné výnosy — celá síť i po regionech. Věková pyramida ukazuje strukturu dle pohlaví.</p>"
         + _age_combined_html,
-        default_open=False)}
+        default_open=False))}
 
     <!-- 10. Top investice -->
-    {make_collapsible("top-inv-static", "🔨 Top investice — celá síť", f"""
+    {_sc('top_investice', make_collapsible("top-inv-static", "🔨 Top investice — celá síť", f"""
 <p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Přehled největších a nejnovějších investic do pobočkové sítě — rekonstrukce, nové formáty, technologie.</p>
 <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;">
   <div style="flex:1;min-width:280px;">{render_top5_cards(rating_status, 'inv_new', '🕐 Nejnovější investice', 'seřazeno dle data realizace')}</div>
   <div style="flex:1;min-width:280px;">{render_top5_cards(rating_status, 'inv_big', '💰 Největší investice', 'seřazeno dle výše investice')}</div>
-</div>""", default_open=False)}
+</div>""", default_open=False))}
 
     <!-- 11. Nebezpečná zóna -->
-    {make_collapsible("danger-zone-static", "🚨 Pobočky v nebezpečné zóně",
+    {_sc('nebezpecna_zona', make_collapsible("danger-zone-static", "🚨 Pobočky v nebezpečné zóně",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Pobočky s kombinací špatného ratingu, vysokého C/I a nízkých výnosů — vyžadují zvýšenou pozornost.</p>'
-        + _danger_zone_html, default_open=False)}
+        + _danger_zone_html, default_open=False))}
 
     <!-- 13. Kohortová analýza -->
-    {make_collapsible("cohort-static", "📊 Kohortová analýza výnosů",
+    {_sc('kohortova', make_collapsible("cohort-static", "📊 Kohortová analýza výnosů",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Průměrné nové výnosy a výnos/FTE seskupené dle formátu, velikosti, ratingového kvintilu, nájemného a plochy — odpovídá na otázku: co nejvíce ovlivňuje výkonnost pobočky?</p>'
-        + _cohort_html, default_open=False)}
+        + _cohort_html, default_open=False))}
 
     <!-- 14. ATM přehled -->
-    {make_collapsible("atm-static", "🏧 Bankomaty — celková síť",
+    {_sc('atm', make_collapsible("atm-static", "🏧 Bankomaty — celková síť",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Přehled bankomatů v síti, kapacitní vytížení, počty výběrů a vkladů — aktuálně i po plánovaném převodu hotovostních operací.</p>'
         + (_atm_static_html if _atm_static_html else '<p style="color:#aaa;font-style:italic;">Data ATM nejsou k dispozici.</p>'),
-        default_open=False)}
+        default_open=False))}
 
     <!-- 15. Index expozice -->
-    {make_collapsible("ie-static", "📡 Index expozice — top 5 celá síť",
+    {_sc('index_expozice', make_collapsible("ie-static", "📡 Index expozice — top 5 celá síť",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Index expozice vyjadřuje míru „viditelnosti" pobočky vůči potenciálním klientům — kombinace demografické dostupnosti, konkurence a spádu. Q1 = nejlepší pozice.</p>'
         + (f'<div style="display:flex;gap:20px;flex-wrap:wrap;">{_ie_top5_static_html}</div>' if _ie_top5_static_html else ''),
-        default_open=False)}
+        default_open=False))}
 
     <!-- 16. Kde bydlí klienti -->
-    {make_collapsible("revenue-heatmap-static", "💎 Kde bydlí klienti s nejvyššími výnosy — top 20 % poboček",
+    {_sc('klienti_heatmapa', make_collapsible("revenue-heatmap-static", "💎 Kde bydlí klienti s nejvyššími výnosy — top 20 % poboček",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Geografická heatmapa bydliště klientů generujících nejvyšší výnosy — identifikuje spádové oblasti a potenciál pro rozvoj sítě.</p>'
-        + _rev_heatmap_html, default_open=False)}
+        + _rev_heatmap_html, default_open=False))}
 
     <!-- 17. Simulace sítě -->
-    {make_collapsible("inv-impact-static", "🏦 Simulace sítě 250 poboček",
+    {_sc('simulace', make_collapsible("inv-impact-static", "🏦 Simulace sítě 250 poboček",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Simulace optimalizované sítě 250 poboček pro rok 2030 — výnosy, C/I, bankéřská kapacita a přesun klientů ze zavřených poboček.</p>'
-        + _inv_impact_html, default_open=False)}
+        + _inv_impact_html, default_open=False))}
 
     <!-- 18. Obsazení pozic -->
-    {make_collapsible("spec-static", "👷 Přehled obsazení pozic",
+    {_sc('specialiste', make_collapsible("spec-static", "👷 Přehled obsazení pozic",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Aktuální obsazení bankéřských a specialistických pozic v pobočkové síti dle regionu.</p>'
         + generate_specialiste_summary_table(df_sorted["BRANCH_CODE"].dropna().astype(int).tolist(), title=""),
-        default_open=False)}
+        default_open=False))}
 
     <!-- 19. Výkonnostní metriky -->
-    {make_collapsible("metrics-static", "📊 Přehled výkonnostních metrik",
+    {_sc('metriky', make_collapsible("metrics-static", "📊 Přehled výkonnostních metrik",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Detailní přehled výkonnostních metrik poboček — business rating, schůzky/FTE, PEREX a další ukazatele obchodní aktivity.</p>'
         + generate_metrics_overview(df_sorted, title=""),
-        default_open=False)}
+        default_open=False))}
 
     <hr class="report-divider">
 
@@ -10102,6 +10178,10 @@ function obSet_{_fn_slug}(btn, ob){{
             else:
                 _ob_benchmark = html_benchmark
 
+            # ── Aplikace SEKCE_REGION konfigurace ─────────────────────────────
+            _SR = SEKCE_REGION
+            def _sr(key, html): return html if _SR.get(key, True) else ''
+
             full_html = f'''
 <div class="report-wrapper">
     {bootstrap_css}
@@ -10118,110 +10198,108 @@ function obSet_{_fn_slug}(btn, ob){{
     <!-- ═══ ČÁST 1: Vždy viditelné ═══ -->
 
     <!-- 1. Celkový přehled -->
-    <div class="section-header">📋 Celkový přehled pobočkových ratingů</div>
+    {_sr('prehled', f"""<div class="section-header">📋 Celkový přehled pobočkových ratingů</div>
     <p style="font-size:0.82rem;color:#666;margin:-6px 0 10px 0;">
       Kompletní tabulka poboček regionu <strong>{region}</strong> s ratingy, výnosy, C/I a dalšími metrikami.
       Seřazeno vzestupně dle <strong>Ratingu 25</strong> — nejlepší rating nahoře.
     </p>
     {generate_filterable_table(df_reg.sort_values(by="IR"), f"main-table-{region_slug}",
         excluded_cols=['ROCNI_SPLATKY_S_DPH_CZK'])}
-
-    <div style="margin-bottom:20px;"></div>
+    <div style="margin-bottom:20px;"></div>""")}
 
     <!-- 2. Obchody -->
-    <div class="section-header">🛒 Přehled obchodů dle produktové skupiny — srovnání 2024 / 2025</div>
+    {_sr('obchody', f"""<div class="section-header">🛒 Přehled obchodů dle produktové skupiny — srovnání 2024 / 2025</div>
     <p style="font-size:0.82rem;color:#666;margin:-6px 0 10px 0;">
       Meziroční srovnání počtu obchodů a objemu nových výnosů dle produktové skupiny v regionu {region}.
       Sloupce <b>Δ</b>: <b style="color:#0ab33f;">zelená = růst</b>, <b style="color:#e64343;">červená = pokles</b>.
     </p>
     {_ob_obchody}
-
-    <div style="margin-bottom:20px;"></div>
+    <div style="margin-bottom:20px;"></div>""")}
 
     <!-- 3. Přehled poboček dle typologie -->
-    <div class="section-header">🏢 Přehled poboček regionu — Typologie, Bezhotovostní provoz, Formát NF/SF</div>
+    {_sr('typologie', f"""<div class="section-header">🏢 Přehled poboček regionu — Typologie, Bezhotovostní provoz, Formát NF/SF</div>
     <p style="font-size:0.82rem;color:#666;margin:-6px 0 10px 0;">
       Počty poboček v regionu {region} rozdělené dle typu budovy, cashless statusu a formátu NF/SF.
     </p>
-    <div style="margin:0 0 20px 0;width:100%;">{_ob_branch_summary}</div>
+    <div style="margin:0 0 20px 0;width:100%;">{_ob_branch_summary}</div>""")}
 
     <!-- 4. Mapa -->
-    {generate_map_html(df_reg.sort_values(by="IR"), title=f"🗺️ Mapa poboček — {region}")}
+    {_sr('mapa', generate_map_html(df_reg.sort_values(by="IR"), title=f"🗺️ Mapa poboček — {region}"))}
 
     <hr class="report-divider">
 
     <!-- ═══ ČÁST 2: Rozbalovací sekce ═══ -->
 
     <!-- 5. Benchmark -->
-    {make_collapsible(f"bench-{region_slug}", "📊 Regionální benchmark",
+    {_sr('benchmark', make_collapsible(f"bench-{region_slug}", "📊 Regionální benchmark",
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Porovnání průměrných hodnot klíčových metrik regionu {region} vůči zbytku sítě — výnosy, C/I, FTE, návštěvy. Oblast vs Oblast: přepínač nad filtrem oblasti.</p>"
-        + _ob_benchmark, default_open=False)}
+        + _ob_benchmark, default_open=False))}
 
     <!-- 6. Strategie -->
-    {make_collapsible(f"strategy-{region_slug}", "📋 Strategie poboček — Close · Investice · Cashless",
+    {_sr('strategie', make_collapsible(f"strategy-{region_slug}", "📋 Strategie poboček — Close · Investice · Cashless",
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Přehled plánovaných uzavření, investic a přechodů na bezhotovostní provoz v regionu {region}.</p>"
-        + _ob_strategie, default_open=False)}
+        + _ob_strategie, default_open=False))}
 
     <!-- 7. Nejvyšší výnosy a nové výnosy -->
-    {make_collapsible(f"top-revenue-{region_slug}", "💰 Přehled oblastí s nejvyššími výnosy",
+    {_sr('top_vynosy', make_collapsible(f"top-revenue-{region_slug}", "💰 Přehled oblastí s nejvyššími výnosy",
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Top pobočky regionu {region} dle celkových výnosů (VYNOSY) a nových výnosů (OBJEM_VYNOSU_CZK) v roce 2025.</p>"
         + _ob_top_revenues,
-        default_open=False)}
+        default_open=False))}
 
     <!-- 8. Top 5 zlepšení a zhoršení -->
-    {make_collapsible(f"top-rating-{region_slug}", "🚀⚠️ Top 5: Zlepšení a zhoršení ratingu", f"""
+    {_sr('top_rating', make_collapsible(f"top-rating-{region_slug}", "🚀⚠️ Top 5: Zlepšení a zhoršení ratingu", f"""
 <p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Pobočky regionu {region} s největším pohybem v ratingu oproti předchozímu roku.</p>
-{_ob_top5_rating}""", default_open=False)}
+{_ob_top5_rating}""", default_open=False))}
 
     <!-- 9. Věkové segmenty -->
-    {make_collapsible(f"age-{region_slug}", "👥 Věkové segmenty klientů",
+    {_sr('vekove_segmenty', make_collapsible(f"age-{region_slug}", "👥 Věkové segmenty klientů",
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Rozložení klientů regionu {region} dle věkových skupin a průměrné výnosy na klienta v každém segmentu.</p><div class='age-section-card mb-4'>{_ob_age_table}</div>",
-        default_open=False)}
+        default_open=False))}
 
     <!-- 10. Top investice -->
-    {make_collapsible(f"top-inv-{region_slug}", f"🔨 Top investice — {region}", f"""
+    {_sr('top_investice', make_collapsible(f"top-inv-{region_slug}", f"🔨 Top investice — {region}", f"""
 <p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Největší a nejnovější investice do poboček v regionu {region}.</p>
-{_ob_top_inv}""", default_open=False)}
+{_ob_top_inv}""", default_open=False))}
 
     <!-- 11. Věková pyramida -->
-    {make_collapsible(f"age-pyramid-{region_slug}", f"👥 Věková pyramida klientů — {region}",
+    {_sr('vekova_pyramida', make_collapsible(f"age-pyramid-{region_slug}", f"👥 Věková pyramida klientů — {region}",
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Věková struktura klientů regionu {region} — rozložení dle pohlaví a věkových skupin.</p>"
-        + _reg_age_pyramid_html, default_open=False)}
+        + _reg_age_pyramid_html, default_open=False))}
 
     <!-- 12. Kohortová analýza -->
-    {make_collapsible(f"cohort-{region_slug}", f"📊 Kohortová analýza výnosů — {region}",
+    {_sr('kohortova', make_collapsible(f"cohort-{region_slug}", f"📊 Kohortová analýza výnosů — {region}",
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Průměrné nové výnosy a výnos/FTE seskupené dle formátu, velikosti a ratingového kvintilu pro region {region}.</p>"
-        + _reg_cohort_html, default_open=False)}
+        + _reg_cohort_html, default_open=False))}
 
     <!-- 13. ATM přehled -->
-    {make_collapsible(f"atm-{region_slug}", f"🏧 Bankomaty — {region}",
+    {_sr('atm', make_collapsible(f"atm-{region_slug}", f"🏧 Bankomaty — {region}",
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Přehled bankomatů v regionu {region}, kapacitní vytížení a počty výběrů a vkladů.</p>"
         + (_reg_atm_html if _reg_atm_html else '<p style="color:#aaa;font-style:italic;">Data ATM nejsou k dispozici.</p>'),
-        default_open=False)}
+        default_open=False))}
 
     <!-- 14. Index expozice -->
-    {make_collapsible(f"ie-{region_slug}", f"📡 Index expozice — top 5 {region}",
+    {_sr('index_expozice', make_collapsible(f"ie-{region_slug}", f"📡 Index expozice — top 5 {region}",
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Top 5 poboček regionu {region} s nejlepším indexem expozice — demografická dostupnost, konkurence a spád. Q1 = nejlepší.</p>"
         + _ob_ie,
-        default_open=False)}
+        default_open=False))}
 
     <!-- 15. Obsazení pozic -->
-    {make_collapsible(f"spec-{region_slug}", f"👷 Obsazení pozic — {region}",
+    {_sr('specialiste', make_collapsible(f"spec-{region_slug}", f"👷 Obsazení pozic — {region}",
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Aktuální obsazení bankéřských a specialistických pozic v pobočkách regionu {region}.</p>"
         + generate_specialiste_summary_table(df_reg["BRANCH_CODE"].dropna().astype(int).tolist(), title=""),
-        default_open=False)}
+        default_open=False))}
 
     <!-- 16. Výkonnostní metriky -->
-    {make_collapsible(f"metrics-{region_slug}", f"📊 Výkonnostní metriky — {region}",
+    {_sr('metriky', make_collapsible(f"metrics-{region_slug}", f"📊 Výkonnostní metriky — {region}",
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Detailní přehled výkonnostních metrik poboček regionu {region} — business rating, schůzky/FTE, PEREX a další ukazatele obchodní aktivity.</p>"
         + generate_metrics_overview(df_reg, title=""),
-        default_open=False)}
+        default_open=False))}
 
     <!-- 17. ORP pokrytí regionu -->
-    {make_collapsible(f"orp-{region_slug}", f"&#x1F5FA; Pokrytí ORP — {region}",
+    {_sr('orp', make_collapsible(f"orp-{region_slug}", f"&#x1F5FA; Pokrytí ORP — {region}",
         f"<p style='font-size:0.82rem;color:#666;margin:0 0 12px 0;'>Přiřazení poboček regionu {region} k ORP dle GPS souřadnic. Přepínač: všechny pobočky / pouze Keep (bez plánovaných uzavření).</p>"
         + _reg_orp_html,
-        default_open=False)}
+        default_open=False))}
 
     <hr class="report-divider">
 
@@ -11662,10 +11740,20 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
     total_branches = len(rating_status)
     print(f"Generuji {total_branches} pobočkových reportů do '{output_dir}/'...")
 
+    # Aplikuj filtr POBOCKY_FILTR z konfigurace
+    _pobocky_set = (
+        set(int(x) for x in POBOCKY_FILTR)
+        if POBOCKY_FILTR is not None else None
+    )
+
     for idx, (_, row) in enumerate(rating_status.iterrows(), 1):
         branch_code = int(_v(row, "BRANCH_CODE", 0))
         branch_name = str(_v(row, "BRANCH_NAME", str(branch_code)))
         region      = str(_v(row, "REGION_NAME", "—"))
+
+        # Přeskoč pobočky mimo výběr
+        if _pobocky_set is not None and branch_code not in _pobocky_set:
+            continue
 
         df_region  = rating_status[rating_status["REGION_NAME"] == region]
         df_b       = rating_status[rating_status["BRANCH_CODE"] == branch_code]
@@ -13771,6 +13859,56 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
   </div>
 </div>"""
 
+        # ── Aplikace SEKCE_POBOCKA konfigurace ────────────────────────────────
+        _SP = SEKCE_POBOCKA
+        def _sp(key, html): return html if _SP.get(key, True) else ''
+
+        _f_scorecards  = _sp('scorecards',      scorecards_html)
+        _f_rev_hist    = _sp('rating_history',  rev_history_html)
+        _f_cash        = _sp('cash_detail',      cash_detail_html)
+        _f_strat       = (
+            f'<div class="section-header">🏢 Strategické informace</div>\n  {strat_html}'
+            if _SP.get('strategie', True) else ''
+        )
+        _f_inv         = (
+            make_collapsible(f"inv-all-{branch_code}",
+                f"🔨 Historie investic ({_inv_count} záznamů)",
+                investice_html, default_open=True)
+            if _SP.get('investice', True) else ''
+        )
+        _f_bench       = (
+            make_collapsible(f"bench-{branch_code}",
+                f"📊 Benchmark — pobočka vs. region vs. síť vs. {fte_label}",
+                benchmark_html, default_open=True)
+            if _SP.get('benchmark', True) else ''
+        )
+        _f_podobne     = (
+            f'<div class="section-header">🔍 Datově podobné pobočky</div>\n  {similar_html}'
+            if _SP.get('podobne', True) else ''
+        )
+        _f_obchody     = (
+            f'''<div class="section-header">🛒 Obchody dle produktové skupiny — 2024 / 2025</div>
+  <div class="age-section-card mb-4">
+    {_prod_rev_html}
+    {obchody_html_b}
+  </div>'''
+            if _SP.get('obchody', True) else ''
+        )
+        _f_vek         = (
+            f'<div class="section-header">👥 Věkové segmenty klientů &amp; Cizinci</div>\n  <div class="age-section-card mb-4">{age_charts_html}</div>'
+            if _SP.get('vekove_segmenty', True) else ''
+        )
+        _f_metriky     = _sp('metriky',       metrics_html)
+        _f_spec        = (
+            f'''<div style="display:flex;align-items:flex-start;gap:24px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:280px;">{spec_html if spec_html else ""}</div>
+    <div style="flex:1;min-width:260px;">{spadovky_html}</div>
+  </div>'''
+            if _SP.get('specialiste', True) else ''
+        )
+        _f_visits      = _sp('navstevnost',   visits_html)
+        _f_atm         = _sp('atm',           atm_html)
+
         # ── full_html ─────────────────────────────────────────────────────────
         full_html = f"""<!DOCTYPE html>
 <html lang="cs">
@@ -13809,45 +13947,31 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
     </div>
   </div>
 
-  {scorecards_html}
+  {_f_scorecards}
 
-  {rev_history_html}
+  {_f_rev_hist}
 
-  {cash_detail_html}
+  {_f_cash}
 
-  <div class="section-header">🏢 Strategické informace</div>
-  {strat_html}
+  {_f_strat}
 
-  {make_collapsible(f"inv-all-{branch_code}",
-    f"🔨 Historie investic ({_inv_count} záznamů)",
-    investice_html, default_open=True)}
+  {_f_inv}
 
-  {make_collapsible(f"bench-{branch_code}",
-    f"📊 Benchmark — pobočka vs. region vs. síť vs. {fte_label}",
-    benchmark_html, default_open=True)}
+  {_f_bench}
 
-  <div class="section-header">🔍 Datově podobné pobočky</div>
-  {similar_html}
+  {_f_podobne}
 
-  <div class="section-header">🛒 Obchody dle produktové skupiny — 2024 / 2025</div>
-  <div class="age-section-card mb-4">
-    {_prod_rev_html}
-    {obchody_html_b}
-  </div>
+  {_f_obchody}
 
-  <div class="section-header">👥 Věkové segmenty klientů &amp; Cizinci</div>
-  <div class="age-section-card mb-4">{age_charts_html}</div>
+  {_f_vek}
 
-  {metrics_html}
+  {_f_metriky}
 
-  <div style="display:flex;align-items:flex-start;gap:24px;flex-wrap:wrap;">
-    <div style="flex:1;min-width:280px;">{spec_html if spec_html else ""}</div>
-    <div style="flex:1;min-width:260px;">{spadovky_html}</div>
-  </div>
+  {_f_spec}
 
-  {visits_html}
+  {_f_visits}
 
-  {atm_html}
+  {_f_atm}
 
 </div>
 </body>
