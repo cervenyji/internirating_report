@@ -11123,18 +11123,7 @@ display(HTML(f"""
         OSOBNI_NAKLADY &gt; 0: <b>{_cap_onakl_ok}</b> | NR_NEW_ARRIVALS &gt; 0: <b>{_cap_arr_ok}</b>
     </div>
 """))
-# Merge BANKERS_COUNT into df from rating_status so compute_capacity_rating uses it as divisor
-if 'BANKERS_COUNT' in rating_status.columns and 'BANKERS_COUNT' not in df.columns:
-    _bnk_map = rating_status.set_index('BRANCH_CODE')['BANKERS_COUNT']
-    df['BANKERS_COUNT'] = pd.to_numeric(df['BRANCH_CODE'], errors='coerce').map(_bnk_map).fillna(0).astype(int)
-df = compute_capacity_rating(df)
-cap_ok = (df['CAP_RNK'] > 0).sum() if 'CAP_RNK' in df.columns else 0
-display(HTML(f"""
-    <div style='background:#f3e5f5;padding:8px 12px;border-left:4px solid #7b1fa2;font-size:0.85rem;margin-top:10px;'>
-        📈 <b>Business rating (kapacitní):</b> {cap_ok} poboček s výsledkem |
-        distribuce Q: {dict(df[df['CAP_Q']>0]['CAP_Q'].value_counts().sort_index()) if cap_ok > 0 else 'N/A'}
-    </div>
-"""))
+# compute_capacity_rating is called after df_specialiste is loaded (see section 6b below)
 trn_q_counts = df['TRN_Q'].value_counts().sort_index() if 'TRN_Q' in df.columns else {}
 display(HTML(f"""
     <div style="background:#e3f2fd;padding:8px 12px;border-left:4px solid #1565c0;font-size:0.85rem;margin-top:10px;">
@@ -11191,6 +11180,36 @@ except Exception as _e:
     df_specialiste = None
     SPEC_POZICE_COLS = []
     print(f"⚠️ Specialisté nenačteni: {_e}")
+
+# Business rating: compute BANKERS_COUNT (OSOBNI_BANKER_-_JUNIOR/MEDIOR/SENIOR) into df,
+# fallback to FTE where count is 0.  Must run here — after df_specialiste is loaded.
+_ob_positions = {
+    "osobní bankéř - junior", "osobní bankéř - medior", "osobní bankéř - senior",
+    "osobni_banker_-_junior", "osobni_banker_-_medior", "osobni_banker_-_senior",
+}
+if df_specialiste is not None and not df_specialiste.empty:
+    _ob_cols = [c for c in SPEC_POZICE_COLS
+                if c.lower().strip() in _ob_positions or 'osobni_banker_-_' in c.lower()]
+    if _ob_cols:
+        _stmp = df_specialiste.copy()
+        _stmp['branch_id'] = pd.to_numeric(_stmp['branch_id'], errors='coerce')
+        for _c in _ob_cols:
+            _stmp[_c] = pd.to_numeric(_stmp[_c], errors='coerce').fillna(0)
+        _stmp['_bankers'] = _stmp[_ob_cols].sum(axis=1)
+        _ob_map = dict(zip(_stmp['branch_id'].astype(int), _stmp['_bankers']))
+        df['BANKERS_COUNT'] = pd.to_numeric(df['BRANCH_CODE'], errors='coerce').map(_ob_map).fillna(0).astype(int)
+        print(f"✅ BANKERS_COUNT vypočten ze sloupců: {_ob_cols}, "
+              f"pobočky s bankéři > 0: {(df['BANKERS_COUNT'] > 0).sum()}")
+    else:
+        print("⚠️ BANKERS_COUNT: nenalezeny sloupce OSOBNI_BANKER_-_JUNIOR/MEDIOR/SENIOR v specialistech")
+df = compute_capacity_rating(df)
+cap_ok = (df['CAP_RNK'] > 0).sum() if 'CAP_RNK' in df.columns else 0
+display(HTML(f"""
+    <div style='background:#f3e5f5;padding:8px 12px;border-left:4px solid #7b1fa2;font-size:0.85rem;margin-top:10px;'>
+        📈 <b>Business rating (kapacitní):</b> {cap_ok} poboček s výsledkem |
+        distribuce Q: {dict(df[df['CAP_Q']>0]['CAP_Q'].value_counts().sort_index()) if cap_ok > 0 else 'N/A'}
+    </div>
+"""))
 
 # -----------------------------------------------------------------------------
 # Detailní investice po položkách (export_investice_all_2026.pkl)
