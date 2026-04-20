@@ -472,12 +472,9 @@ NOVE_NAZVY = {
     "SP_PCT_3":    "Spád. podíl 3",
 
     # ── 👷 FTE ────────────────────────────────────────────────────
-    "FTE":               "FTE",
-    "OBCHODNI_FTE":      "Obchodní FTE",
-    "BANKERS_COUNT":     "Počet bankéřů",
-    "BANKERS_NEEDED":    "Potřeba bankéřů",
-    "BANKERS_DIFF_HTML": "Bankéři — rozdíl",
-    "_total_spec":       "Všechny pozice celkem",
+    "FTE":          "Celková FTE controlling",
+    "_total_spec":  "Celková FTE redim",
+    "BANKERS_COUNT":"Počet bankéřů redim",
 
     # ── 🛍️ Prodeje (kvintily per produkt + celkový počet) ────────
     "POCET_PRODEJU_CELKEM_2025":         "Prodeje celkem 2025",
@@ -6890,10 +6887,6 @@ def _apply_common_formatting(d, cols_to_show):
                 if pd.notna(x) and str(x) not in ('', 'nan', 'None') and float(x) > 0 else '—'
             )
 
-    # Obchodní FTE — celé číslo
-    if 'OBCHODNI_FTE' in cols_to_show and 'OBCHODNI_FTE' in d.columns:
-        d['OBCHODNI_FTE'] = d['OBCHODNI_FTE'].apply(format_int_sep)
-
     # Formát pobočky dle obchodního FTE — barevný badge stejně jako BRANCH_FORMAT
     for _fmt_col in ['BRANCH_FORMAT', 'BRANCH_FORMAT_OBCHODNI']:
         if _fmt_col in cols_to_show and _fmt_col in d.columns:
@@ -7344,7 +7337,7 @@ COL_GROUPS = [
         "Spádová pobočka 3", "Spád. návštěvy 3", "Spád. podíl 3",
     ], "#e8f4fd"),
     ("👷 FTE",               [
-        "FTE", "Obchodní FTE", "Počet bankéřů", "Potřeba bankéřů", "Bankéři — rozdíl", "Všechny pozice celkem",
+        "Celková FTE controlling", "Celková FTE redim", "Počet bankéřů redim",
     ], "#e8f0fe"),
     ("🏅 Sdružené ratingy",   [
         "Rating 25 kvintil",
@@ -7486,9 +7479,8 @@ def generate_column_map_html():
         ("PRIME_NAKLADY/VYNOSY",    "profitabilita",    "PRIME_NAKLADY/VYNOSY",     "C/I ratio 2025"),
         ("VYNOSY",                  "profitabilita",    "VYNOSY",                   "celkové výnosy 2025"),
         # specialiste — FTE pozice
-        ("BANKERS_COUNT",           "specialiste",      "součet bankéřských pozic", "osobní bankéř junior/medior/senior/master"),
-        ("OBCHODNI_FTE",            "specialiste",      "součet obchodních pozic",  "27 definovaných obchodních rolí"),
-        ("_total_spec",             "specialiste",      "součet všech pozic",       "celkový počet obsazených míst"),
+        ("BANKERS_COUNT",           "specialiste",      "součet bankéřských pozic", "osobní bankéř junior/medior/senior → Počet bankéřů redim"),
+        ("_total_spec",             "specialiste",      "součet všech pozic",       "celkový počet obsazených míst → Celková FTE redim"),
         # ORP (GeoJSON + pyproj)
         ("ORP_NAZEV",               "GeoJSON ORP + GPS", "point-in-polygon WGS84→S-JTSK", "název ORP dle GPS souřadnic"),
         ("ORP_KOD",                 "GeoJSON ORP + GPS", "point-in-polygon WGS84→S-JTSK", "kód ORP"),
@@ -7883,7 +7875,7 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
         "CIZINCI","CIZINCI_SLOVENSKO","CIZINCI_UKRAJINA",
         "REVENUES_2021","REVENUES_2022","REVENUES_2023","REVENUES_2024","VYNOSY",
         "NEW_BUSINESS_2024_-_OBJEM_VYNOSU","OBJEM_VYNOSU_CZK",
-        "FTE","OBCHODNI_FTE","BANKERS_COUNT","BANKERS_NEEDED",
+        "FTE","BANKERS_COUNT","_total_spec",
         "POCET_SCHUZEK_ONLINE","POCET_SCHUZEK_FYZICKY","POCET_BEZHOT_WALK_IN",
         "POCET_HOT_WALK_IN","POCET_NAVSTEV_CELKEM",
         "NAVSTEV_NA_BANKERE","SCHUZEK_ONLINE_NA_BANKERE","SCHUZEK_FYZICKE_NA_BANKERE",
@@ -12019,7 +12011,7 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
   <!-- FTE -->
   <div style="background:#f5f0ff;border-radius:10px;padding:14px 20px;
               border-left:5px solid #7b5ea7;box-shadow:0 2px 8px rgba(0,0,0,.07);min-width:150px;flex:1;">
-    <div style="font-size:0.72rem;color:#7b5ea7;font-weight:600;text-transform:uppercase;letter-spacing:.4px;">FTE</div>
+    <div style="font-size:0.72rem;color:#7b5ea7;font-weight:600;text-transform:uppercase;letter-spacing:.4px;">Celková FTE controlling</div>
     <div style="font-size:2rem;font-weight:800;color:#1a2a4a;margin:4px 0 2px;line-height:1.1;">{f"{fte_float:.1f}" if fte_float else "—"}</div>
     <div style="font-size:0.78rem;color:#888;">formát: {format_p}</div>
   </div>
