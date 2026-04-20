@@ -6596,81 +6596,85 @@ def prepare_rating_status(df):
                 _bnk_cols = [c for c in _spec_cols_g
                              if c.lower().strip() in _BANKER_POSITIONS
                              or 'osobni_banker_-_' in c.lower() or 'osobní bankéř -' in c.lower()]
-            # Obchodní FTE sloupce
+            # Obchodní FTE sloupce (pro BRANCH_FORMAT_OBCHODNI)
             _obch_cols = [c for c in _spec_cols_g
                           if c.lower().strip() in _OBCHODNI_POSITIONS]
+
+            _spec_bc = _spec_g.copy()
+            _spec_bc['branch_id'] = pd.to_numeric(_spec_bc['branch_id'], errors='coerce')
+            for c in _spec_cols_g:
+                if c in _spec_bc.columns:
+                    _spec_bc[c] = pd.to_numeric(_spec_bc[c], errors='coerce').fillna(0)
+
+            # Celková FTE redim = součet VŠECH pozic (vždy)
+            _spec_bc['_total_spec'] = (
+                _spec_bc[_spec_cols_g].sum(axis=1) if _spec_cols_g else 0
+            )
+            # Počet bankéřů redim = OSOBNI_BANKER_-_JUNIOR/MEDIOR/SENIOR
             if _bnk_cols:
-                _spec_bc = _spec_g.copy()
-                _spec_bc['branch_id'] = pd.to_numeric(_spec_bc['branch_id'], errors='coerce')
-                for c in _bnk_cols + _obch_cols + _spec_cols_g:
-                    if c in _spec_bc.columns:
-                        _spec_bc[c] = pd.to_numeric(_spec_bc[c], errors='coerce').fillna(0)
+                for c in _bnk_cols:
+                    _spec_bc[c] = pd.to_numeric(_spec_bc[c], errors='coerce').fillna(0)
                 _spec_bc['BANKERS_COUNT'] = _spec_bc[_bnk_cols].sum(axis=1)
-                _spec_bc['OBCHODNI_FTE']  = _spec_bc[_obch_cols].sum(axis=1) if _obch_cols else 0
-                _spec_bc['_total_spec']   = _spec_bc[_spec_cols_g].apply(
-                    pd.to_numeric, errors='coerce').fillna(0).sum(axis=1)
-                _spec_agg = _spec_bc[['branch_id', 'BANKERS_COUNT', 'OBCHODNI_FTE', '_total_spec']].rename(
-                    columns={'branch_id': 'BRANCH_CODE'})
-                rating_status['BRANCH_CODE'] = pd.to_numeric(
-                    rating_status['BRANCH_CODE'], errors='coerce')
-                _spec_agg['BRANCH_CODE'] = pd.to_numeric(
-                    _spec_agg['BRANCH_CODE'], errors='coerce')
-                rating_status = rating_status.merge(_spec_agg, on='BRANCH_CODE', how='left')
-                rating_status['BANKERS_COUNT'] = rating_status['BANKERS_COUNT'].fillna(0).astype(int)
-                rating_status['OBCHODNI_FTE']  = rating_status['OBCHODNI_FTE'].fillna(0).astype(int)
-                rating_status['_total_spec']   = rating_status['_total_spec'].fillna(0).astype(int)
+            else:
+                _spec_bc['BANKERS_COUNT'] = 0
+            # Obchodní FTE (interní, pro výpočet BRANCH_FORMAT_OBCHODNI)
+            _spec_bc['OBCHODNI_FTE'] = _spec_bc[_obch_cols].sum(axis=1) if _obch_cols else 0
 
-                # Potřeba bankéřů — stejná metodika jako simulace 250 poboček:
-                # actual = fyzické + online schůzky + 30% bezhot × (20/45) equiv
-                # needed = ceil(actual / (5 sch/den × 248 dní))
-                _BANKER_CAP   = 5 * 248          # 1240 schůzek/bankéř/rok
-                _BEZHOT_RATE  = 0.30
-                _BEZHOT_EQUIV = 20 / 45
+            _spec_agg = _spec_bc[['branch_id', 'BANKERS_COUNT', 'OBCHODNI_FTE', '_total_spec']].rename(
+                columns={'branch_id': 'BRANCH_CODE'})
+            rating_status['BRANCH_CODE'] = pd.to_numeric(
+                rating_status['BRANCH_CODE'], errors='coerce')
+            _spec_agg['BRANCH_CODE'] = pd.to_numeric(
+                _spec_agg['BRANCH_CODE'], errors='coerce')
+            rating_status = rating_status.merge(_spec_agg, on='BRANCH_CODE', how='left')
+            rating_status['BANKERS_COUNT'] = rating_status['BANKERS_COUNT'].fillna(0).astype(int)
+            rating_status['OBCHODNI_FTE']  = rating_status['OBCHODNI_FTE'].fillna(0).astype(int)
+            rating_status['_total_spec']   = rating_status['_total_spec'].fillna(0).astype(int)
 
-                def _to_num(col):
-                    return pd.to_numeric(
-                        rating_status.get(col, pd.Series(0, index=rating_status.index)),
-                        errors='coerce'
-                    ).fillna(0)
+            # Potřeba bankéřů — stejná metodika jako simulace 250 poboček:
+            _BANKER_CAP   = 5 * 248
+            _BEZHOT_RATE  = 0.30
+            _BEZHOT_EQUIV = 20 / 45
 
-                _sch_fyz  = _to_num('POCET_SCHUZEK_FYZICKY')
-                _sch_onl  = _to_num('POCET_SCHUZEK_ONLINE')
-                _bezhot   = _to_num('POCET_BEZHOT_WALK_IN')
+            def _to_num(col):
+                return pd.to_numeric(
+                    rating_status.get(col, pd.Series(0, index=rating_status.index)),
+                    errors='coerce'
+                ).fillna(0)
 
-                _actual_sch = (
-                    _sch_fyz
-                    + _sch_onl
-                    + _bezhot * _BEZHOT_RATE * _BEZHOT_EQUIV
-                )
+            _actual_sch = (
+                _to_num('POCET_SCHUZEK_FYZICKY')
+                + _to_num('POCET_SCHUZEK_ONLINE')
+                + _to_num('POCET_BEZHOT_WALK_IN') * _BEZHOT_RATE * _BEZHOT_EQUIV
+            )
+            rating_status['BANKERS_NEEDED'] = np.ceil(
+                _actual_sch / _BANKER_CAP
+            ).astype(int)
 
-                rating_status['BANKERS_NEEDED'] = np.ceil(
-                    _actual_sch / _BANKER_CAP
-                ).astype(int)
+            _diff = rating_status['BANKERS_NEEDED'] - rating_status['BANKERS_COUNT']
+            def _banker_diff_html(d):
+                if d > 0:
+                    return (f"<span style='color:#eb4d79;font-weight:700;'>▲ +{int(d)}</span>")
+                elif d < 0:
+                    return (f"<span style='color:#0bb440;font-weight:700;'>▼ {int(d)}</span>")
+                return "<span style='color:#aaa;'>=</span>"
+            rating_status['BANKERS_DIFF_HTML'] = _diff.apply(_banker_diff_html)
 
-                _diff = rating_status['BANKERS_NEEDED'] - rating_status['BANKERS_COUNT']
-                def _banker_diff_html(d):
-                    if d > 0:
-                        return (f"<span style='color:#eb4d79;font-weight:700;'>▲ +{int(d)}</span>")
-                    elif d < 0:
-                        return (f"<span style='color:#0bb440;font-weight:700;'>▼ {int(d)}</span>")
-                    return "<span style='color:#aaa;'>=</span>"
-                rating_status['BANKERS_DIFF_HTML'] = _diff.apply(_banker_diff_html)
+            # Per-bankéř návštěvnost (odvozené sloupce)
+            _bnk_cnt = pd.to_numeric(rating_status['BANKERS_COUNT'], errors='coerce').replace(0, np.nan)
+            for _vc, _vc_out in [
+                ('POCET_NAVSTEV_CELKEM',  'NAVSTEV_NA_BANKERE'),
+                ('POCET_SCHUZEK_ONLINE',  'SCHUZEK_ONLINE_NA_BANKERE'),
+                ('POCET_SCHUZEK_FYZICKY', 'SCHUZEK_FYZICKE_NA_BANKERE'),
+                ('POCET_BEZHOT_WALK_IN',  'BEZHOT_WALKIN_NA_BANKERE'),
+                ('POCET_HOT_WALK_IN',     'HOT_WALKIN_NA_BANKERE'),
+            ]:
+                if _vc in rating_status.columns:
+                    _val = pd.to_numeric(rating_status[_vc], errors='coerce').fillna(0)
+                    rating_status[_vc_out] = (_val / _bnk_cnt).round(1)
 
-                # Per-bankéř návštěvnost (odvozené sloupce)
-                _bnk_cnt = pd.to_numeric(rating_status['BANKERS_COUNT'], errors='coerce').replace(0, np.nan)
-                for _vc, _vc_out in [
-                    ('POCET_NAVSTEV_CELKEM',  'NAVSTEV_NA_BANKERE'),
-                    ('POCET_SCHUZEK_ONLINE',  'SCHUZEK_ONLINE_NA_BANKERE'),
-                    ('POCET_SCHUZEK_FYZICKY', 'SCHUZEK_FYZICKE_NA_BANKERE'),
-                    ('POCET_BEZHOT_WALK_IN',  'BEZHOT_WALKIN_NA_BANKERE'),
-                    ('POCET_HOT_WALK_IN',     'HOT_WALKIN_NA_BANKERE'),
-                ]:
-                    if _vc in rating_status.columns:
-                        _val = pd.to_numeric(rating_status[_vc], errors='coerce').fillna(0)
-                        rating_status[_vc_out] = (_val / _bnk_cnt).round(1)
-
-                # Formát pobočky dle obchodních FTE (stejná pravidla jako celkové FTE)
-                rating_status['BRANCH_FORMAT_OBCHODNI'] = rating_status['OBCHODNI_FTE'].apply(_calc_format)
+            # Formát pobočky dle obchodních FTE
+            rating_status['BRANCH_FORMAT_OBCHODNI'] = rating_status['OBCHODNI_FTE'].apply(_calc_format)
     except Exception as _be:
         pass
 
@@ -7215,8 +7219,8 @@ def write_excel_sheet(ws, df_excel, freeze="D2"):
     Q_COLS_STATIC = {
         "C/I kvintil", "Nové výnosy kvintil", "Nájemné kvintil",
         "Rating 25 kvintil", "Cash rating kvintil", "Business rating kvintil",
-        "Výnos/FTE kvintil", "Noví klienti/FTE kvintil",
-        "Prim. klienti/FTE kvintil", "Schůzky/FTE kvintil", "PEREX kvintil",
+        "Výnos/bankéř kvintil", "Noví klienti/bankéř kvintil",
+        "Prim. klienti/bankéř kvintil", "Schůzky/bankéř kvintil", "PEREX kvintil",
         "Index expozice kvintil",
     }
     # Produktové kvintily — všechny sloupce co končí " kvintil"
