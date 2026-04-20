@@ -6626,6 +6626,12 @@ def prepare_rating_status(df):
                 rating_status['BRANCH_CODE'], errors='coerce')
             _spec_agg['BRANCH_CODE'] = pd.to_numeric(
                 _spec_agg['BRANCH_CODE'], errors='coerce')
+            # Drop any pre-existing versions to prevent _x/_y suffix on merge
+            rating_status = rating_status.drop(
+                columns=[c for c in ['BANKERS_COUNT', 'OBCHODNI_FTE', '_total_spec']
+                         if c in rating_status.columns],
+                errors='ignore'
+            )
             rating_status = rating_status.merge(_spec_agg, on='BRANCH_CODE', how='left')
             rating_status['BANKERS_COUNT'] = rating_status['BANKERS_COUNT'].fillna(0).astype(int)
             rating_status['OBCHODNI_FTE']  = rating_status['OBCHODNI_FTE'].fillna(0).astype(int)
