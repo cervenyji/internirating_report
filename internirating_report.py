@@ -886,7 +886,7 @@ def compute_capacity_rating(df: pd.DataFrame) -> pd.DataFrame:
     """
     d = df.copy()
 
-    required = ['BANKERS_COUNT', 'OBJEM_VYNOSU_CZK', 'OSOBNI_NAKLADY', 'PRIMARNI_KLIENTI',
+    required = ['FTE', 'OBJEM_VYNOSU_CZK', 'OSOBNI_NAKLADY', 'PRIMARNI_KLIENTI',
                 'POCET_SCHUZEK_FYZICKY', 'POCET_SCHUZEK_ONLINE', 'NR_NEW_ARRIVALS']
     missing = [c for c in required if c not in d.columns]
     if missing:
@@ -897,11 +897,17 @@ def compute_capacity_rating(df: pd.DataFrame) -> pd.DataFrame:
 
     # OSOBNI_NAKLADY jsou záporné (účetní konvence) — pracujeme s absolutní hodnotou
     d['_OSOBNI_NAKLADY_ABS'] = d['OSOBNI_NAKLADY'].abs()
-    d['BANKERS_COUNT'] = pd.to_numeric(d['BANKERS_COUNT'], errors='coerce')
 
-    # Maska: pobočky s BANKERS_COUNT > 0, nenulovými výnosy a nenulovými náklady
+    # Dělitel: BANKERS_COUNT kde > 0, jinak FTE (fallback pro pobočky bez dat o bankéřích)
+    if 'BANKERS_COUNT' in d.columns:
+        _bnk = pd.to_numeric(d['BANKERS_COUNT'], errors='coerce').fillna(0)
+        _divisor = _bnk.where(_bnk > 0, pd.to_numeric(d['FTE'], errors='coerce'))
+    else:
+        _divisor = pd.to_numeric(d['FTE'], errors='coerce')
+
+    # Maska: dělitel > 0, nenulové výnosy a náklady
     mask = (
-        (d['BANKERS_COUNT'].notna()) & (d['BANKERS_COUNT'] > 0) &
+        (_divisor.notna()) & (_divisor > 0) &
         (d['OBJEM_VYNOSU_CZK'].notna()) & (d['OBJEM_VYNOSU_CZK'] > 0) &
         (d['_OSOBNI_NAKLADY_ABS'].notna()) & (d['_OSOBNI_NAKLADY_ABS'] > 0)
     )
@@ -911,18 +917,16 @@ def compute_capacity_rating(df: pd.DataFrame) -> pd.DataFrame:
             d[col] = np.nan if col != 'CAP_Q_HTML' else ''
         return d
 
-    bankers = d.loc[mask, 'BANKERS_COUNT']
+    bankers = _divisor.loc[mask]
 
-    # ── Dílčí metriky na počet bankéřů ───────────────────────────────
+    # ── Dílčí metriky na počet bankéřů (nebo FTE kde bankéři chybí) ──
     rev_fte      = d.loc[mask, 'OBJEM_VYNOSU_CZK'] / bankers           # výnos na bankéře
     new_cli_fte  = d.loc[mask, 'NR_NEW_ARRIVALS'].fillna(0) / bankers   # nových klientů na bankéře
     prim_cli_fte = d.loc[mask, 'PRIMARNI_KLIENTI'].fillna(0) / bankers  # primárních klientů na bankéře
     schuzky_fte  = (d.loc[mask, 'POCET_SCHUZEK_FYZICKY'].fillna(0) +
                     d.loc[mask, 'POCET_SCHUZEK_ONLINE'].fillna(0)) / bankers  # schůzky na bankéře
 
-    # PEREX = (osobní náklady / bankéř) / (nové výnosy / bankéř)
-    # = osobní náklady / nové výnosy  — bankéř se zkrátí
-    # OSOBNI_NAKLADY jsou záporné (účetní konvence) → abs()
+    # PEREX = (osobní náklady / bankéř) / (nové výnosy / bankéř) = náklady / výnosy
     # Nižší = lepší (méně nákladů na každou Kč výnosu)
     perex = (d.loc[mask, '_OSOBNI_NAKLADY_ABS'] / bankers) / rev_fte
 
