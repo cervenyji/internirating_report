@@ -6593,11 +6593,12 @@ def prepare_rating_status(df):
         _spec_g = globals().get('df_specialiste')
         _spec_cols_g = globals().get('SPEC_POZICE_COLS', [])
         if _spec_g is not None and not _spec_g.empty:
-            _bnk_cols = [c for c in _spec_cols_g
-                         if c.lower().strip() in _BANKER_POSITIONS]
+            _BNK_EXACT = {'OSOBNI_BANKER_-_JUNIOR', 'OSOBNI_BANKER_-_MEDIOR', 'OSOBNI_BANKER_-_SENIOR'}
+            _bnk_cols = [c for c in _spec_g.columns if c.upper() in _BNK_EXACT]
             if not _bnk_cols:
                 _bnk_cols = [c for c in _spec_cols_g
-                             if 'osobni_banker_-_' in c.lower() or 'osobní bankéř -' in c.lower()]
+                             if c.lower().strip() in _BANKER_POSITIONS
+                             or 'osobni_banker_-_' in c.lower() or 'osobní bankéř -' in c.lower()]
             # Obchodní FTE sloupce
             _obch_cols = [c for c in _spec_cols_g
                           if c.lower().strip() in _OBCHODNI_POSITIONS]
@@ -11170,10 +11171,18 @@ display(HTML(f"""
 
 try:
     df_specialiste = pd.read_pickle("export_specialiste.pkl")
+    # Normalize id column names to lowercase so merge always works
+    _col_renames = {}
+    for _oc, _nc in [('BRANCH_ID','branch_id'), ('BRANCH_NAME','branch_name'),
+                     ('GPS_X','gps_x'), ('GPS_Y','gps_y'),
+                     ('EVIDENCNI_STAV','evidencni_stav'), ('Evidenční stav','evidencni_stav')]:
+        if _oc in df_specialiste.columns:
+            _col_renames[_oc] = _nc
+    if _col_renames:
+        df_specialiste = df_specialiste.rename(columns=_col_renames)
     # Pozicové sloupce = vše kromě identifikátorů
-    _spec_id_cols = {"branch_id", "branch_name", "gps_x", "gps_y", "Evidenční stav"}
+    _spec_id_cols = {"branch_id", "branch_name", "gps_x", "gps_y", "evidencni_stav"}
     SPEC_POZICE_COLS = [c for c in df_specialiste.columns if c not in _spec_id_cols]
-    # Normalizujeme branch_id na int pro merge
     df_specialiste["branch_id"] = pd.to_numeric(df_specialiste["branch_id"], errors="coerce")
     print(f"✅ Specialisté načteni: {len(df_specialiste)} poboček, {len(SPEC_POZICE_COLS)} pozic")
 except Exception as _e:
@@ -11183,13 +11192,16 @@ except Exception as _e:
 
 # Business rating: compute BANKERS_COUNT (OSOBNI_BANKER_-_JUNIOR/MEDIOR/SENIOR) into df,
 # fallback to FTE where count is 0.  Must run here — after df_specialiste is loaded.
-_ob_positions = {
+_BANKER_EXACT = {'OSOBNI_BANKER_-_JUNIOR', 'OSOBNI_BANKER_-_MEDIOR', 'OSOBNI_BANKER_-_SENIOR'}
+_ob_positions_lc = {
     "osobní bankéř - junior", "osobní bankéř - medior", "osobní bankéř - senior",
     "osobni_banker_-_junior", "osobni_banker_-_medior", "osobni_banker_-_senior",
 }
 if df_specialiste is not None and not df_specialiste.empty:
-    _ob_cols = [c for c in SPEC_POZICE_COLS
-                if c.lower().strip() in _ob_positions or 'osobni_banker_-_' in c.lower()]
+    _ob_cols = [c for c in df_specialiste.columns if c.upper() in _BANKER_EXACT]
+    if not _ob_cols:
+        _ob_cols = [c for c in SPEC_POZICE_COLS
+                    if c.lower().strip() in _ob_positions_lc or 'osobni_banker_-_' in c.lower()]
     if _ob_cols:
         _stmp = df_specialiste.copy()
         _stmp['branch_id'] = pd.to_numeric(_stmp['branch_id'], errors='coerce')
