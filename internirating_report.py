@@ -365,14 +365,14 @@ NOVE_NAZVY = {
     "REV_CHANGE_HTML":                   "Změna nových výnosů 25/24",
 
     # ── 📈 Business rating ────────────────────────────────────────
-    "CAP_REV_FTE":           "Výnos/FTE",
-    "CAP_REV_FTE_Q_HTML":    "Výnos/FTE kvintil",
-    "CAP_NEWCLI_FTE":        "Noví klienti/FTE",
-    "CAP_NEWCLI_FTE_Q_HTML": "Noví klienti/FTE kvintil",
-    "CAP_PRIMCLI_FTE":       "Primární klienti/FTE",
-    "CAP_PRIMCLI_FTE_Q_HTML":"Prim. klienti/FTE kvintil",
-    "CAP_SCHUZKY_FTE":       "Schůzky/FTE",
-    "CAP_SCHUZKY_FTE_Q_HTML":"Schůzky/FTE kvintil",
+    "CAP_REV_FTE":           "Výnos/bankéř",
+    "CAP_REV_FTE_Q_HTML":    "Výnos/bankéř kvintil",
+    "CAP_NEWCLI_FTE":        "Noví klienti/bankéř",
+    "CAP_NEWCLI_FTE_Q_HTML": "Noví klienti/bankéř kvintil",
+    "CAP_PRIMCLI_FTE":       "Primární klienti/bankéř",
+    "CAP_PRIMCLI_FTE_Q_HTML":"Prim. klienti/bankéř kvintil",
+    "CAP_SCHUZKY_FTE":       "Schůzky/bankéř",
+    "CAP_SCHUZKY_FTE_Q_HTML":"Schůzky/bankéř kvintil",
     "CAP_PEREX":             "PEREX",
     "CAP_PEREX_Q_HTML":      "PEREX kvintil",
     "CAP_RNK":               "Business pořadí",
@@ -411,6 +411,12 @@ NOVE_NAZVY = {
     "POCET_BEZHOT_WALK_IN":  "Bezhot. walkin",
     "POCET_HOT_WALK_IN":     "Hot. walkin",
     "POCET_NAVSTEV_CELKEM":  "Celkové návštěvy",
+    # Per-bankéř odvozené sloupce
+    "NAVSTEV_NA_BANKERE":       "Návštěvy/bankéř",
+    "SCHUZEK_ONLINE_NA_BANKERE":"Online schůzky/bankéř",
+    "SCHUZEK_FYZICKE_NA_BANKERE":"Fyzické schůzky/bankéř",
+    "BEZHOT_WALKIN_NA_BANKERE": "Bezhot. walkin/bankéř",
+    "HOT_WALKIN_NA_BANKERE":    "Hot. walkin/bankéř",
     "NAVSTEVY_RATIO_HTML":   "Poměr návštěv",
 
     # ── 🗺️ Strategie BNS ─────────────────────────────────────────
@@ -880,7 +886,7 @@ def compute_capacity_rating(df: pd.DataFrame) -> pd.DataFrame:
     """
     d = df.copy()
 
-    required = ['FTE', 'OBJEM_VYNOSU_CZK', 'OSOBNI_NAKLADY', 'PRIMARNI_KLIENTI',
+    required = ['BANKERS_COUNT', 'OBJEM_VYNOSU_CZK', 'OSOBNI_NAKLADY', 'PRIMARNI_KLIENTI',
                 'POCET_SCHUZEK_FYZICKY', 'POCET_SCHUZEK_ONLINE', 'NR_NEW_ARRIVALS']
     missing = [c for c in required if c not in d.columns]
     if missing:
@@ -891,10 +897,11 @@ def compute_capacity_rating(df: pd.DataFrame) -> pd.DataFrame:
 
     # OSOBNI_NAKLADY jsou záporné (účetní konvence) — pracujeme s absolutní hodnotou
     d['_OSOBNI_NAKLADY_ABS'] = d['OSOBNI_NAKLADY'].abs()
+    d['BANKERS_COUNT'] = pd.to_numeric(d['BANKERS_COUNT'], errors='coerce')
 
-    # Maska: pobočky s FTE > 0, nenulovými výnosy a nenulovými náklady
+    # Maska: pobočky s BANKERS_COUNT > 0, nenulovými výnosy a nenulovými náklady
     mask = (
-        (d['FTE'].notna()) & (d['FTE'] > 0) &
+        (d['BANKERS_COUNT'].notna()) & (d['BANKERS_COUNT'] > 0) &
         (d['OBJEM_VYNOSU_CZK'].notna()) & (d['OBJEM_VYNOSU_CZK'] > 0) &
         (d['_OSOBNI_NAKLADY_ABS'].notna()) & (d['_OSOBNI_NAKLADY_ABS'] > 0)
     )
@@ -904,20 +911,20 @@ def compute_capacity_rating(df: pd.DataFrame) -> pd.DataFrame:
             d[col] = np.nan if col != 'CAP_Q_HTML' else ''
         return d
 
-    fte  = d.loc[mask, 'FTE']
+    bankers = d.loc[mask, 'BANKERS_COUNT']
 
-    # ── Dílčí metriky na FTE ──────────────────────────────────────────
-    rev_fte      = d.loc[mask, 'OBJEM_VYNOSU_CZK'] / fte           # výnos na FTE
-    new_cli_fte  = d.loc[mask, 'NR_NEW_ARRIVALS'].fillna(0) / fte   # nových klientů na FTE
-    prim_cli_fte = d.loc[mask, 'PRIMARNI_KLIENTI'].fillna(0) / fte  # primárních klientů na FTE
+    # ── Dílčí metriky na počet bankéřů ───────────────────────────────
+    rev_fte      = d.loc[mask, 'OBJEM_VYNOSU_CZK'] / bankers           # výnos na bankéře
+    new_cli_fte  = d.loc[mask, 'NR_NEW_ARRIVALS'].fillna(0) / bankers   # nových klientů na bankéře
+    prim_cli_fte = d.loc[mask, 'PRIMARNI_KLIENTI'].fillna(0) / bankers  # primárních klientů na bankéře
     schuzky_fte  = (d.loc[mask, 'POCET_SCHUZEK_FYZICKY'].fillna(0) +
-                    d.loc[mask, 'POCET_SCHUZEK_ONLINE'].fillna(0)) / fte  # schůzky na FTE
+                    d.loc[mask, 'POCET_SCHUZEK_ONLINE'].fillna(0)) / bankers  # schůzky na bankéře
 
-    # PEREX = (osobní náklady / FTE) / (nové výnosy / FTE)
-    # = osobní náklady / nové výnosy  — FTE se zkrátí
+    # PEREX = (osobní náklady / bankéř) / (nové výnosy / bankéř)
+    # = osobní náklady / nové výnosy  — bankéř se zkrátí
     # OSOBNI_NAKLADY jsou záporné (účetní konvence) → abs()
     # Nižší = lepší (méně nákladů na každou Kč výnosu)
-    perex = (d.loc[mask, '_OSOBNI_NAKLADY_ABS'] / fte) / rev_fte
+    perex = (d.loc[mask, '_OSOBNI_NAKLADY_ABS'] / bankers) / rev_fte
 
     # ── Ranky každé složky ────────────────────────────────────────────
     # U všech metrik vyšší = lepší → ascending=False → rank 1 = nejvyšší hodnota
@@ -945,9 +952,9 @@ def compute_capacity_rating(df: pd.DataFrame) -> pd.DataFrame:
     d.loc[mask, 'CAP_PEREX']        = perex.round(4)
 
     # ── Kvintily dílčích parametrů (Q1 = nejlepší) ───────────────────
-    def _q_asc(series):   # vyšší = lepší
-        return 6 - (pd.qcut(series.rank(ascending=False, method='first'), q=5, labels=False, duplicates='drop') + 1)
-    def _q_desc(series):  # nižší = lepší (PEREX)
+    def _q_asc(series):   # vyšší = lepší → Q1 = top 20 %
+        return pd.qcut(series.rank(ascending=False, method='first'), q=5, labels=False, duplicates='drop') + 1
+    def _q_desc(series):  # nižší = lepší (PEREX) → Q1 = top 20 %
         return pd.qcut(series.rank(ascending=True, method='first'), q=5, labels=False, duplicates='drop') + 1
 
     d.loc[mask, 'CAP_REV_FTE_Q']     = _q_asc(rev_fte)
@@ -6479,10 +6486,10 @@ def prepare_rating_status(df):
 
     # Business rating — dílčí kvintil HTML tečky
     _cap_q_map = {
-        'CAP_REV_FTE_Q':     'Výnos/FTE kvintil',
-        'CAP_NEWCLI_FTE_Q':  'Noví klienti/FTE kvintil',
-        'CAP_PRIMCLI_FTE_Q': 'Prim. klienti/FTE kvintil',
-        'CAP_SCHUZKY_FTE_Q': 'Schůzky/FTE kvintil',
+        'CAP_REV_FTE_Q':     'Výnos/bankéř kvintil',
+        'CAP_NEWCLI_FTE_Q':  'Noví klienti/bankéř kvintil',
+        'CAP_PRIMCLI_FTE_Q': 'Prim. klienti/bankéř kvintil',
+        'CAP_SCHUZKY_FTE_Q': 'Schůzky/bankéř kvintil',
         'CAP_PEREX_Q':       'PEREX kvintil',
     }
     for _qcol, _tip in _cap_q_map.items():
@@ -6645,6 +6652,19 @@ def prepare_rating_status(df):
                         return (f"<span style='color:#0bb440;font-weight:700;'>▼ {int(d)}</span>")
                     return "<span style='color:#aaa;'>=</span>"
                 rating_status['BANKERS_DIFF_HTML'] = _diff.apply(_banker_diff_html)
+
+                # Per-bankéř návštěvnost (odvozené sloupce)
+                _bnk_cnt = pd.to_numeric(rating_status['BANKERS_COUNT'], errors='coerce').replace(0, np.nan)
+                for _vc, _vc_out in [
+                    ('POCET_NAVSTEV_CELKEM',  'NAVSTEV_NA_BANKERE'),
+                    ('POCET_SCHUZEK_ONLINE',  'SCHUZEK_ONLINE_NA_BANKERE'),
+                    ('POCET_SCHUZEK_FYZICKY', 'SCHUZEK_FYZICKE_NA_BANKERE'),
+                    ('POCET_BEZHOT_WALK_IN',  'BEZHOT_WALKIN_NA_BANKERE'),
+                    ('POCET_HOT_WALK_IN',     'HOT_WALKIN_NA_BANKERE'),
+                ]:
+                    if _vc in rating_status.columns:
+                        _val = pd.to_numeric(rating_status[_vc], errors='coerce').fillna(0)
+                        rating_status[_vc_out] = (_val / _bnk_cnt).round(1)
 
                 # Formát pobočky dle obchodních FTE (stejná pravidla jako celkové FTE)
                 rating_status['BRANCH_FORMAT_OBCHODNI'] = rating_status['OBCHODNI_FTE'].apply(_calc_format)
@@ -7282,17 +7302,22 @@ COL_GROUPS = [
                                 "Trend výnosů 21–25",
                                 "Nové výnosy 24", "Nové výnosy 25", "Nové výnosy kvintil", "Změna nových výnosů 25/24"], "#d4f5e0"),
     ("📈 Business rating",     [
-        "Výnos/FTE", "Výnos/FTE kvintil",
-        "Noví klienti/FTE", "Noví klienti/FTE kvintil",
-        "Primární klienti/FTE", "Prim. klienti/FTE kvintil",
-        "Schůzky/FTE", "Schůzky/FTE kvintil",
+        "Výnos/bankéř", "Výnos/bankéř kvintil",
+        "Noví klienti/bankéř", "Noví klienti/bankéř kvintil",
+        "Primární klienti/bankéř", "Prim. klienti/bankéř kvintil",
+        "Schůzky/bankéř", "Schůzky/bankéř kvintil",
         "PEREX", "PEREX kvintil",
         "Business pořadí", "Business rating kvintil",
     ], "#f3e5f5"),
     ("🏦 Hotovostní rating",   ["Cash rating pořadí", "Vypočítaná strategie", "Cash rating kvintil", "Trn. počet celkem", "Trn. objem celkem", "Denní trn. průměr"], "#e3f2fd"),
     ("🏠 Nájemné",             ["Vlastnictví", "Roční nájemné", "Nájemné kvintil", "Začátek smlouvy", "Konec smlouvy", "Výpovědní lhůta"], "#eeddf7"),
     ("🔨 Investice",           ["Poslední investice", "Datum posl. inv.", "Výše posl. inv.", "Nejvyšší investice", "Datum nejv. inv.", "Výše nejv. inv.", "Celkem zainvestováno"], "#fce8d8"),
-    ("🚶 Návštěvy",            ["Poměr návštěv", "Online schůzky", "Fyzické schůzky", "Bezhot. walkin", "Hot. walkin", "Celkové návštěvy"], "#fad8e0"),
+    ("🚶 Návštěvy",            [
+        "Poměr návštěv",
+        "Online schůzky", "Fyzické schůzky", "Bezhot. walkin", "Hot. walkin", "Celkové návštěvy",
+        "Návštěvy/bankéř", "Online schůzky/bankéř", "Fyzické schůzky/bankéř",
+        "Bezhot. walkin/bankéř", "Hot. walkin/bankéř",
+    ], "#fad8e0"),
     ("🗺️ Strategie BNS",      ["Strategie BNS", "Rok uzavření", "Status uzavření", "Rok investice", "Rok FHC investice", "Rok plánované investice"], "#faf0cc"),
     ("💵 Strategie hotovosti", ["Rok cashless přechodu", "Status cashless", "Bezhotovostní", "Datum bezhotovostní"], "#e8f5e9"),
     ("📐 Alokační report",     [
@@ -7320,10 +7345,10 @@ COL_GROUPS = [
         "C/I kvintil",
         "Nové výnosy kvintil",
         "Business rating kvintil",
-        "Výnos/FTE kvintil",
-        "Noví klienti/FTE kvintil",
-        "Prim. klienti/FTE kvintil",
-        "Schůzky/FTE kvintil",
+        "Výnos/bankéř kvintil",
+        "Noví klienti/bankéř kvintil",
+        "Prim. klienti/bankéř kvintil",
+        "Schůzky/bankéř kvintil",
         "PEREX kvintil",
         "Cash rating kvintil",
         "Nájemné kvintil",
@@ -7855,6 +7880,8 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
         "FTE","OBCHODNI_FTE","BANKERS_COUNT","BANKERS_NEEDED",
         "POCET_SCHUZEK_ONLINE","POCET_SCHUZEK_FYZICKY","POCET_BEZHOT_WALK_IN",
         "POCET_HOT_WALK_IN","POCET_NAVSTEV_CELKEM",
+        "NAVSTEV_NA_BANKERE","SCHUZEK_ONLINE_NA_BANKERE","SCHUZEK_FYZICKE_NA_BANKERE",
+        "BEZHOT_WALKIN_NA_BANKERE","HOT_WALKIN_NA_BANKERE",
         "TRN_POCET_CELKEM","TRN_CASTKA_CELKEM",
         "CASH_IN_PREVODITELNA_CASTKA","CASH_IN_NEPREVODITELNA_CASTKA",
         "CASH_OUT_PREVODITELNA_CASTKA","CASH_OUT_NEPREVODITELNA_CASTKA",
@@ -7870,6 +7897,8 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
         "C/I_RATIO_(YTD_2024)","PRIME_NAKLADY/VYNOSY",
         "CAP_REV_FTE","CAP_NEWCLI_FTE","CAP_PRIMCLI_FTE","CAP_SCHUZKY_FTE","CAP_PEREX",
         "PRIM_RATIO","AKTIVNI_RATIO","CASH_PREVODITELNOST_PCT","TRN_DENNI_POCET",
+        "NAVSTEV_NA_BANKERE","SCHUZEK_ONLINE_NA_BANKERE","SCHUZEK_FYZICKE_NA_BANKERE",
+        "BEZHOT_WALKIN_NA_BANKERE","HOT_WALKIN_NA_BANKERE",
     ]
     _MONEY_TECH = {
         "REVENUES_2021","REVENUES_2022","REVENUES_2023","REVENUES_2024","VYNOSY",
