@@ -4082,8 +4082,8 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
     import math as _math
 
     BANKER_POSITIONS = [
-        "osobní bankéř - junior", "osobní bankéř - medior",
-        "osobní bankéř - senior", "osobní bankéř - master",
+        "osobní bankéř - junior", "osobní bankéř - medior", "osobní bankéř - senior",
+        "osobni_banker_-_junior", "osobni_banker_-_medior", "osobni_banker_-_senior",
     ]
     # Kapacita formátu: kolik % navíc klientů pobočka zvládne
     FORMAT_CAP = {'small': 0.10, 'medium economy': 0.25, 'medium': 0.40, 'flagship': 0.70}
@@ -4450,7 +4450,7 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
     if _spec_g is not None and not _spec_g.empty and _spec_cols:
         _bnk_cols = [c for c in _spec_cols if c.lower().strip() in BANKER_POSITIONS]
         if not _bnk_cols:
-            _bnk_cols = [c for c in _spec_cols if 'bankéř' in c.lower()]
+            _bnk_cols = [c for c in _spec_cols if 'osobni_banker_-_' in c.lower() or 'osobní bankéř -' in c.lower()]
         _sg = _spec_g.copy()
         _sg['branch_id'] = pd.to_numeric(_sg['branch_id'], errors='coerce')
         for c in _bnk_cols + _spec_cols:
@@ -6555,10 +6555,8 @@ def prepare_rating_status(df):
 
     # ── Počet bankéřů ze specialistů ──────────────────────────────
     _BANKER_POSITIONS = [
-        "osobní bankéř - junior",
-        "osobní bankéř - medior",
-        "osobní bankéř - senior",
-        "osobní bankéř - master",
+        "osobní bankéř - junior", "osobní bankéř - medior", "osobní bankéř - senior",
+        "osobni_banker_-_junior", "osobni_banker_-_medior", "osobni_banker_-_senior",
     ]
     # Obchodní pozice pro výpočet Obchodního FTE
     _OBCHODNI_POSITIONS = [
@@ -6597,6 +6595,9 @@ def prepare_rating_status(df):
         if _spec_g is not None and not _spec_g.empty:
             _bnk_cols = [c for c in _spec_cols_g
                          if c.lower().strip() in _BANKER_POSITIONS]
+            if not _bnk_cols:
+                _bnk_cols = [c for c in _spec_cols_g
+                             if 'osobni_banker_-_' in c.lower() or 'osobní bankéř -' in c.lower()]
             # Obchodní FTE sloupce
             _obch_cols = [c for c in _spec_cols_g
                           if c.lower().strip() in _OBCHODNI_POSITIONS]
