@@ -11122,6 +11122,10 @@ display(HTML(f"""
         OSOBNI_NAKLADY &gt; 0: <b>{_cap_onakl_ok}</b> | NR_NEW_ARRIVALS &gt; 0: <b>{_cap_arr_ok}</b>
     </div>
 """))
+# Merge BANKERS_COUNT into df from rating_status so compute_capacity_rating uses it as divisor
+if 'BANKERS_COUNT' in rating_status.columns and 'BANKERS_COUNT' not in df.columns:
+    _bnk_map = rating_status.set_index('BRANCH_CODE')['BANKERS_COUNT']
+    df['BANKERS_COUNT'] = pd.to_numeric(df['BRANCH_CODE'], errors='coerce').map(_bnk_map).fillna(0).astype(int)
 df = compute_capacity_rating(df)
 cap_ok = (df['CAP_RNK'] > 0).sum() if 'CAP_RNK' in df.columns else 0
 display(HTML(f"""
