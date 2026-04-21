@@ -339,6 +339,7 @@ NOVE_NAZVY = {
     "INTERNI_RATING_2023":   "Rating 23",
     "INTERNI_RATING_2024":   "Rating 24",
     "IR":                    "Rating 25",
+    "IR_SPARKLINE":          "Trend ratingu 23–25",
     "IR_Q_HTML":             "Rating 25 kvintil",
     "IR_CHANGE_HTML":        "Změna ratingu 25/24",
     "IR_PERC_CHANGE_HTML":   "Změna ratingu perc 25/24",
@@ -349,6 +350,7 @@ NOVE_NAZVY = {
     "C/I_RATIO_(YTD_2023)":  "C/I ratio 23",
     "C/I_RATIO_(YTD_2024)":  "C/I ratio 24",
     "PRIME_NAKLADY/VYNOSY":  "C/I ratio 25",
+    "CI_SPARKLINE":          "Trend C/I 21–25",
     "CI_RATIO_STATUS":       "C/I kvintil",
     "CI_CHANGE_HTML":        "Změna C/I 25/24",
 
@@ -472,9 +474,10 @@ NOVE_NAZVY = {
     "SP_PCT_3":    "Spád. podíl 3",
 
     # ── 👷 FTE ────────────────────────────────────────────────────
-    "FTE":          "Celková FTE controlling",
-    "_total_spec":  "Celková FTE redim",
-    "BANKERS_COUNT":"Počet bankéřů redim",
+    "FTE":           "Celková FTE controlling",
+    "_total_spec":   "Celková FTE redim",
+    "BANKERS_COUNT": "Počet bankéřů redim",
+    "OBCHODNI_FTE":  "FTE všechny obchodní pozice redim",
 
     # ── 🛍️ Prodeje (kvintily per produkt + celkový počet) ────────
     "POCET_PRODEJU_CELKEM_2025":         "Prodeje celkem 2025",
@@ -6389,6 +6392,107 @@ def prepare_rating_status(df):
 
         rating_status['KLIENTI_TREND_HTML'] = rating_status.apply(_cli_sparkline, axis=1)
 
+    # ── Trend ratingu 23–25 (sparkline; nižší = lepší → zelená pokud klesá) ──
+    _ir_spark_cols  = ['INTERNI_RATING_2023', 'INTERNI_RATING_2024', 'IR']
+    _ir_spark_avail = [c for c in _ir_spark_cols if c in rating_status.columns]
+    _ir_spark_years = ['23', '24', '25'][:len(_ir_spark_avail)]
+
+    if len(_ir_spark_avail) >= 2:
+        for c in _ir_spark_avail:
+            rating_status[c] = pd.to_numeric(rating_status[c], errors='coerce')
+
+        def _ir_sparkline(row):
+            vals = []
+            for c in _ir_spark_avail:
+                try:
+                    fv = float(row[c])
+                    vals.append(fv if fv > 0 else None)
+                except (TypeError, ValueError):
+                    vals.append(None)
+            pts = [(i, v) for i, v in enumerate(vals) if v is not None]
+            if len(pts) < 2:
+                return '—'
+            max_v = max(v for _, v in pts) or 1
+            min_v = min(v for _, v in pts)
+            rng   = max_v - min_v or max_v * 0.1 or 1
+            W, H, PAD = 90, 28, 3
+            n = len(_ir_spark_avail)
+            def _x(i): return int(i / (n - 1) * (W - PAD * 2)) + PAD
+            def _y(v):  return int((1 - (v - min_v) / rng) * (H - PAD * 2 - 6)) + PAD
+            first_v = pts[0][1]; last_v = pts[-1][1]
+            line_col = '#0bb440' if last_v <= first_v else '#eb4d79'
+            polypts  = ' '.join(f"{_x(i)},{_y(v)}" for i, v in pts)
+            dots = ''.join(
+                f'<circle cx="{_x(i)}" cy="{_y(v)}" r="1.8" fill="{line_col}" opacity="0.7"/>'
+                for i, v in pts[:-1])
+            lx, ly = _x(pts[-1][0]), _y(pts[-1][1])
+            year_labels = ''.join(
+                f'<text x="{_x(i)}" y="{H}" text-anchor="middle" '
+                f'font-size="6" fill="#aaa">{_ir_spark_years[i]}</text>'
+                for i in range(n))
+            return (
+                f'<svg width="{W}" height="{H}" viewBox="0 0 {W} {H}" '
+                f'xmlns="http://www.w3.org/2000/svg" style="display:block;">'
+                f'<polyline points="{polypts}" fill="none" stroke="{line_col}" '
+                f'stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>'
+                f'{dots}'
+                f'<circle cx="{lx}" cy="{ly}" r="2.8" fill="{line_col}"/>'
+                f'{year_labels}</svg>'
+            )
+
+        rating_status['IR_SPARKLINE'] = rating_status.apply(_ir_sparkline, axis=1)
+
+    # ── Trend C/I 21–25 (sparkline; nižší = lepší → zelená pokud klesá) ──
+    _ci_spark_cols  = ['C/I_RATIO_(YTD_2021)', 'C/I_RATIO_(YTD_2022)', 'C/I_RATIO_(YTD_2023)',
+                       'C/I_RATIO_(YTD_2024)', 'PRIME_NAKLADY/VYNOSY']
+    _ci_spark_avail = [c for c in _ci_spark_cols if c in rating_status.columns]
+    _ci_spark_years = ['21', '22', '23', '24', '25'][:len(_ci_spark_avail)]
+
+    if len(_ci_spark_avail) >= 2:
+        for c in _ci_spark_avail:
+            rating_status[c] = pd.to_numeric(rating_status[c], errors='coerce')
+
+        def _ci_sparkline(row):
+            vals = []
+            for c in _ci_spark_avail:
+                try:
+                    fv = float(row[c])
+                    vals.append(fv if fv > 0 else None)
+                except (TypeError, ValueError):
+                    vals.append(None)
+            pts = [(i, v) for i, v in enumerate(vals) if v is not None]
+            if len(pts) < 2:
+                return '—'
+            max_v = max(v for _, v in pts) or 1
+            min_v = min(v for _, v in pts)
+            rng   = max_v - min_v or max_v * 0.1 or 1
+            W, H, PAD = 90, 28, 3
+            n = len(_ci_spark_avail)
+            def _x(i): return int(i / (n - 1) * (W - PAD * 2)) + PAD
+            def _y(v):  return int((1 - (v - min_v) / rng) * (H - PAD * 2 - 6)) + PAD
+            first_v = pts[0][1]; last_v = pts[-1][1]
+            line_col = '#0bb440' if last_v <= first_v else '#eb4d79'
+            polypts  = ' '.join(f"{_x(i)},{_y(v)}" for i, v in pts)
+            dots = ''.join(
+                f'<circle cx="{_x(i)}" cy="{_y(v)}" r="1.8" fill="{line_col}" opacity="0.7"/>'
+                for i, v in pts[:-1])
+            lx, ly = _x(pts[-1][0]), _y(pts[-1][1])
+            year_labels = ''.join(
+                f'<text x="{_x(i)}" y="{H}" text-anchor="middle" '
+                f'font-size="6" fill="#aaa">{_ci_spark_years[i]}</text>'
+                for i in range(n))
+            return (
+                f'<svg width="{W}" height="{H}" viewBox="0 0 {W} {H}" '
+                f'xmlns="http://www.w3.org/2000/svg" style="display:block;">'
+                f'<polyline points="{polypts}" fill="none" stroke="{line_col}" '
+                f'stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>'
+                f'{dots}'
+                f'<circle cx="{lx}" cy="{ly}" r="2.8" fill="{line_col}"/>'
+                f'{year_labels}</svg>'
+            )
+
+        rating_status['CI_SPARKLINE'] = rating_status.apply(_ci_sparkline, axis=1)
+
     # ── Index expozice — kvintil (1=nejhorší, 5=nejlepší; větší = lepší) ──
     _ie_col = 'HODNOTA_INDEXU_EXPOZICE'
     if _ie_col in rating_status.columns:
@@ -6721,8 +6825,8 @@ def _apply_common_formatting(d, cols_to_show):
         d['FTE'] = d['FTE'].apply(
             lambda x: f"{float(x):.1f}" if pd.notna(x) and x not in ('', None, '') and str(x) not in ('nan','') else '—')
 
-    # Bankéři — celá čísla
-    for c in ['BANKERS_COUNT', 'BANKERS_NEEDED', '_total_spec']:
+    # Bankéři a FTE — celá čísla
+    for c in ['BANKERS_COUNT', 'BANKERS_NEEDED', '_total_spec', 'OBCHODNI_FTE']:
         if c in cols_to_show and c in d.columns:
             d[c] = d[c].apply(
                 lambda x: f"{int(x):,}" if pd.notna(x) and str(x) not in ('nan','') and int(float(x if x else 0)) >= 0 else '—')
@@ -6900,7 +7004,6 @@ def _apply_common_formatting(d, cols_to_show):
     # Formát pobočky dle obchodního FTE — barevný badge stejně jako BRANCH_FORMAT
     for _fmt_col in ['BRANCH_FORMAT', 'BRANCH_FORMAT_OBCHODNI']:
         if _fmt_col in cols_to_show and _fmt_col in d.columns:
-            _fmt_display = NOVE_NAZVY.get(_fmt_col, _fmt_col)
             def _fmt_badge(v, col=_fmt_col):
                 s = str(v or '').lower().strip()
                 _colors = {'small': '#f59e0b', 'medium economy': '#fb923c',
@@ -6911,6 +7014,57 @@ def _apply_common_formatting(d, cols_to_show):
                         f'border-radius:5px;padding:1px 7px;font-size:0.72rem;'
                         f'font-weight:600;white-space:nowrap;">{lbl}</span>')
             d[_fmt_col] = d[_fmt_col].apply(_fmt_badge)
+
+    # Realizovaný formát (FORMAT_2024) — stejné barvy jako BRANCH_FORMAT
+    if 'FORMAT_2024_(FIX_FS)' in cols_to_show and 'FORMAT_2024_(FIX_FS)' in d.columns:
+        def _fmt2024_badge(v):
+            s = str(v or '').lower().strip()
+            _colors = {'small': '#f59e0b', 'medium economy': '#fb923c',
+                       'medium': '#2770f0', 'flagship': '#0bb440'}
+            c = _colors.get(s, '#aaa')
+            lbl = s.title() if s else '—'
+            return (f'<span style="background:{c}18;color:{c};border:1px solid {c}44;'
+                    f'border-radius:5px;padding:1px 7px;font-size:0.72rem;'
+                    f'font-weight:600;white-space:nowrap;">{lbl}</span>')
+        d['FORMAT_2024_(FIX_FS)'] = d['FORMAT_2024_(FIX_FS)'].apply(_fmt2024_badge)
+
+    # Typologie pobočky (BRANCH_TYPE_NAME) — barevné badges
+    if 'BRANCH_TYPE_NAME' in cols_to_show and 'BRANCH_TYPE_NAME' in d.columns:
+        _typ_palette = ['#2770f0', '#0bb440', '#f59e0b', '#eb4d79', '#7c3aed',
+                        '#0891b2', '#dc2626', '#059669', '#d97706', '#6366f1']
+        _typ_color_cache = {}
+        def _typ_badge(v):
+            s = str(v or '').strip()
+            if not s or s in ('nan', 'None', '—'):
+                return '—'
+            if s not in _typ_color_cache:
+                idx = len(_typ_color_cache) % len(_typ_palette)
+                _typ_color_cache[s] = _typ_palette[idx]
+            c = _typ_color_cache[s]
+            return (f'<span style="background:{c}18;color:{c};border:1px solid {c}44;'
+                    f'border-radius:5px;padding:1px 7px;font-size:0.72rem;'
+                    f'font-weight:600;white-space:nowrap;">{s}</span>')
+        d['BRANCH_TYPE_NAME'] = d['BRANCH_TYPE_NAME'].apply(_typ_badge)
+
+    # Formát NF/SF (BRANCH_BUILDING_NF_SF) — barevné badges
+    if 'BRANCH_BUILDING_NF_SF' in cols_to_show and 'BRANCH_BUILDING_NF_SF' in d.columns:
+        _nfsf_colors = {
+            'nf':    '#0bb440',
+            'sf':    '#2770f0',
+            'nf/sf': '#7c3aed',
+            'klasika': '#f59e0b',
+        }
+        def _nfsf_badge(v):
+            s = str(v or '').strip()
+            if not s or s in ('nan', 'None', '—'):
+                return '—'
+            key = s.lower().strip()
+            c = _nfsf_colors.get(key, '#888')
+            return (f'<span style="background:{c}18;color:{c};border:1px solid {c}44;'
+                    f'border-radius:5px;padding:1px 7px;font-size:0.72rem;'
+                    f'font-weight:600;white-space:nowrap;">{s}</span>')
+        d['BRANCH_BUILDING_NF_SF'] = d['BRANCH_BUILDING_NF_SF'].apply(_nfsf_badge)
+
     if 'ATM_VOLNA_KAPACITA' in cols_to_show and 'ATM_VOLNA_KAPACITA' in d.columns:
         def _fmt_atm_pct(v):
             try:
@@ -7305,8 +7459,8 @@ COL_GROUPS = [
                                 "Primární klienti", "Aktivní klienti",
                                 "Poměr klientů", "Primární / celkem", "Aktivní / celkem",
                                 "Cizinci celkem", "Cizinci SK", "Cizinci UA"], "#e0f7fa"),
-    ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25", "Rating 25 kvintil", "Změna ratingu 25/24", "Změna ratingu perc 25/24"], "#fff8e1"),
-    ("📊 C/I",                 ["C/I ratio 21", "C/I ratio 22", "C/I ratio 23", "C/I ratio 24", "C/I ratio 25", "C/I kvintil", "Změna C/I 25/24"], "#dceeff"),
+    ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25", "Trend ratingu 23–25", "Rating 25 kvintil", "Změna ratingu 25/24", "Změna ratingu perc 25/24"], "#fff8e1"),
+    ("📊 C/I",                 ["C/I ratio 21", "C/I ratio 22", "C/I ratio 23", "C/I ratio 24", "C/I ratio 25", "Trend C/I 21–25", "C/I kvintil", "Změna C/I 25/24"], "#dceeff"),
     ("💰 Výnosy",              ["Výnosy 21", "Výnosy 22", "Výnosy 23", "Výnosy 24", "Výnosy 25",
                                 "Trend výnosů 21–25",
                                 "Nové výnosy 24", "Nové výnosy 25", "Nové výnosy kvintil", "Změna nových výnosů 25/24"], "#d4f5e0"),
@@ -7348,6 +7502,7 @@ COL_GROUPS = [
     ], "#e8f4fd"),
     ("👷 FTE",               [
         "Celková FTE controlling", "Celková FTE redim", "Počet bankéřů redim",
+        "FTE všechny obchodní pozice redim",
     ], "#e8f0fe"),
     ("🏅 Sdružené ratingy",   [
         "Rating 25 kvintil",
@@ -7885,7 +8040,7 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
         "CIZINCI","CIZINCI_SLOVENSKO","CIZINCI_UKRAJINA",
         "REVENUES_2021","REVENUES_2022","REVENUES_2023","REVENUES_2024","VYNOSY",
         "NEW_BUSINESS_2024_-_OBJEM_VYNOSU","OBJEM_VYNOSU_CZK",
-        "FTE","BANKERS_COUNT","_total_spec",
+        "FTE","BANKERS_COUNT","_total_spec","OBCHODNI_FTE",
         "POCET_SCHUZEK_ONLINE","POCET_SCHUZEK_FYZICKY","POCET_BEZHOT_WALK_IN",
         "POCET_HOT_WALK_IN","POCET_NAVSTEV_CELKEM",
         "NAVSTEV_NA_BANKERE","SCHUZEK_ONLINE_NA_BANKERE","SCHUZEK_FYZICKE_NA_BANKERE",
@@ -8104,6 +8259,14 @@ setTimeout(function() {{
     td.appendChild(cb);
     row.insertBefore(td, row.firstChild);
   }});
+  // Přidej data-bc (branch code) ke každému řádku pro filtrování dle oblasti
+  rows.forEach(function(row) {{
+    var codeCell = row.querySelectorAll("td")[1];
+    if (codeCell) {{
+      var bc = parseInt(codeCell.textContent.trim(), 10);
+      if (!isNaN(bc)) row.setAttribute("data-bc", bc);
+    }}
+  }});
 
   var headerCells = Array.from(theadRow.querySelectorAll("th")).slice(1);
   var headerMap = {{}};
@@ -8242,6 +8405,7 @@ setTimeout(function() {{
 
   function doFilter() {{
     var q = input.value.toLowerCase().trim();
+    var _obF = (window._obRegFilter || {})["{table_id}"] || "__all__";
     rows.forEach(function(r) {{
       var cells   = r.querySelectorAll("td");
       var codeRaw = cells[1] ? cells[1].textContent.trim() : "";
@@ -8249,6 +8413,10 @@ setTimeout(function() {{
       var name    = cells[2] ? cells[2].textContent.toLowerCase() : "";
       var isNoRat = noRatingCodes.has(codeNum);
       if (isNoRat && !showNoRating) {{ r.style.display = "none"; return; }}
+      if (_obF !== "__all__") {{
+        var trOb = r.getAttribute("data-ob-reg") || "";
+        if (!trOb || trOb !== _obF) {{ r.style.display = "none"; return; }}
+      }}
       var basicOk = (!q || codeRaw.toLowerCase().includes(q) || name.includes(q));
       if (!basicOk) {{ r.style.display = "none"; return; }}
       // Multi-filtry (AND mezi sloupci, OR uvnitř sloupce)
@@ -8263,6 +8431,9 @@ setTimeout(function() {{
     }});
     updateCount();
   }}
+  // Exponuj doFilter globálně pro ob-filter integraci
+  window._ftDoFilter = window._ftDoFilter || {{}};
+  window._ftDoFilter["{table_id}"] = doFilter;
 
   input.addEventListener("input", doFilter);
   btnClr.addEventListener("click", function() {{
@@ -8300,6 +8471,7 @@ setTimeout(function() {{
 
   function applyMultiFilter() {{
     var active = mfFilters.filter(function(f) {{ return f.values && f.values.size > 0; }});
+    var _obF = (window._obRegFilter || {})["{table_id}"] || "__all__";
     rows.forEach(function(r) {{
       if (r.style.display === "none" && active.length === 0) return;
       var cells     = r.querySelectorAll("td");
@@ -8309,6 +8481,10 @@ setTimeout(function() {{
       var q         = input.value.toLowerCase().trim();
       var isNoRat   = noRatingCodes.has(codeNum);
       if (isNoRat && !showNoRating) {{ r.style.display = "none"; return; }}
+      if (_obF !== "__all__") {{
+        var trOb = r.getAttribute("data-ob-reg") || "";
+        if (!trOb || trOb !== _obF) {{ r.style.display = "none"; return; }}
+      }}
       var basicOk   = (!q || codeRaw.toLowerCase().includes(q) || name.includes(q));
       if (!basicOk) {{ r.style.display = "none"; return; }}
       // Multi-filtr: AND mezi sloupci, OR uvnitř sloupce (hodnoty v Set)
@@ -9969,7 +10145,7 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
       text-transform:uppercase;letter-spacing:.5px;">🏙️ Filtr dle oblasti</div>
   <div style="display:flex;flex-wrap:wrap;gap:6px;">{_ob_btns}</div>
   <div style="font-size:0.72rem;color:#888;margin-top:7px;">
-    Tabulka ratingů zůstává za celý region. Ostatní sekce se aktualizují dle výběru.
+    Hlavní tabulka ratingů a ostatní sekce se filtrují dle výběru oblasti.
   </div>
 </div>
 <style>
@@ -9984,21 +10160,31 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
   .ob-cnt{{font-size:0.72rem;opacity:.65;margin-left:3px;}}
 </style>
 <script>
+var _bcOb_{_fn_slug} = {_json_ob.dumps(_bc_ob_map)};
 (function(){{
-  var bcOb = {_json_ob.dumps(_bc_ob_map)};
   function initOb(){{
-    // Taguj řádky obchody tabulky (data-row = branch_code)
-    document.querySelectorAll('tr[data-row]').forEach(function(tr){{
-      var bc = parseInt(tr.getAttribute('data-row'));
-      if(bcOb[bc]) tr.setAttribute('data-ob-reg',bcOb[bc]);
+    // Taguj řádky tabulky (data-bc = branch_code) s příslušnou oblastí
+    document.querySelectorAll('tr[data-bc]').forEach(function(tr){{
+      var bc = parseInt(tr.getAttribute('data-bc'));
+      if(_bcOb_{_fn_slug}[bc]) tr.setAttribute('data-ob-reg', _bcOb_{_fn_slug}[bc]);
     }});
   }}
   if(document.readyState==='loading'){{
-    document.addEventListener('DOMContentLoaded',initOb);
+    document.addEventListener('DOMContentLoaded', initOb);
   }} else {{ initOb(); }}
+  // Znovu spusť po krátkém zpoždění — filterable table přidá data-bc až přes setTimeout
+  setTimeout(initOb, 200);
 }})();
 
 function obSet_{_fn_slug}(btn, ob){{
+  // Re-taguj všechny řádky s data-bc při kliknutí (data-bc je vždy k dispozici)
+  document.querySelectorAll('tr[data-bc]').forEach(function(tr){{
+    var bc = parseInt(tr.getAttribute('data-bc'));
+    if(_bcOb_{_fn_slug}[bc]) tr.setAttribute('data-ob-reg', _bcOb_{_fn_slug}[bc]);
+  }});
+  // Nastav globální filtr oblasti pro filterable table
+  window._obRegFilter = window._obRegFilter || {{}};
+  window._obRegFilter['main-table-{region_slug}'] = ob;
   // Přepínač tlačítek
   document.querySelectorAll('#ob-filter-{region_slug} .ob-btn').forEach(function(b){{
     b.classList.toggle('ob-btn-active', b.getAttribute('data-ob')===ob);
@@ -10007,11 +10193,10 @@ function obSet_{_fn_slug}(btn, ob){{
   document.querySelectorAll('.ob-pre-{_fn_slug}').forEach(function(el){{
     el.style.display = el.getAttribute('data-ob')===ob ? '' : 'none';
   }});
-  // Filtruj řádky obchody tabulky (data-ob-reg)
-  document.querySelectorAll('tr[data-row]').forEach(function(tr){{
-    var trOb = tr.getAttribute('data-ob-reg')||'';
-    tr.style.display = (ob==='__all__' || trOb===ob) ? '' : 'none';
-  }});
+  // Spusť filterable table doFilter (respektuje data-ob-reg)
+  if(window._ftDoFilter && window._ftDoFilter['main-table-{region_slug}']){{
+    window._ftDoFilter['main-table-{region_slug}']();
+  }}
 }}
 </script>"""
             else:
