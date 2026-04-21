@@ -5101,7 +5101,7 @@ def render_strategy_columns(df):
         return result
 
     # ── Karta ─────────────────────────────────────────────────────────
-    def _card(row, bg_col, txt_col, yr, extra_html=''):
+    def _card(row, bg_col, txt_col, yr, extra_html='', desc=''):
         bcode  = int(row.get('BRANCH_CODE', 0))
         bname  = str(row.get('BRANCH_NAME', str(bcode)))
         region = str(row.get('REGION_NAME', ''))
@@ -5111,6 +5111,9 @@ def render_strategy_columns(df):
         rev = row.get('OBJEM_VYNOSU_CZK')
         rev_s = format_money(float(rev)) if pd.notna(rev) and float(rev) > 0 else '—'
         q_html = _q_badge(row)
+        _desc_clean = str(desc or '').strip()
+        desc_line = (f"<div style='font-size:0.72rem;color:#555;margin-top:3px;font-style:italic;'>{_desc_clean}</div>"
+                     if _desc_clean and _desc_clean not in ('nan', 'None') else '')
 
         return f"""
 <div style="display:flex;align-items:stretch;gap:0;border-radius:8px;overflow:hidden;
@@ -5131,6 +5134,7 @@ def render_strategy_columns(df):
       {q_html}
       {extra_html}
     </div>
+    {desc_line}
   </div>
 </div>"""
 
@@ -5150,8 +5154,7 @@ def render_strategy_columns(df):
             bg, tc = yr_cols.get(yr, ('#fce4ec', '#eb4d79'))
             desc = str(row.get('CLOSE_DESC', '') or '').strip()
             desc = '' if desc in ('nan', 'None') else desc
-            extra = f"<span style='font-size:0.7rem;color:#eb4d79;font-weight:600;'>{desc}</span>" if desc else ''
-            cards += _card(row, bg, tc, yr, extra)
+            cards += _card(row, bg, tc, yr, desc=desc)
         return cards, len(sub)
 
     # ── Stavový badge s podporou "přepad z předchozích let" ─────────
@@ -5179,35 +5182,34 @@ def render_strategy_columns(df):
                 rows_list.append(dict(row, _inv_yr=int(nf_yr),  _inv_typ='NF',  _inv_sort=0))
             if pd.notna(fhc_yr) and fhc_yr > 0:
                 rows_list.append(dict(row, _inv_yr=int(fhc_yr), _inv_typ='FHC', _inv_sort=1))
-        if not rows_list:
-            return "", 0
-        # Seřadit: rok vzestupně, pak NF (0) před FHC (1)
-        rows_list.sort(key=lambda r: (r['_inv_yr'], r['_inv_sort']))
-        all_yrs = sorted({r['_inv_yr'] for r in rows_list})
-        yr_cols_nf  = _badge_colors(all_yrs, '#2770f0')
-        yr_cols_fhc = _badge_colors(all_yrs, '#7c3aed')
         cards = ""
         n = 0
-        for row in rows_list:
-            yr  = row['_inv_yr']
-            typ = row['_inv_typ']
-            if typ == 'NF':
-                bg, tc = yr_cols_nf.get(yr,  ('#e8f0fe', '#2770f0'))
-                typ_badge = (f"<span style='background:#eef4ff;color:#2770f0;border:1px solid #c7d9fb;"
-                             f"border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:700;'>NF</span>")
-                desc   = str(row.get('INV_NF_DESC',  '') or '').strip()
-                status = str(row.get('INV_NF_STATUS','') or '').strip()
-            else:
-                bg, tc = yr_cols_fhc.get(yr, ('#ede9fe', '#7c3aed'))
-                typ_badge = (f"<span style='background:#f5f3ff;color:#7c3aed;border:1px solid #ddd6fe;"
-                             f"border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:700;'>FHC</span>")
-                desc   = str(row.get('INV_FHC_DESC',  '') or '').strip()
-                status = str(row.get('INV_FHC_STATUS','') or '').strip()
-            desc_html   = f"<span style='font-size:0.7rem;color:#6b7280;'>{desc}</span>" if desc and desc not in ('nan','None') else ''
-            status_html = _status_badge(status, tc)
-            extra = typ_badge + ((' ' + desc_html) if desc_html else '') + ((' ' + status_html) if status_html else '')
-            cards += _card(row, bg, tc, yr, extra)
-            n += 1
+        if rows_list:
+            # Seřadit: rok vzestupně, pak NF (0) před FHC (1)
+            rows_list.sort(key=lambda r: (r['_inv_yr'], r['_inv_sort']))
+            all_yrs = sorted({r['_inv_yr'] for r in rows_list})
+            yr_cols_nf  = _badge_colors(all_yrs, '#2770f0')
+            yr_cols_fhc = _badge_colors(all_yrs, '#7c3aed')
+            for row in rows_list:
+                yr  = row['_inv_yr']
+                typ = row['_inv_typ']
+                if typ == 'NF':
+                    bg, tc = yr_cols_nf.get(yr,  ('#e8f0fe', '#2770f0'))
+                    typ_badge = (f"<span style='background:#eef4ff;color:#2770f0;border:1px solid #c7d9fb;"
+                                 f"border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:700;'>NF</span>")
+                    desc   = str(row.get('INV_NF_DESC',  '') or '').strip()
+                    status = str(row.get('INV_NF_STATUS','') or '').strip()
+                else:
+                    bg, tc = yr_cols_fhc.get(yr, ('#ede9fe', '#7c3aed'))
+                    typ_badge = (f"<span style='background:#f5f3ff;color:#7c3aed;border:1px solid #ddd6fe;"
+                                 f"border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:700;'>FHC</span>")
+                    desc   = str(row.get('INV_FHC_DESC',  '') or '').strip()
+                    status = str(row.get('INV_FHC_STATUS','') or '').strip()
+                status_html = _status_badge(status, tc)
+                extra = typ_badge + ((' ' + status_html) if status_html else '')
+                _desc_val = desc if desc not in ('nan', 'None', '') else ''
+                cards += _card(row, bg, tc, yr, extra, desc=_desc_val)
+                n += 1
         # BO Online — oddělovač a sekce pod investicemi
         bo_cards = ""
         bo_n = 0
@@ -5249,11 +5251,11 @@ def render_strategy_columns(df):
             if already:
                 extra = ("<span style='background:#eafaf1;color:#0bb440;border:1px solid #a7f3d0;"
                          "border-radius:10px;padding:1px 7px;font-size:0.68rem;font-weight:700;'>✓ Již</span>")
+                cards += _card(row, bg, tc, yr, extra)
             else:
                 desc = str(row.get('CASHLESS_DESC', '') or '').strip()
                 desc = '' if desc in ('nan', 'None') else desc
-                extra = f"<span style='font-size:0.7rem;color:#0bb440;font-weight:600;'>{desc}</span>" if desc else ''
-            cards += _card(row, bg, tc, yr, extra)
+                cards += _card(row, bg, tc, yr, desc=desc)
         return cards, len(sub)
 
     c_close,    n_close    = _col_close(df)
@@ -9884,6 +9886,14 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
         print("  🔨 Generuji analýzu korelace investice → výkon...")
         _sp_arg = globals().get('spadovky')
         _inv_impact_html = generate_network_simulation_200(df_sorted, _sp_arg)
+        # SIM_250_KEEP_CODES je nyní naplněn — aktualizuj příznak v obou dataframe
+        if SIM_250_KEEP_CODES:
+            _sim_codes_upd = {int(c) for c in SIM_250_KEEP_CODES}
+            def _sflag_upd(bc):
+                try: return 'keep' if int(bc) in _sim_codes_upd else 'close'
+                except: return 'close'
+            df_sorted['SIM_250_FLAG']     = df_sorted['BRANCH_CODE'].apply(_sflag_upd)
+            rating_status['SIM_250_FLAG'] = rating_status['BRANCH_CODE'].apply(_sflag_upd)
 
         print("  💎 Generuji heatmapu výnosových klientů...")
         _pf_arg = globals().get('parties_full')
