@@ -8405,7 +8405,7 @@ setTimeout(function() {{
 
   function doFilter() {{
     var q = input.value.toLowerCase().trim();
-    var _obF = (window._obRegFilter || {})["{table_id}"] || "__all__";
+    var _obF = (window._obRegFilter || {{}})["{table_id}"] || "__all__";
     rows.forEach(function(r) {{
       var cells   = r.querySelectorAll("td");
       var codeRaw = cells[1] ? cells[1].textContent.trim() : "";
@@ -8471,7 +8471,7 @@ setTimeout(function() {{
 
   function applyMultiFilter() {{
     var active = mfFilters.filter(function(f) {{ return f.values && f.values.size > 0; }});
-    var _obF = (window._obRegFilter || {})["{table_id}"] || "__all__";
+    var _obF = (window._obRegFilter || {{}})["{table_id}"] || "__all__";
     rows.forEach(function(r) {{
       if (r.style.display === "none" && active.length === 0) return;
       var cells     = r.querySelectorAll("td");
