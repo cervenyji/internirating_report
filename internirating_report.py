@@ -47,6 +47,63 @@ except ImportError:
 DBS_DATE = "2026-02-10"
 
 # =============================================================================
+# KONFIGURACE: Pozice zaměstnanců
+# =============================================================================
+# Upravte tyto seznamy pro přidání / odebrání pozic bez nutnosti měnit kód.
+
+# Všechny obchodní pozice — zahrnují se do "FTE všechny obchodní pozice redim"
+# a do výpočtu BRANCH_FORMAT_OBCHODNI. Přidejte nové pozice sem.
+OBCHODNI_POZICE = [
+    "bankéř klientské péče - junior",
+    "bankéř klientské péče - medior",
+    "firemní bankéř - master",
+    "firemní bankéř - medior",
+    "firemní bankéř - senior",
+    "hypoteční specialista - medior",
+    "hypoteční specialista - senior",
+    "hypoteční specialista vcb - medior",
+    "hypoteční specialista vcb - senior",
+    "investiční specialista - medior",
+    "manaž. segm. erste premier - team leader s portfoliem",
+    "osobní bankéř - junior",
+    "osobní bankéř - master",
+    "osobní bankéř - medior",
+    "osobní bankéř - senior",
+    "pobočkový specialista - hypo",
+    "podpora firemních bankéřů",
+    "pojišťovací specialista - medior",
+    "premier bankéř - master",
+    "premier bankéř - medior",
+    "premier bankéř - senior",
+    "privátní bankéř - medior",
+    "privátní bankéř - senior",
+    "privátní bankéř - wealth management",
+    "remote firemní bankéř - medior",
+    "remote premier bankéř - medior",
+    "spec. pro firemní pojištění - senior",
+]
+
+# Bankéři — pouze tyto pozice se počítají jako "Počet bankéřů redim"
+# a slouží jako dělitel u metrik /bankéř. Přidejte nové pozice sem.
+BANKER_POZICE = [
+    "osobní bankéř - junior",
+    "osobní bankéř - medior",
+    "osobní bankéř - senior",
+    # PKL varianty s podtržítky (uppercase soubor specialiste)
+    "osobni_banker_-_junior",
+    "osobni_banker_-_medior",
+    "osobni_banker_-_senior",
+]
+# Přesné uppercase shody pro PKL soubor (rychlé vyhledání bez diakritiky)
+BANKER_POZICE_EXACT = {"OSOBNI_BANKER_-_JUNIOR", "OSOBNI_BANKER_-_MEDIOR", "OSOBNI_BANKER_-_SENIOR"}
+
+# Počet top poboček dle IR označených "keep" ve sloupci Strategie BNS dle IR 25
+BNS_IR_TOP_N = 280
+
+# Kódy poboček z simulace sítě 250 — nastavuje generate_network_simulation_200()
+SIM_250_KEEP_CODES: set = set()
+
+# =============================================================================
 # KONFIGURACE GENEROVÁNÍ REPORTŮ
 # =============================================================================
 # Tuto sekci upravte před spuštěním generování.
@@ -187,7 +244,7 @@ soubory = {
         "validity": "2026-02-26",
         "source_desc": "Data se strategiemi BNS. Workshopy, výstupy regionu k 26.2.2026",
         "extra_params": {},
-        "merge_on": {"left_on": "BRANCH_CODE", "right_on": "BRANCH_ID"},
+        "merge_on": {"left_on": "BRANCH_CODE", "right_on": "ID"},
     },
     "hotovostni_trn": {
         "path": '../vypocet_ir_2026/zdroje/prevoditelnost_cash_trn_2025_10_02_2026_12.xlsx',
@@ -288,10 +345,14 @@ MERGE_COLS = {
         "how": "left",
     },
     "footprint_bns": {
-        "cols": ["BRANCH_ID", "FOOTPRINT_STRATEGIE_(2030)", "PLAN_CLOSE_(ROK)",
-                 "CLOSE_STATUS", "INVESTICE_NF_(ROK)", "INVESTICE_FHC_(ROK)",
+        # Sloupce po normalizaci v loading loop (ID→BRANCH_ID, FOOTPRINT→FOOTPRINT_STRATEGIE_(2030) atd.)
+        "cols": ["BRANCH_ID", "FOOTPRINT_STRATEGIE_(2030)",
+                 "PLAN_CLOSE_(ROK)", "CLOSE_DESC",
+                 "INVESTICE_NF_(ROK)", "INV_NF_DESC", "INV_NF_STATUS",
+                 "INVESTICE_FHC_(ROK)", "INV_FHC_DESC", "INV_FHC_STATUS",
                  "INVESTICE_NF_OR_FHC_(ROK)",
-                 "PLAN_NEW_CASHIERLESS_(ROK)", "NEW_CASHIERLESS_STATUS"],
+                 "BACK_OFFICE_ONLINE",
+                 "PLAN_NEW_CASHIERLESS_(ROK)", "CASHLESS_DESC"],
         "left_on": "BRANCH_CODE",
         "right_on": "BRANCH_ID",
         "how": "left",
@@ -423,10 +484,11 @@ NOVE_NAZVY = {
 
     # ── 🗺️ Strategie BNS ─────────────────────────────────────────
     "FOOTPRINT_STRATEGIE_(2030)":  "Strategie BNS",
+    "BNS_IR_FLAG":                 "Strategie BNS dle IR 25",
+    "SIM_250_FLAG":                "Simulace 250",
     "PLAN_CLOSE_(ROK)":            "Rok uzavření",
-    "CLOSE_STATUS":                "Status uzavření",
-    "INVESTICE_NF_(ROK)":          "Rok investice",
-    "INVESTICE_FHC_(ROK)":         "Rok FHC investice",
+    "INVESTICE_NF_(ROK)":          "Rok investice NF",
+    "INVESTICE_FHC_(ROK)":         "Rok investice FHC",
     "INVESTICE_NF_OR_FHC_(ROK)":   "Rok plánované investice",
 
     # ── 💵 Strategie hotovosti ────────────────────────────────────
@@ -4081,10 +4143,7 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
     """
     import math as _math
 
-    BANKER_POSITIONS = [
-        "osobní bankéř - junior", "osobní bankéř - medior", "osobní bankéř - senior",
-        "osobni_banker_-_junior", "osobni_banker_-_medior", "osobni_banker_-_senior",
-    ]
+    BANKER_POSITIONS = BANKER_POZICE
     # Kapacita formátu: kolik % navíc klientů pobočka zvládne
     FORMAT_CAP = {'small': 0.10, 'medium economy': 0.25, 'medium': 0.40, 'flagship': 0.70}
     # ── Kapacita bankéře ────────────────────────────────────────────
@@ -4391,6 +4450,9 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
     # ── 6. Výběr top 250 dle simulovaného ratingu 2030 ────────────
     top  = d_sim.nsmallest(target_n, 'SIM_IR_2030').copy()
     rest = d_sim[~d_sim.index.isin(top.index)].sort_values('SIM_IR_2030').copy()
+    # Exportuj kódy do globální proměnné pro sloupec SIM_250_FLAG v tabulce
+    global SIM_250_KEEP_CODES
+    SIM_250_KEEP_CODES = set(top['BRANCH_CODE'].dropna().astype(int).tolist())
 
     # ── 7. Bankéřská kapacita ─────────────────────────────────────
     # Předpočítej průměrný počet schůzek na klienta pro celou síť
@@ -5086,33 +5148,87 @@ def render_strategy_columns(df):
         for _, row in sub.iterrows():
             yr = int(row['_yr']) if pd.notna(row['_yr']) else '?'
             bg, tc = yr_cols.get(yr, ('#fce4ec', '#eb4d79'))
-            status = str(row.get('CLOSE_STATUS', '') or '')
-            status = '' if status in ('nan','None','') else status
-            extra  = f"<span style='font-size:0.7rem;color:#eb4d79;font-weight:600;'>{status}</span>" if status else ''
+            desc = str(row.get('CLOSE_DESC', '') or '').strip()
+            desc = '' if desc in ('nan', 'None') else desc
+            extra = f"<span style='font-size:0.7rem;color:#eb4d79;font-weight:600;'>{desc}</span>" if desc else ''
             cards += _card(row, bg, tc, yr, extra)
         return cards, len(sub)
 
-    # ── Sloupec 2: Investice ─────────────────────────────────────────
+    # ── Stavový badge s podporou "přepad z předchozích let" ─────────
+    _STATUS_OVERDUE = 'přepad z předchozích let'
+    def _status_badge(status_val, color):
+        s = str(status_val or '').strip()
+        if not s or s in ('nan', 'None', ''):
+            return ''
+        if s.lower() == _STATUS_OVERDUE:
+            return (f"<span style='font-size:0.7rem;color:#f59e0b;font-weight:700;"
+                    f"background:#fffbeb;border:1px solid #fde68a;border-radius:4px;"
+                    f"padding:1px 6px;'>⚠️ {s}</span>")
+        return f"<span style='font-size:0.7rem;color:{color};font-weight:600;'>{s}</span>"
+
+    # ── Sloupec 2: Investice (NF + FHC jako samostatné záznamy) ──────
     def _col_invest(d):
-        yr_col = 'INVESTICE_NF_OR_FHC_(ROK)'
-        if yr_col not in d.columns: return "", 0
-        sub = d[pd.to_numeric(d[yr_col], errors='coerce') > 0].copy()
-        if sub.empty: return "", 0
-        sub['_yr'] = pd.to_numeric(sub[yr_col], errors='coerce')
-        sub = sub.sort_values('_yr', na_position='last')
-        yrs = sorted(sub['_yr'].dropna().unique().astype(int).tolist())
-        yr_cols = _badge_colors(yrs, '#2770f0')
+        _NF_COL  = 'INVESTICE_NF_(ROK)'
+        _FHC_COL = 'INVESTICE_FHC_(ROK)'
+        # Sestav seznam investičních akcí: každá NF nebo FHC jako vlastní záznam
+        rows_list = []
+        for _, row in d.iterrows():
+            nf_yr  = pd.to_numeric(row.get(_NF_COL,  None), errors='coerce')
+            fhc_yr = pd.to_numeric(row.get(_FHC_COL, None), errors='coerce')
+            if pd.notna(nf_yr)  and nf_yr  > 0:
+                rows_list.append(dict(row, _inv_yr=int(nf_yr),  _inv_typ='NF',  _inv_sort=0))
+            if pd.notna(fhc_yr) and fhc_yr > 0:
+                rows_list.append(dict(row, _inv_yr=int(fhc_yr), _inv_typ='FHC', _inv_sort=1))
+        if not rows_list:
+            return "", 0
+        # Seřadit: rok vzestupně, pak NF (0) před FHC (1)
+        rows_list.sort(key=lambda r: (r['_inv_yr'], r['_inv_sort']))
+        all_yrs = sorted({r['_inv_yr'] for r in rows_list})
+        yr_cols_nf  = _badge_colors(all_yrs, '#2770f0')
+        yr_cols_fhc = _badge_colors(all_yrs, '#7c3aed')
         cards = ""
-        for _, row in sub.iterrows():
-            yr   = int(row['_yr']) if pd.notna(row['_yr']) else '?'
-            bg, tc = yr_cols.get(yr, ('#e8f0fe', '#2770f0'))
-            nf_yr  = pd.to_numeric(row.get('INVESTICE_NF_(ROK)',  0), errors='coerce')
-            fhc_yr = pd.to_numeric(row.get('INVESTICE_FHC_(ROK)', 0), errors='coerce')
-            typ = 'NF' if pd.notna(nf_yr) and nf_yr > 0 else ('FHC' if pd.notna(fhc_yr) and fhc_yr > 0 else '')
-            extra  = (f"<span style='background:#eef4ff;color:#2770f0;border-radius:4px;"
-                      f"padding:1px 6px;font-size:0.7rem;font-weight:700;'>{typ}</span>") if typ else ''
+        n = 0
+        for row in rows_list:
+            yr  = row['_inv_yr']
+            typ = row['_inv_typ']
+            if typ == 'NF':
+                bg, tc = yr_cols_nf.get(yr,  ('#e8f0fe', '#2770f0'))
+                typ_badge = (f"<span style='background:#eef4ff;color:#2770f0;border:1px solid #c7d9fb;"
+                             f"border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:700;'>NF</span>")
+                desc   = str(row.get('INV_NF_DESC',  '') or '').strip()
+                status = str(row.get('INV_NF_STATUS','') or '').strip()
+            else:
+                bg, tc = yr_cols_fhc.get(yr, ('#ede9fe', '#7c3aed'))
+                typ_badge = (f"<span style='background:#f5f3ff;color:#7c3aed;border:1px solid #ddd6fe;"
+                             f"border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:700;'>FHC</span>")
+                desc   = str(row.get('INV_FHC_DESC',  '') or '').strip()
+                status = str(row.get('INV_FHC_STATUS','') or '').strip()
+            desc_html   = f"<span style='font-size:0.7rem;color:#6b7280;'>{desc}</span>" if desc and desc not in ('nan','None') else ''
+            status_html = _status_badge(status, tc)
+            extra = typ_badge + ((' ' + desc_html) if desc_html else '') + ((' ' + status_html) if status_html else '')
             cards += _card(row, bg, tc, yr, extra)
-        return cards, len(sub)
+            n += 1
+        # BO Online — oddělovač a sekce pod investicemi
+        bo_cards = ""
+        bo_n = 0
+        if 'BACK_OFFICE_ONLINE' in d.columns:
+            for _, row in d.iterrows():
+                bo = str(row.get('BACK_OFFICE_ONLINE', '') or '').strip()
+                if bo and bo not in ('nan','None','0',''):
+                    try: bo_yr = int(float(bo))
+                    except: bo_yr = None
+                    yr_lbl = str(bo_yr) if bo_yr else 'BO'
+                    extra_bo = ("<span style='background:#fff7ed;color:#ea580c;border:1px solid #fed7aa;"
+                                "border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:700;'>BO Online</span>")
+                    bo_cards += _card(row, '#f97316', '#f97316', yr_lbl, extra_bo)
+                    bo_n += 1
+        if bo_cards:
+            cards += ("<hr style='border:none;border-top:1px solid #e8edf5;margin:10px 0 8px;'>"
+                      f"<div style='font-size:0.72rem;color:#888;font-weight:600;margin-bottom:6px;"
+                      f"text-transform:uppercase;letter-spacing:.4px;'>📋 BO Online</div>"
+                      + bo_cards)
+            n += bo_n
+        return cards, n
 
     # ── Sloupec 3: Cashless ──────────────────────────────────────────
     def _col_cashless(d):
@@ -5134,9 +5250,9 @@ def render_strategy_columns(df):
                 extra = ("<span style='background:#eafaf1;color:#0bb440;border:1px solid #a7f3d0;"
                          "border-radius:10px;padding:1px 7px;font-size:0.68rem;font-weight:700;'>✓ Již</span>")
             else:
-                status = str(row.get('NEW_CASHIERLESS_STATUS', '') or '')
-                status = '' if status in ('nan','None') else status
-                extra  = f"<span style='font-size:0.7rem;color:#0bb440;font-weight:600;'>{status}</span>" if status else ''
+                desc = str(row.get('CASHLESS_DESC', '') or '').strip()
+                desc = '' if desc in ('nan', 'None') else desc
+                extra = f"<span style='font-size:0.7rem;color:#0bb440;font-weight:600;'>{desc}</span>" if desc else ''
             cards += _card(row, bg, tc, yr, extra)
         return cards, len(sub)
 
@@ -5187,7 +5303,7 @@ def render_action_cards(df, mode):
         'close': {
             'filter':   lambda d: d[d['FOOTPRINT_STRATEGIE_(2030)'].astype(str).str.lower().str.contains('close', na=False)].copy(),
             'year_col': 'PLAN_CLOSE_(ROK)',
-            'sub_col':  'CLOSE_STATUS',
+            'sub_col':  'CLOSE_DESC',
             'hdr_col':  '#eb4d79',
             'icon':     '🔴',
             'empty':    'Žádné pobočky se strategií CLOSE.',
@@ -5211,7 +5327,7 @@ def render_action_cards(df, mode):
                             if 'PLAN_NEW_CASHIERLESS_(ROK)' in d.columns else False
                         )].copy() if 'PLAN_NEW_CASHIERLESS_(ROK)' in d.columns else d.head(0),
             'year_col': 'PLAN_NEW_CASHIERLESS_(ROK)',
-            'sub_col':  'NEW_CASHIERLESS_STATUS',
+            'sub_col':  'CASHLESS_DESC',
             'hdr_col':  '#0bb440',
             'icon':     '💵',
             'empty':    'Žádné pobočky s plánovaným přechodem na cashless.',
@@ -6655,47 +6771,15 @@ def prepare_rating_status(df):
         rating_status['BRANCH_FORMAT'] = "—"
 
     # ── Počet bankéřů ze specialistů ──────────────────────────────
-    _BANKER_POSITIONS = [
-        "osobní bankéř - junior", "osobní bankéř - medior", "osobní bankéř - senior",
-        "osobni_banker_-_junior", "osobni_banker_-_medior", "osobni_banker_-_senior",
-    ]
-    # Obchodní pozice pro výpočet Obchodního FTE
-    _OBCHODNI_POSITIONS = [
-        "bankéř klientské péče - junior",
-        "bankéř klientské péče - medior",
-        "firemní bankéř - master",
-        "firemní bankéř - medior",
-        "firemní bankéř - senior",
-        "hypoteční specialista - medior",
-        "hypoteční specialista - senior",
-        "hypoteční specialista vcb - medior",
-        "hypoteční specialista vcb - senior",
-        "investiční specialista - medior",
-        "manaž. segm. erste premier - team leader s portfoliem",
-        "osobní bankéř - junior",
-        "osobní bankéř - master",
-        "osobní bankéř - medior",
-        "osobní bankéř - senior",
-        "pobočkový specialista - hypo",
-        "podpora firemních bankéřů",
-        "pojišťovací specialista - medior",
-        "premier bankéř - master",
-        "premier bankéř - medior",
-        "premier bankéř - senior",
-        "privátní bankéř - medior",
-        "privátní bankéř - senior",
-        "privátní bankéř - wealth management",
-        "remote firemní bankéř - medior",
-        "remote premier bankéř - medior",
-        "spec. pro firemní pojištění - senior",
-    ]
+    # Pozice jsou definovány globálně v konfiguraci (BANKER_POZICE, OBCHODNI_POZICE)
+    _BANKER_POSITIONS  = BANKER_POZICE
+    _OBCHODNI_POSITIONS = OBCHODNI_POZICE
 
     try:
         _spec_g = globals().get('df_specialiste')
         _spec_cols_g = globals().get('SPEC_POZICE_COLS', [])
         if _spec_g is not None and not _spec_g.empty:
-            _BNK_EXACT = {'OSOBNI_BANKER_-_JUNIOR', 'OSOBNI_BANKER_-_MEDIOR', 'OSOBNI_BANKER_-_SENIOR'}
-            _bnk_cols = [c for c in _spec_g.columns if c.upper() in _BNK_EXACT]
+            _bnk_cols = [c for c in _spec_g.columns if c.upper() in BANKER_POZICE_EXACT]
             if not _bnk_cols:
                 _bnk_cols = [c for c in _spec_cols_g
                              if c.lower().strip() in _BANKER_POSITIONS
@@ -6787,6 +6871,33 @@ def prepare_rating_status(df):
             rating_status['BRANCH_FORMAT_OBCHODNI'] = rating_status['OBCHODNI_FTE'].apply(_calc_format)
     except Exception as _be:
         pass
+
+    # ── Strategie BNS dle IR 25 — top BNS_IR_TOP_N = keep, zbytek = close ──
+    try:
+        if 'IR' in rating_status.columns:
+            _ir_num  = pd.to_numeric(rating_status['IR'], errors='coerce')
+            _ir_valid = _ir_num.notna() & (_ir_num > 0)
+            _top_idx  = _ir_num[_ir_valid].nsmallest(BNS_IR_TOP_N).index
+            _top_codes = set(rating_status.loc[_top_idx, 'BRANCH_CODE'])
+            rating_status['BNS_IR_FLAG'] = rating_status['BRANCH_CODE'].apply(
+                lambda bc: 'keep' if bc in _top_codes else 'close'
+            )
+        else:
+            rating_status['BNS_IR_FLAG'] = ''
+    except Exception:
+        rating_status['BNS_IR_FLAG'] = ''
+
+    # ── Simulace 250 keep — nastavuje generate_network_simulation_200 ──
+    try:
+        if SIM_250_KEEP_CODES:
+            _sim_codes = {int(c) for c in SIM_250_KEEP_CODES}
+            rating_status['SIM_250_FLAG'] = rating_status['BRANCH_CODE'].apply(
+                lambda bc: 'keep' if (int(bc) if pd.notna(bc) else -1) in _sim_codes else 'close'
+            )
+        else:
+            rating_status['SIM_250_FLAG'] = ''
+    except Exception:
+        rating_status['SIM_250_FLAG'] = ''
 
     return rating_status
 
@@ -6985,9 +7096,12 @@ def _apply_common_formatting(d, cols_to_show):
         if c in cols_to_show and c in d.columns:
             d[c] = d[c].apply(format_date)
 
-    # Podbarvení FOOTPRINT_STRATEGIE_(2030)
+    # Podbarvení FOOTPRINT_STRATEGIE_(2030) a odvozených příznaků
     if 'FOOTPRINT_STRATEGIE_(2030)' in cols_to_show and 'FOOTPRINT_STRATEGIE_(2030)' in d.columns:
         d['FOOTPRINT_STRATEGIE_(2030)'] = d['FOOTPRINT_STRATEGIE_(2030)'].apply(color_strategy_html)
+    for _flag_col in ['BNS_IR_FLAG', 'SIM_250_FLAG']:
+        if _flag_col in cols_to_show and _flag_col in d.columns:
+            d[_flag_col] = d[_flag_col].apply(color_strategy_html)
 
     # Prodeje — celková čísla formát
     _prod_num_cols = (
@@ -7481,7 +7595,8 @@ COL_GROUPS = [
         "Návštěvy/bankéř", "Online schůzky/bankéř", "Fyzické schůzky/bankéř",
         "Bezhot. walkin/bankéř", "Hot. walkin/bankéř",
     ], "#fad8e0"),
-    ("🗺️ Strategie BNS",      ["Strategie BNS", "Rok uzavření", "Status uzavření", "Rok investice", "Rok FHC investice", "Rok plánované investice"], "#faf0cc"),
+    ("🗺️ Strategie BNS",      ["Strategie BNS", "Strategie BNS dle IR 25", "Simulace 250",
+                               "Rok uzavření", "Rok investice NF", "Rok investice FHC", "Rok plánované investice"], "#faf0cc"),
     ("💵 Strategie hotovosti", ["Rok cashless přechodu", "Status cashless", "Bezhotovostní", "Datum bezhotovostní"], "#e8f5e9"),
     ("📐 Alokační report",     [
         "Pouze D5", "WPL max 2026", "WPL využito 2026",
@@ -10585,6 +10700,26 @@ for jmeno, info in soubory.items():
         if not df.empty:
             df = normalize_columns(df)
 
+            if jmeno == "footprint_bns":
+                # Normalizace nové struktury footprint_bns na interní názvy
+                _fp_map = {
+                    'ID':           'BRANCH_ID',
+                    'FOOTPRINT':    'FOOTPRINT_STRATEGIE_(2030)',
+                    'CLOSE_YEAR':   'PLAN_CLOSE_(ROK)',
+                    'INV_NF_YEAR':  'INVESTICE_NF_(ROK)',
+                    'INV_FHC_YEAR': 'INVESTICE_FHC_(ROK)',
+                    'CASHLESS_YEAR':'PLAN_NEW_CASHIERLESS_(ROK)',
+                }
+                df = df.rename(columns={k: v for k, v in _fp_map.items() if k in df.columns})
+                # Kombinovaný rok investice = min(NF, FHC)
+                _nf  = pd.to_numeric(df.get('INVESTICE_NF_(ROK)',  pd.Series(dtype=float)), errors='coerce')
+                _fhc = pd.to_numeric(df.get('INVESTICE_FHC_(ROK)', pd.Series(dtype=float)), errors='coerce')
+                df['INVESTICE_NF_OR_FHC_(ROK)'] = pd.concat([_nf, _fhc], axis=1).min(axis=1)
+                # Přejmenování join klíče pro merge_with_source (expected: BRANCH_ID)
+                if 'BRANCH_ID' not in df.columns and 'ID' in df.columns:
+                    df = df.rename(columns={'ID': 'BRANCH_ID'})
+                globals()[jmeno] = df
+
             if jmeno == "revenues":
                 # Pokud CSV obsahuje sloupec ROK nebo YEAR, filtruj jen data za rok 2025
                 _rok_col = next((c for c in df.columns if c in ('ROK', 'YEAR', 'YEAR_')), None)
@@ -11379,16 +11514,11 @@ except Exception as _e:
 
 # Business rating: compute BANKERS_COUNT (OSOBNI_BANKER_-_JUNIOR/MEDIOR/SENIOR) into df,
 # fallback to FTE where count is 0.  Must run here — after df_specialiste is loaded.
-_BANKER_EXACT = {'OSOBNI_BANKER_-_JUNIOR', 'OSOBNI_BANKER_-_MEDIOR', 'OSOBNI_BANKER_-_SENIOR'}
-_ob_positions_lc = {
-    "osobní bankéř - junior", "osobní bankéř - medior", "osobní bankéř - senior",
-    "osobni_banker_-_junior", "osobni_banker_-_medior", "osobni_banker_-_senior",
-}
 if df_specialiste is not None and not df_specialiste.empty:
-    _ob_cols = [c for c in df_specialiste.columns if c.upper() in _BANKER_EXACT]
+    _ob_cols = [c for c in df_specialiste.columns if c.upper() in BANKER_POZICE_EXACT]
     if not _ob_cols:
         _ob_cols = [c for c in SPEC_POZICE_COLS
-                    if c.lower().strip() in _ob_positions_lc or 'osobni_banker_-_' in c.lower()]
+                    if c.lower().strip() in set(BANKER_POZICE) or 'osobni_banker_-_' in c.lower()]
     if _ob_cols:
         _stmp = df_specialiste.copy()
         _stmp['branch_id'] = pd.to_numeric(_stmp['branch_id'], errors='coerce')
