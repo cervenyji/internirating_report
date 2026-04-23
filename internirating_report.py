@@ -5661,6 +5661,110 @@ def generate_branch_summary_tables(df):
     )
 
 
+def generate_bns_close_table(df):
+    """Tabulka keep/close dle Strategie BNS a BNS dle IR 25 po regionech s výhledem 2027–2030."""
+    _strat = 'FOOTPRINT_STRATEGIE_(2030)'
+    _yr_col = 'PLAN_CLOSE_(ROK)'
+    _ir_col = 'BNS_IR_FLAG'
+
+    if _strat not in df.columns or 'REGION_NAME' not in df.columns:
+        return "<p style='color:#aaa;font-style:italic;'>Data BNS strategie nejsou k dispozici.</p>"
+
+    d = df.copy()
+    d['_is_close'] = d[_strat].astype(str).str.lower().str.contains('close', na=False)
+    d['_close_yr'] = pd.to_numeric(d.get(_yr_col, pd.Series(dtype=float)), errors='coerce')
+    d['REGION_NAME'] = d['REGION_NAME'].fillna('—').astype(str)
+
+    YEARS = [2027, 2028, 2029, 2030]
+    regions = sorted([r for r in d['REGION_NAME'].unique() if r not in ('—', '', 'nan', 'None')])
+
+    def _stats(sub):
+        n = len(sub)
+        close_n = int(sub['_is_close'].sum())
+        keep_yr = {}
+        for yr in YEARS:
+            keep_yr[yr] = int(((~sub['_is_close']) | (sub['_close_yr'].fillna(9999) > yr)).sum())
+        ir_keep  = int((sub[_ir_col].astype(str).str.lower() == 'keep').sum())  if _ir_col in sub.columns else 0
+        ir_close = int((sub[_ir_col].astype(str).str.lower() == 'close').sum()) if _ir_col in sub.columns else 0
+        return n, close_n, keep_yr, ir_keep, ir_close
+
+    all_rows = []
+    for reg in regions:
+        all_rows.append((reg, _stats(d[d['REGION_NAME'] == reg]), False))
+    all_rows.append(('CELKEM', _stats(d[d['REGION_NAME'].isin(regions)]), True))
+
+    has_ir = _ir_col in d.columns and (d[_ir_col].astype(str).str.lower().isin(['keep','close'])).any()
+
+    # ── Header ──
+    _C1 = '#e63946'   # close group — red
+    _C2 = '#0077b6'   # IR group — blue
+
+    th = lambda txt, rs=1, cs=1, bg='#2770f0', align='center', fw='700': (
+        f'<th rowspan="{rs}" colspan="{cs}" style="background:{bg};color:#fff;'
+        f'border:1px solid rgba(255,255,255,.2);padding:5px 10px;'
+        f'text-align:{align};font-size:0.78rem;font-weight:{fw};white-space:nowrap;">{txt}</th>'
+    )
+
+    hdr1 = '<tr>'
+    hdr1 += th('Region', rs=2, align='left', bg='#2770f0')
+    hdr1 += th('Celkem', rs=2, bg='#475569')
+    hdr1 += th('Strategie BNS — počty keep dle roku plánovaného uzavření', cs=5, bg=_C1)
+    if has_ir:
+        hdr1 += th('Strategie BNS dle IR 25', cs=2, bg=_C2)
+    hdr1 += '</tr>'
+
+    hdr2 = '<tr>'
+    hdr2 += th('Close celkem', bg=_C1)
+    for yr in YEARS:
+        hdr2 += th(f'Keep {yr}', bg=f'{_C1}cc')
+    if has_ir:
+        hdr2 += th('Keep', bg=_C2)
+        hdr2 += th('Close', bg=f'{_C2}cc')
+    hdr2 += '</tr>'
+
+    # ── Rows ──
+    rows_html = ''
+    for i, (reg, (n, close_n, keep_yr, ir_k, ir_c), is_total) in enumerate(all_rows):
+        bg  = '#e8f4ff' if is_total else ('#fff' if i % 2 == 0 else '#f7f9ff')
+        fw  = '700' if is_total else '400'
+        bt  = 'border-top:2px solid #2770f0;' if is_total else ''
+
+        def td(val, color=None, pct=None):
+            pct_bar = ''
+            if pct is not None and pct > 0:
+                pct_bar = (f"<div style='height:3px;background:{color or '#ccc'};"
+                           f"width:{min(pct,100):.0f}%;border-radius:2px;margin-top:2px;opacity:.5;'></div>")
+            col_style = f'color:{color};' if color else ''
+            return (f'<td style="border:1px solid #dee2e6;padding:5px 8px;text-align:center;'
+                    f'font-size:0.8rem;font-weight:{fw};{bt}{col_style}">'
+                    f'{"<b>" if val and val != "—" and fw=="700" else ""}{val}{"</b>" if val and val != "—" and fw=="700" else ""}'
+                    f'{pct_bar}</td>')
+
+        row = f'<tr style="background:{bg};">'
+        row += (f'<td style="border:1px solid #dee2e6;padding:5px 12px;font-weight:{fw};'
+                f'white-space:nowrap;font-size:0.8rem;{bt}">{reg}</td>')
+        row += td(n)
+        row += td(f'<span style="color:{_C1};font-weight:700;">{close_n}</span>' if close_n > 0 else '—')
+        for yr in YEARS:
+            kv = keep_yr[yr]
+            pct_k = kv / n * 100 if n > 0 else 0
+            row += td(kv, color='#0bb440' if kv == n else None,
+                      pct=pct_k if not is_total else None)
+        if has_ir:
+            row += td(ir_k, color='#0bb440' if ir_k > 0 else None)
+            row += td(f'<span style="color:{_C2}cc;">{ir_c}</span>' if ir_c > 0 else '—')
+        row += '</tr>'
+        rows_html += row
+
+    return (
+        f'<div style="overflow-x:auto;border-radius:8px;'
+        f'box-shadow:0 2px 8px rgba(0,0,0,0.07);margin-bottom:20px;">'
+        f'<table style="width:100%;border-collapse:collapse;font-size:0.8rem;background:#fff;">'
+        f'<thead>{hdr1}{hdr2}</thead><tbody>{rows_html}</tbody>'
+        f'</table></div>'
+    )
+
+
 def generate_close_branches_table(df):
     if 'FOOTPRINT_STRATEGIE_(2030)' not in df.columns:
         return ("<p style='color:#aaa;font-style:italic;'>"
@@ -9562,6 +9666,19 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
                 _sp_merge.rename(columns={'BRANCH_ID': 'BRANCH_CODE'}),
                 on='BRANCH_CODE', how='left'
             )
+
+    # Vždy přepočítej BNS_IR_FLAG na lokálním rating_status (platí pro static i regional)
+    try:
+        if 'IR' in rating_status.columns:
+            _ir_r = pd.to_numeric(rating_status['IR'], errors='coerce')
+            _valid_r = _ir_r.notna() & (_ir_r > 0)
+            _top_r   = set(rating_status.loc[_ir_r[_valid_r].nsmallest(BNS_IR_TOP_N).index, 'BRANCH_CODE'])
+            rating_status['BNS_IR_FLAG'] = rating_status['BRANCH_CODE'].apply(
+                lambda bc: 'keep' if bc in _top_r else 'close'
+            )
+    except Exception:
+        pass
+
     bootstrap_css = '''
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <style>
@@ -9785,6 +9902,7 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
 
         # --- přehledové tabulky ---
         branch_summary_html  = generate_branch_summary_tables(rating_status)
+        bns_close_html       = generate_bns_close_table(rating_status)
         close_branches_html       = generate_close_branches_table(rating_status)
         invest_branches_html      = generate_invest_branches_table(rating_status)
         cashierless_branches_html = generate_cashierless_table(rating_status)
@@ -10035,7 +10153,14 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
     <p style="font-size:0.82rem;color:#666;margin:-6px 0 10px 0;">
       Počty poboček v jednotlivých regionech rozdělené dle typu budovy, cashless statusu a formátu NF/SF.
     </p>
-    <div style="margin:0 0 20px 0;width:100%;">{branch_summary_html}</div>""")}
+    <div style="margin:0 0 20px 0;width:100%;">{branch_summary_html}</div>
+    <div class="section-header" style="margin-top:16px;">📉 Přehled poboček dle strategie BNS — Keep/Close po letech</div>
+    <p style="font-size:0.82rem;color:#666;margin:-6px 0 10px 0;">
+      Počty poboček označených ke close dle BNS strategie a výhled počtu keep poboček ke konci let 2027–2030.
+      Sloupec <b>Keep 20XX</b> = pobočky, které ještě nebudou uzavřeny ke konci daného roku.
+      Vychází ze sloupce <b>Rok uzavření</b> a příznaku close v <b>Strategie BNS</b>.
+    </p>
+    <div style="margin:0 0 20px 0;width:100%;">{bns_close_html}</div>""")}
 
     <!-- 3b. ORP pokrytí -->
     {_sc('orp', make_collapsible("orp-static", "&#x1F5FA; Pokrytí ORP — analýza",
@@ -10215,6 +10340,7 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
             _reg_orp_html = generate_orp_coverage_html(df_reg)
 
             branch_summary_html_reg  = generate_branch_summary_tables(df_reg)
+            bns_close_html_reg       = generate_bns_close_table(df_reg)
             close_branches_html_reg       = generate_close_branches_table(df_reg)
             invest_branches_html_reg      = generate_invest_branches_table(df_reg)
             cashierless_branches_html_reg = generate_cashierless_table(df_reg)
@@ -10660,7 +10786,12 @@ function obSet_{_fn_slug}(btn, ob){{
     <p style="font-size:0.82rem;color:#666;margin:-6px 0 10px 0;">
       Počty poboček v regionu {region} rozdělené dle typu budovy, cashless statusu a formátu NF/SF.
     </p>
-    <div style="margin:0 0 20px 0;width:100%;">{_ob_branch_summary}</div>""")}
+    <div style="margin:0 0 20px 0;width:100%;">{_ob_branch_summary}</div>
+    <div class="section-header" style="margin-top:16px;">📉 Přehled poboček dle strategie BNS — Keep/Close po letech</div>
+    <p style="font-size:0.82rem;color:#666;margin:-6px 0 10px 0;">
+      Počty poboček označených ke close a výhled počtu keep poboček ke konci let 2027–2030 v regionu {region}.
+    </p>
+    <div style="margin:0 0 20px 0;width:100%;">{bns_close_html_reg}</div>""")}
 
     <!-- 4. Mapa -->
     {_sr('mapa', generate_map_html(df_reg.sort_values(by="IR"), title=f"🗺️ Mapa poboček — {region}"))}
@@ -11051,6 +11182,32 @@ except Exception as e:
         "řádků": "—", "sloupců": "—", "platnost": "", "pozn": str(e)})
     display(HTML(f"<b style='color:red;'>❌ Agregace cash ratingu selhala:</b> {e}<br><pre>{traceback.format_exc()}</pre>"))
     transakce_trn_agg = pd.DataFrame(columns=['BRANCH_CODE', 'TRN_POCET_CELKEM', 'TRN_CASTKA_CELKEM', 'TRN_DENNI_POCET'])
+
+# ── Pokladní hodiny — počet otevřených dní na pobočku ─────────────────────────
+# Slouží pro přesný výpočet TRN_DENNI_POCET (náhrada konstanty WORKING_DAYS_PER_YEAR)
+try:
+    _ph_path = '../vypocet_ir_2026/zdroje/Pokladní hodiny.xlsx'
+    _ph_raw  = pd.read_excel(_ph_path)
+    _ph_day_cols = [c for c in ['PO','UT','ST','CT','PA','SO','NE'] if c in _ph_raw.columns]
+    if _ph_day_cols and 'POBOCKA' in _ph_raw.columns:
+        def _is_open(v):
+            s = str(v).strip()
+            return s not in ('00:00', '0:00', '0', '0:0', '', 'nan', 'None', 'NaT')
+        _ph_raw['_open_days'] = _ph_raw[_ph_day_cols].apply(
+            lambda row: sum(1 for v in row if _is_open(v)), axis=1
+        )
+        _ph_raw['POBOCKA'] = pd.to_numeric(_ph_raw['POBOCKA'], errors='coerce')
+        # Roční dny = open_days / 7 * 365 (průměr)
+        _ph_raw['_annual_days'] = (_ph_raw['_open_days'] / 7 * 365).round(0).astype(int).clip(lower=1)
+        pokladni_dny = dict(zip(_ph_raw['POBOCKA'].dropna().astype(int), _ph_raw['_annual_days']))
+        print(f"✅ Pokladní hodiny: {len(pokladni_dny)} poboček, "
+              f"průměr dní/rok: {sum(pokladni_dny.values())/max(len(pokladni_dny),1):.0f}")
+    else:
+        pokladni_dny = {}
+        print("⚠️ Pokladní hodiny: chybí sloupce POBOCKA nebo PO/UT/…")
+except Exception as _e:
+    pokladni_dny = {}
+    print(f"⚠️ Pokladní hodiny nenačteny: {_e}")
 
 # ── Zobraz souhrnnou tabulku načtených datasetů ───────────────────────────────
 _show_load_summary()
@@ -11526,6 +11683,17 @@ else:
     for col in ['TRN_POCET_CELKEM', 'TRN_CASTKA_CELKEM', 'TRN_DENNI_POCET']:
         df[col] = 0.0
     display(HTML("<b style='color:orange;'>⚠️ transakce_trn_agg prázdný nebo chybí BRANCH_CODE — sloupce nastaveny na 0.</b>"))
+
+# ── Přepočet TRN_DENNI_POCET dle skutečného počtu otevřených dní pobočky ──────
+# Nahrazuje konstantu WORKING_DAYS_PER_YEAR per-branch hodnotou z Pokladních hodin
+if pokladni_dny and 'TRN_POCET_CELKEM' in df.columns:
+    _ph_days = df['BRANCH_CODE'].map(pokladni_dny)
+    _has_days = _ph_days.notna()
+    _divisor  = _ph_days.where(_has_days, WORKING_DAYS_PER_YEAR).clip(lower=1)
+    df['TRN_DENNI_POCET'] = (df['TRN_POCET_CELKEM'] / _divisor).round(1)
+    _covered = _has_days.sum()
+    print(f"✅ TRN_DENNI_POCET přepočítán pro {_covered} poboček dle skutečných dní "
+          f"({len(df) - _covered} použilo výchozích {WORKING_DAYS_PER_YEAR} dní)")
 
 # Výpočet hotovostního ratingu (45 % počet + 55 % objem)
 df = compute_cash_rating(df)
