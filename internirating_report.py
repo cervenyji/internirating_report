@@ -103,6 +103,61 @@ BNS_IR_TOP_N = 280
 # Kódy poboček z simulace sítě 250 — nastavuje generate_network_simulation_200()
 SIM_250_KEEP_CODES: set = set()
 
+# Segmentové FTE pozice — definice skupin pro FTE_MMMA, FTE_SBC, … FTE_RKC
+FTE_MMMA_POZICE = [
+    "bankéř klientské péče - junior", "bankéř klientské péče - medior",
+    "manažer segm. investice - reg. ředitel", "manažer segmentu investice - zástupce",
+    "investiční specialista - medior",
+    "retail lead - area lead", "retail lead - regional lead", "retail lead - team lead",
+    "osobní bankéř - junior", "osobní bankéř - medior", "osobní bankéř - senior", "osobní bankéř - master",
+    "regionální manažer strategie - medior",
+    "manažer segm. pojištění - reg. ředitel", "pojišťovací specialista - medior",
+]
+FTE_SBC_POZICE = [
+    "firemní bankéř - medior", "podpora firemních bankéřů",
+    "firemní bankéř - senior", "firemní bankéř - master",
+    "manažer segmentu sb - regionální ředitel", "manažer segmentu sb - team leader",
+    "spec. pro firemní pojištění - senior",
+]
+FTE_HC_POZICE = [
+    "hypoteční specialista - medior", "hypoteční specialista - senior",
+    "manažer segm. hypo - regionální ředitel", "manažer segmentu hypo - zástupce",
+    "pobočkový specialista - hypo",
+]
+FTE_EPC_POZICE = [
+    "premier bus. and digi assistant - senior",
+    "manaž. segm. erste premier - area leader",
+    "manaž. segm. erste premier - team leader bez portfolia",
+    "manaž. segm. erste premier - team leader s portfoliem",
+    "premier bankéř - medior", "premier bankéř - master", "premier bankéř - senior",
+]
+FTE_EPB_POZICE = [
+    "asistentka epb - medior", "asistentka epb - master",
+    "privátní bankéř - medior", "privátní bankéř - senior", "privátní bankéř - wealth management",
+    "manažer segmentu epb - regionál. ředitel", "manažer segmentu epb - zástupce",
+]
+FTE_PROVOZ_POZICE = [
+    "regionální manažer provozu", "manažer provozu pob. sítě - team leader",
+    "pobočkový specialista - provoz",
+    "spec. provozu pobočkové sítě - medior", "spec. provozu pobočkové sítě - senior",
+]
+FTE_RKC_POZICE = [
+    "ředitel regionálního korporátního centra",
+    "korporátní finanční analytik - senior", "korporátní finanční analytik - master",
+    "spec. korporátní klientely - asistent",
+    "korporátní úvěrový specialista - medior", "korporátní úvěrový specialista - senior",
+]
+# Mapování sloupec → zkratka pro Přítomnost segmentů
+_SEG_FTE_MAP = [
+    ("FTE_MMMA",   "MMMA"),
+    ("FTE_SBC",    "SBC"),
+    ("FTE_HC",     "HC"),
+    ("FTE_EPC",    "EPC"),
+    ("FTE_EPB",    "EPB"),
+    ("FTE_PROVOZ", "PROVOZ"),
+    ("FTE_RKC",    "RKC"),
+]
+
 # =============================================================================
 # KONFIGURACE GENEROVÁNÍ REPORTŮ
 # =============================================================================
@@ -536,10 +591,18 @@ NOVE_NAZVY = {
     "SP_PCT_3":    "Spád. podíl 3",
 
     # ── 👷 FTE ────────────────────────────────────────────────────
-    "FTE":           "Celková FTE controlling",
-    "_total_spec":   "Celková FTE redim",
-    "BANKERS_COUNT": "Počet bankéřů redim",
-    "OBCHODNI_FTE":  "FTE všechny obchodní pozice redim",
+    "FTE":                 "Celková FTE controlling",
+    "_total_spec":         "Celková FTE redim",
+    "BANKERS_COUNT":       "Počet bankéřů redim",
+    "OBCHODNI_FTE":        "FTE všechny obchodní pozice redim",
+    "FTE_MMMA":            "FTE MMMA",
+    "FTE_SBC":             "FTE SBC",
+    "FTE_HC":              "FTE HC",
+    "FTE_EPC":             "FTE EPC",
+    "FTE_EPB":             "FTE EPB",
+    "FTE_PROVOZ":          "FTE PROVOZ",
+    "FTE_RKC":             "FTE RKC",
+    "SEGMENTY_PRITOMNOST": "Přítomnost segmentů",
 
     # ── 🛍️ Prodeje (kvintily per produkt + celkový počet) ────────
     "POCET_PRODEJU_CELKEM_2025":         "Prodeje celkem 2025",
@@ -6810,15 +6873,38 @@ def prepare_rating_status(df):
             # Obchodní FTE (interní, pro výpočet BRANCH_FORMAT_OBCHODNI)
             _spec_bc['OBCHODNI_FTE'] = _spec_bc[_obch_cols].sum(axis=1) if _obch_cols else 0
 
-            _spec_agg = _spec_bc[['branch_id', 'BANKERS_COUNT', 'OBCHODNI_FTE', '_total_spec']].rename(
-                columns={'branch_id': 'BRANCH_CODE'})
+            # Segmentové FTE sloupce
+            _seg_defs = [
+                ('FTE_MMMA',   FTE_MMMA_POZICE),
+                ('FTE_SBC',    FTE_SBC_POZICE),
+                ('FTE_HC',     FTE_HC_POZICE),
+                ('FTE_EPC',    FTE_EPC_POZICE),
+                ('FTE_EPB',    FTE_EPB_POZICE),
+                ('FTE_PROVOZ', FTE_PROVOZ_POZICE),
+                ('FTE_RKC',    FTE_RKC_POZICE),
+            ]
+            _new_seg_cols = []
+            for _seg_col, _seg_poz in _seg_defs:
+                _sc = [c for c in _spec_cols_g if c.lower().strip() in set(_seg_poz)]
+                _spec_bc[_seg_col] = _spec_bc[_sc].sum(axis=1) if _sc else 0
+                _new_seg_cols.append(_seg_col)
+
+            # Přítomnost segmentů — čárkou oddělené zkratky segmentů s FTE > 0
+            def _seg_prit(row):
+                return ', '.join(lbl for col, lbl in _SEG_FTE_MAP if row.get(col, 0) > 0)
+            _spec_bc['SEGMENTY_PRITOMNOST'] = _spec_bc.apply(_seg_prit, axis=1)
+
+            _all_new_cols = _new_seg_cols + ['SEGMENTY_PRITOMNOST']
+            _spec_agg = _spec_bc[
+                ['branch_id', 'BANKERS_COUNT', 'OBCHODNI_FTE', '_total_spec'] + _all_new_cols
+            ].rename(columns={'branch_id': 'BRANCH_CODE'})
             rating_status['BRANCH_CODE'] = pd.to_numeric(
                 rating_status['BRANCH_CODE'], errors='coerce')
             _spec_agg['BRANCH_CODE'] = pd.to_numeric(
                 _spec_agg['BRANCH_CODE'], errors='coerce')
             # Drop any pre-existing versions to prevent _x/_y suffix on merge
             rating_status = rating_status.drop(
-                columns=[c for c in ['BANKERS_COUNT', 'OBCHODNI_FTE', '_total_spec']
+                columns=[c for c in ['BANKERS_COUNT', 'OBCHODNI_FTE', '_total_spec'] + _all_new_cols
                          if c in rating_status.columns],
                 errors='ignore'
             )
@@ -6826,6 +6912,9 @@ def prepare_rating_status(df):
             rating_status['BANKERS_COUNT'] = rating_status['BANKERS_COUNT'].fillna(0).astype(int)
             rating_status['OBCHODNI_FTE']  = rating_status['OBCHODNI_FTE'].fillna(0).astype(int)
             rating_status['_total_spec']   = rating_status['_total_spec'].fillna(0).astype(int)
+            for _c in _new_seg_cols:
+                rating_status[_c] = rating_status[_c].fillna(0).astype(int)
+            rating_status['SEGMENTY_PRITOMNOST'] = rating_status['SEGMENTY_PRITOMNOST'].fillna('')
 
             # Potřeba bankéřů — stejná metodika jako simulace 250 poboček:
             _BANKER_CAP   = 5 * 248
@@ -7620,6 +7709,8 @@ COL_GROUPS = [
     ("👷 FTE",               [
         "Celková FTE controlling", "Celková FTE redim", "Počet bankéřů redim",
         "FTE všechny obchodní pozice redim",
+        "FTE MMMA", "FTE SBC", "FTE HC", "FTE EPC", "FTE EPB", "FTE PROVOZ", "FTE RKC",
+        "Přítomnost segmentů",
     ], "#e8f0fe"),
     ("🏅 Sdružené ratingy",   [
         "Rating 25 kvintil",
@@ -8158,6 +8249,7 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
         "REVENUES_2021","REVENUES_2022","REVENUES_2023","REVENUES_2024","VYNOSY",
         "NEW_BUSINESS_2024_-_OBJEM_VYNOSU","OBJEM_VYNOSU_CZK",
         "FTE","BANKERS_COUNT","_total_spec","OBCHODNI_FTE",
+        "FTE_MMMA","FTE_SBC","FTE_HC","FTE_EPC","FTE_EPB","FTE_PROVOZ","FTE_RKC",
         "POCET_SCHUZEK_ONLINE","POCET_SCHUZEK_FYZICKY","POCET_BEZHOT_WALK_IN",
         "POCET_HOT_WALK_IN","POCET_NAVSTEV_CELKEM",
         "NAVSTEV_NA_BANKERE","SCHUZEK_ONLINE_NA_BANKERE","SCHUZEK_FYZICKE_NA_BANKERE",
