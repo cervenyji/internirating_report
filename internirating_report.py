@@ -355,6 +355,13 @@ soubory = {
         "source_desc": "Spádové pobočky — kam přejdou klienti v případě uzavření pobočky (top 3 alternativy dle analýzy návštěvnosti).",
         "extra_params": {},
         "no_merge": True
+    },
+    "pokladni_hodiny": {
+        "path": '../vypocet_ir_2026/zdroje/Pokladní hodiny.xlsx',
+        "validity": "2026-01-01",
+        "source_desc": "Pokladní hodiny poboček — dny a hodiny otevření pokladen. Slouží k výpočtu skutečného počtu otevřených dní ročně pro Denní trn. průměr.",
+        "extra_params": {},
+        "no_merge": True
     }
 }
 
@@ -5662,10 +5669,11 @@ def generate_branch_summary_tables(df):
 
 
 def generate_bns_close_table(df):
-    """Tabulka keep/close dle Strategie BNS a BNS dle IR 25 po regionech s výhledem 2027–2030."""
-    _strat = 'FOOTPRINT_STRATEGIE_(2030)'
+    """Tabulka keep/close dle Strategie BNS, BNS dle IR 25 a Simulace 250 po regionech 2027-2030."""
+    _strat  = 'FOOTPRINT_STRATEGIE_(2030)'
     _yr_col = 'PLAN_CLOSE_(ROK)'
     _ir_col = 'BNS_IR_FLAG'
+    _sm_col = 'SIM_250_FLAG'
 
     if _strat not in df.columns or 'REGION_NAME' not in df.columns:
         return "<p style='color:#aaa;font-style:italic;'>Data BNS strategie nejsou k dispozici.</p>"
@@ -5678,90 +5686,131 @@ def generate_bns_close_table(df):
     YEARS = [2027, 2028, 2029, 2030]
     regions = sorted([r for r in d['REGION_NAME'].unique() if r not in ('—', '', 'nan', 'None')])
 
+    def _flag_counts(sub, col):
+        if col not in sub.columns:
+            return 0, 0
+        vals = sub[col].astype(str).str.lower()
+        return int((vals == 'keep').sum()), int((vals == 'close').sum())
+
     def _stats(sub):
         n = len(sub)
-        close_n = int(sub['_is_close'].sum())
-        keep_yr = {}
-        for yr in YEARS:
-            keep_yr[yr] = int(((~sub['_is_close']) | (sub['_close_yr'].fillna(9999) > yr)).sum())
-        ir_keep  = int((sub[_ir_col].astype(str).str.lower() == 'keep').sum())  if _ir_col in sub.columns else 0
-        ir_close = int((sub[_ir_col].astype(str).str.lower() == 'close').sum()) if _ir_col in sub.columns else 0
-        return n, close_n, keep_yr, ir_keep, ir_close
+        close_n  = int(sub['_is_close'].sum())
+        keep_yr  = {yr: int(((~sub['_is_close']) | (sub['_close_yr'].fillna(9999) > yr)).sum())
+                    for yr in YEARS}
+        ir_k, ir_c   = _flag_counts(sub, _ir_col)
+        sim_k, sim_c = _flag_counts(sub, _sm_col)
+        return n, close_n, keep_yr, ir_k, ir_c, sim_k, sim_c
 
     all_rows = []
     for reg in regions:
         all_rows.append((reg, _stats(d[d['REGION_NAME'] == reg]), False))
     all_rows.append(('CELKEM', _stats(d[d['REGION_NAME'].isin(regions)]), True))
 
-    has_ir = _ir_col in d.columns and (d[_ir_col].astype(str).str.lower().isin(['keep','close'])).any()
+    has_ir  = _ir_col in d.columns and d[_ir_col].astype(str).str.lower().isin(['keep','close']).any()
+    has_sim = _sm_col in d.columns and d[_sm_col].astype(str).str.lower().isin(['keep','close']).any()
 
-    # ── Header ──
-    _C1 = '#e63946'   # close group — red
-    _C2 = '#0077b6'   # IR group — blue
+    # ── Barvy skupin ──
+    _C_FP  = '#dc2626'   # Strategie BNS (footprint) — červená
+    _C_IR  = '#1d4ed8'   # Strategie BNS dle IR 25 — modrá
+    _C_SIM = '#7c3aed'   # Simulace 250 — fialová
+    _C_HDR = '#1e293b'   # záhlaví Region/Celkem
 
-    th = lambda txt, rs=1, cs=1, bg='#2770f0', align='center', fw='700': (
-        f'<th rowspan="{rs}" colspan="{cs}" style="background:{bg};color:#fff;'
-        f'border:1px solid rgba(255,255,255,.2);padding:5px 10px;'
-        f'text-align:{align};font-size:0.78rem;font-weight:{fw};white-space:nowrap;">{txt}</th>'
-    )
+    def _th(txt, rs=1, cs=1, bg='#2770f0', align='center'):
+        return (f'<th rowspan="{rs}" colspan="{cs}" style="background:{bg};color:#fff;'
+                f'border:1px solid rgba(255,255,255,.15);padding:7px 10px;'
+                f'text-align:{align};font-size:0.77rem;font-weight:700;white-space:nowrap;">{txt}</th>')
+
+    # Počet skupin pro colspan výpočet
+    _fp_cs  = 1 + len(YEARS)   # Close + Keep 2027-2030
+    _ir_cs  = 2 if has_ir  else 0
+    _sim_cs = 2 if has_sim else 0
 
     hdr1 = '<tr>'
-    hdr1 += th('Region', rs=2, align='left', bg='#2770f0')
-    hdr1 += th('Celkem', rs=2, bg='#475569')
-    hdr1 += th('Strategie BNS — počty keep dle roku plánovaného uzavření', cs=5, bg=_C1)
+    hdr1 += _th('Region', rs=2, align='left', bg=_C_HDR)
+    hdr1 += _th('Celkem', rs=2, bg=_C_HDR)
+    hdr1 += _th('📋 Strategie BNS — Keep po roce uzavření', cs=_fp_cs, bg=_C_FP)
     if has_ir:
-        hdr1 += th('Strategie BNS dle IR 25', cs=2, bg=_C2)
+        hdr1 += _th('🎯 Strategie BNS dle IR 25', cs=_ir_cs, bg=_C_IR)
+    if has_sim:
+        hdr1 += _th('🏦 Simulace 250 poboček', cs=_sim_cs, bg=_C_SIM)
     hdr1 += '</tr>'
 
     hdr2 = '<tr>'
-    hdr2 += th('Close celkem', bg=_C1)
+    hdr2 += _th('❌ Close', bg=f'{_C_FP}e0')
     for yr in YEARS:
-        hdr2 += th(f'Keep {yr}', bg=f'{_C1}cc')
+        hdr2 += _th(f'✅ Keep<br><small>{yr}</small>', bg=f'{_C_FP}99')
     if has_ir:
-        hdr2 += th('Keep', bg=_C2)
-        hdr2 += th('Close', bg=f'{_C2}cc')
+        hdr2 += _th('✅ Keep', bg=f'{_C_IR}cc')
+        hdr2 += _th('❌ Close', bg=f'{_C_IR}99')
+    if has_sim:
+        hdr2 += _th('✅ Keep', bg=f'{_C_SIM}cc')
+        hdr2 += _th('❌ Close', bg=f'{_C_SIM}99')
     hdr2 += '</tr>'
 
-    # ── Rows ──
-    rows_html = ''
-    for i, (reg, (n, close_n, keep_yr, ir_k, ir_c), is_total) in enumerate(all_rows):
-        bg  = '#e8f4ff' if is_total else ('#fff' if i % 2 == 0 else '#f7f9ff')
-        fw  = '700' if is_total else '400'
-        bt  = 'border-top:2px solid #2770f0;' if is_total else ''
+    # ── Řádky ──
+    def _td_num(val, n_total, color_pos='#16a34a', color_neg='#dc2626', bold=False):
+        """Buňka s číslem, progress barem, zvýrazněním."""
+        if val == 0:
+            return f'<td style="border:1px solid #e2e8f0;padding:6px 10px;text-align:center;color:#cbd5e1;font-size:0.8rem;">—</td>'
+        pct = val / n_total * 100 if n_total > 0 else 0
+        bar = (f"<div style='height:3px;background:{color_pos};width:{min(pct,100):.0f}%;"
+               f"border-radius:2px;margin-top:3px;opacity:0.4;'></div>") if not bold else ''
+        fw = 'font-weight:700;' if bold else ''
+        return (f'<td style="border:1px solid #e2e8f0;padding:6px 10px;text-align:center;'
+                f'font-size:0.8rem;{fw}">'
+                f'<span style="color:{color_pos};">{val}</span>{bar}</td>')
 
-        def td(val, color=None, pct=None):
-            pct_bar = ''
-            if pct is not None and pct > 0:
-                pct_bar = (f"<div style='height:3px;background:{color or '#ccc'};"
-                           f"width:{min(pct,100):.0f}%;border-radius:2px;margin-top:2px;opacity:.5;'></div>")
-            col_style = f'color:{color};' if color else ''
-            return (f'<td style="border:1px solid #dee2e6;padding:5px 8px;text-align:center;'
-                    f'font-size:0.8rem;font-weight:{fw};{bt}{col_style}">'
-                    f'{"<b>" if val and val != "—" and fw=="700" else ""}{val}{"</b>" if val and val != "—" and fw=="700" else ""}'
-                    f'{pct_bar}</td>')
+    def _td_close(val, bold=False):
+        if val == 0:
+            return f'<td style="border:1px solid #e2e8f0;padding:6px 10px;text-align:center;color:#cbd5e1;font-size:0.8rem;">—</td>'
+        fw = 'font-weight:700;' if bold else ''
+        return (f'<td style="border:1px solid #e2e8f0;padding:6px 10px;text-align:center;'
+                f'font-size:0.8rem;{fw}color:#dc2626;">{val}</td>')
+
+    rows_html = ''
+    for i, (reg, stats, is_total) in enumerate(all_rows):
+        n, close_n, keep_yr, ir_k, ir_c, sim_k, sim_c = stats
+        bg  = '#eff6ff' if is_total else ('#ffffff' if i % 2 == 0 else '#f8fafc')
+        fw  = 'font-weight:700;' if is_total else ''
+        sep = 'border-top:2px solid #1d4ed8;' if is_total else ''
 
         row = f'<tr style="background:{bg};">'
-        row += (f'<td style="border:1px solid #dee2e6;padding:5px 12px;font-weight:{fw};'
-                f'white-space:nowrap;font-size:0.8rem;{bt}">{reg}</td>')
-        row += td(n)
-        row += td(f'<span style="color:{_C1};font-weight:700;">{close_n}</span>' if close_n > 0 else '—')
+        row += (f'<td style="border:1px solid #e2e8f0;padding:6px 12px;white-space:nowrap;'
+                f'font-size:0.82rem;{fw}{sep}">{reg}</td>')
+        row += (f'<td style="border:1px solid #e2e8f0;padding:6px 10px;text-align:center;'
+                f'font-size:0.8rem;{fw}{sep}color:#475569;">{n}</td>')
+        # Footprint: close + keep by year
+        row += _td_close(close_n, bold=is_total).replace('border:1px solid', f'{sep}border:1px solid')
         for yr in YEARS:
             kv = keep_yr[yr]
-            pct_k = kv / n * 100 if n > 0 else 0
-            row += td(kv, color='#0bb440' if kv == n else None,
-                      pct=pct_k if not is_total else None)
+            row += _td_num(kv, n, color_pos='#16a34a', bold=is_total).replace('border:1px solid', f'{sep}border:1px solid')
+        # IR 25
         if has_ir:
-            row += td(ir_k, color='#0bb440' if ir_k > 0 else None)
-            row += td(f'<span style="color:{_C2}cc;">{ir_c}</span>' if ir_c > 0 else '—')
+            row += _td_num(ir_k, n, color_pos='#1d4ed8', bold=is_total).replace('border:1px solid', f'{sep}border:1px solid')
+            row += _td_close(ir_c, bold=is_total).replace('border:1px solid', f'{sep}border:1px solid')
+        # Simulace 250
+        if has_sim:
+            row += _td_num(sim_k, n, color_pos='#7c3aed', bold=is_total).replace('border:1px solid', f'{sep}border:1px solid')
+            row += _td_close(sim_c, bold=is_total).replace('border:1px solid', f'{sep}border:1px solid')
         row += '</tr>'
         rows_html += row
 
+    legend = (
+        f"<div style='font-size:0.75rem;color:#64748b;margin-top:8px;display:flex;gap:16px;flex-wrap:wrap;'>"
+        f"<span><b style='color:{_C_FP};'>📋 Strategie BNS</b>: Keep = pobočky ještě neuzavřené ke konci daného roku</span>"
+        + (f"<span><b style='color:{_C_IR};'>🎯 IR 25</b>: top {BNS_IR_TOP_N} poboček dle IR = keep</span>" if has_ir else "")
+        + (f"<span><b style='color:{_C_SIM};'>🏦 Sim 250</b>: pobočky vybrané simulací 250 = keep</span>" if has_sim else "")
+        + "</div>"
+    )
+
     return (
-        f'<div style="overflow-x:auto;border-radius:8px;'
-        f'box-shadow:0 2px 8px rgba(0,0,0,0.07);margin-bottom:20px;">'
+        f'<div style="overflow-x:auto;border-radius:10px;'
+        f'box-shadow:0 2px 10px rgba(0,0,0,0.08);margin-bottom:8px;">'
         f'<table style="width:100%;border-collapse:collapse;font-size:0.8rem;background:#fff;">'
-        f'<thead>{hdr1}{hdr2}</thead><tbody>{rows_html}</tbody>'
+        f'<thead style="position:sticky;top:0;">{hdr1}{hdr2}</thead>'
+        f'<tbody>{rows_html}</tbody>'
         f'</table></div>'
+        f'{legend}'
     )
 
 
@@ -9667,7 +9716,7 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
                 on='BRANCH_CODE', how='left'
             )
 
-    # Vždy přepočítej BNS_IR_FLAG na lokálním rating_status (platí pro static i regional)
+    # Vždy přepočítej BNS_IR_FLAG a SIM_250_FLAG na lokálním rating_status (static i regional)
     try:
         if 'IR' in rating_status.columns:
             _ir_r = pd.to_numeric(rating_status['IR'], errors='coerce')
@@ -9676,6 +9725,15 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
             rating_status['BNS_IR_FLAG'] = rating_status['BRANCH_CODE'].apply(
                 lambda bc: 'keep' if bc in _top_r else 'close'
             )
+    except Exception:
+        pass
+    try:
+        if SIM_250_KEEP_CODES:
+            _sim_r = {int(c) for c in SIM_250_KEEP_CODES}
+            def _sflag_r(bc):
+                try: return 'keep' if int(bc) in _sim_r else 'close'
+                except: return 'close'
+            rating_status['SIM_250_FLAG'] = rating_status['BRANCH_CODE'].apply(_sflag_r)
     except Exception:
         pass
 
@@ -11186,27 +11244,48 @@ except Exception as e:
 # ── Pokladní hodiny — počet otevřených dní na pobočku ─────────────────────────
 # Slouží pro přesný výpočet TRN_DENNI_POCET (náhrada konstanty WORKING_DAYS_PER_YEAR)
 try:
-    _ph_path = '../vypocet_ir_2026/zdroje/Pokladní hodiny.xlsx'
+    import datetime as _dt
+    _ph_path = soubory["pokladni_hodiny"]["path"]
     _ph_raw  = pd.read_excel(_ph_path)
     _ph_day_cols = [c for c in ['PO','UT','ST','CT','PA','SO','NE'] if c in _ph_raw.columns]
     if _ph_day_cols and 'POBOCKA' in _ph_raw.columns:
         def _is_open(v):
+            # Excel může vrátit datetime.time, float (zlomek dne) nebo řetězec
+            if isinstance(v, _dt.time):
+                return (v.hour + v.minute) > 0
+            if isinstance(v, (int, float)):
+                return v > 0
             s = str(v).strip()
-            return s not in ('00:00', '0:00', '0', '0:0', '', 'nan', 'None', 'NaT')
+            if not s or s in ('nan', 'None', 'NaT', ''):
+                return False
+            # Parsovat první číslo z "HH:MM" nebo "H:MM"
+            try:
+                return int(s.split(':')[0]) > 0
+            except (ValueError, IndexError):
+                return False
         _ph_raw['_open_days'] = _ph_raw[_ph_day_cols].apply(
             lambda row: sum(1 for v in row if _is_open(v)), axis=1
         )
         _ph_raw['POBOCKA'] = pd.to_numeric(_ph_raw['POBOCKA'], errors='coerce')
-        # Roční dny = open_days / 7 * 365 (průměr)
+        # Roční dny = open_days_per_week / 7 * 365
         _ph_raw['_annual_days'] = (_ph_raw['_open_days'] / 7 * 365).round(0).astype(int).clip(lower=1)
         pokladni_dny = dict(zip(_ph_raw['POBOCKA'].dropna().astype(int), _ph_raw['_annual_days']))
-        print(f"✅ Pokladní hodiny: {len(pokladni_dny)} poboček, "
-              f"průměr dní/rok: {sum(pokladni_dny.values())/max(len(pokladni_dny),1):.0f}")
+        _avg_days = sum(pokladni_dny.values()) / max(len(pokladni_dny), 1)
+        _load_log.append({"jmeno": "pokladni_hodiny", "status": "✅", "typ": "XLSX",
+            "řádků": f"{len(_ph_raw):,}", "sloupců": str(len(_ph_raw.columns)),
+            "platnost": soubory["pokladni_hodiny"]["validity"],
+            "pozn": f"{len(pokladni_dny)} poboček · průměr {_avg_days:.0f} dní/rok · dělitel pro TRN_DENNI_POCET"})
+        print(f"✅ Pokladní hodiny: {len(pokladni_dny)} poboček, průměr {_avg_days:.0f} dní/rok")
     else:
         pokladni_dny = {}
+        _load_log.append({"jmeno": "pokladni_hodiny", "status": "⚠️", "typ": "XLSX",
+            "řádků": f"{len(_ph_raw):,}", "sloupců": str(len(_ph_raw.columns)),
+            "platnost": "", "pozn": f"chybí sloupce POBOCKA nebo PO/UT/… — nalezené: {list(_ph_raw.columns)[:8]}"})
         print("⚠️ Pokladní hodiny: chybí sloupce POBOCKA nebo PO/UT/…")
 except Exception as _e:
     pokladni_dny = {}
+    _load_log.append({"jmeno": "pokladni_hodiny", "status": "❌", "typ": "XLSX",
+        "řádků": "—", "sloupců": "—", "platnost": "", "pozn": str(_e)})
     print(f"⚠️ Pokladní hodiny nenačteny: {_e}")
 
 # ── Zobraz souhrnnou tabulku načtených datasetů ───────────────────────────────
