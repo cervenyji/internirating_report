@@ -9960,7 +9960,6 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
 
         # --- přehledové tabulky ---
         branch_summary_html  = generate_branch_summary_tables(rating_status)
-        bns_close_html       = generate_bns_close_table(rating_status)
         close_branches_html       = generate_close_branches_table(rating_status)
         invest_branches_html      = generate_invest_branches_table(rating_status)
         cashierless_branches_html = generate_cashierless_table(rating_status)
@@ -10162,6 +10161,9 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
                 except: return 'close'
             df_sorted['SIM_250_FLAG']     = df_sorted['BRANCH_CODE'].apply(_sflag_upd)
             rating_status['SIM_250_FLAG'] = rating_status['BRANCH_CODE'].apply(_sflag_upd)
+
+        # bns_close_html až po aktualizaci SIM_250_FLAG — jinak by chyběla část Simulace 250
+        bns_close_html = generate_bns_close_table(rating_status)
 
         print("  💎 Generuji heatmapu výnosových klientů...")
         _pf_arg = globals().get('parties_full')
