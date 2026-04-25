@@ -11250,28 +11250,23 @@ try:
     _ph_path = soubory["pokladni_hodiny"]["path"]
     _ph_raw  = pd.read_excel(_ph_path)
     _ph_day_cols = [c for c in ['PO','UT','ST','CT','PA','SO','NE'] if c in _ph_raw.columns]
-    if _ph_day_cols and 'POBOCKA' in _ph_raw.columns:
+    if _ph_day_cols and 'BRANCH_ID' in _ph_raw.columns:
         def _is_open(v):
-            # Excel může vrátit datetime.time, float (zlomek dne) nebo řetězec
+            # Hodnoty jsou řetězce "HH:MM"; "00:00" = zavřeno
             if isinstance(v, _dt.time):
                 return (v.hour + v.minute) > 0
             if isinstance(v, (int, float)):
-                return v > 0
+                import math
+                return not (v == 0 or (isinstance(v, float) and math.isnan(v)))
             s = str(v).strip()
-            if not s or s in ('nan', 'None', 'NaT', ''):
-                return False
-            # Parsovat první číslo z "HH:MM" nebo "H:MM"
-            try:
-                return int(s.split(':')[0]) > 0
-            except (ValueError, IndexError):
-                return False
+            return bool(s) and s not in ('00:00', '0:00', 'nan', 'None', 'NaT', '', '0')
         _ph_raw['_open_days'] = _ph_raw[_ph_day_cols].apply(
             lambda row: sum(1 for v in row if _is_open(v)), axis=1
         )
-        _ph_raw['POBOCKA'] = pd.to_numeric(_ph_raw['POBOCKA'], errors='coerce')
+        _ph_raw['BRANCH_ID'] = pd.to_numeric(_ph_raw['BRANCH_ID'], errors='coerce')
         # Roční dny = open_days_per_week / 7 * 365
         _ph_raw['_annual_days'] = (_ph_raw['_open_days'] / 7 * 365).round(0).astype(int).clip(lower=1)
-        pokladni_dny = dict(zip(_ph_raw['POBOCKA'].dropna().astype(int), _ph_raw['_annual_days']))
+        pokladni_dny = dict(zip(_ph_raw['BRANCH_ID'].dropna().astype(int), _ph_raw['_annual_days']))
         _avg_days = sum(pokladni_dny.values()) / max(len(pokladni_dny), 1)
         _load_log.append({"jmeno": "pokladni_hodiny", "status": "✅", "typ": "XLSX",
             "řádků": f"{len(_ph_raw):,}", "sloupců": str(len(_ph_raw.columns)),
@@ -11282,8 +11277,8 @@ try:
         pokladni_dny = {}
         _load_log.append({"jmeno": "pokladni_hodiny", "status": "⚠️", "typ": "XLSX",
             "řádků": f"{len(_ph_raw):,}", "sloupců": str(len(_ph_raw.columns)),
-            "platnost": "", "pozn": f"chybí sloupce POBOCKA nebo PO/UT/… — nalezené: {list(_ph_raw.columns)[:8]}"})
-        print("⚠️ Pokladní hodiny: chybí sloupce POBOCKA nebo PO/UT/…")
+            "platnost": "", "pozn": f"chybí sloupce BRANCH_ID nebo PO/UT/… — nalezené: {list(_ph_raw.columns)[:8]}"})
+        print("⚠️ Pokladní hodiny: chybí sloupce BRANCH_ID nebo PO/UT/…")
 except Exception as _e:
     pokladni_dny = {}
     _load_log.append({"jmeno": "pokladni_hodiny", "status": "❌", "typ": "XLSX",
