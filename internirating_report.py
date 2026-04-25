@@ -512,6 +512,7 @@ NOVE_NAZVY = {
     "TRN_POCET_CELKEM": "Trn. počet celkem",
     "TRN_CASTKA_CELKEM":"Trn. objem celkem",
     "TRN_DENNI_POCET":  "Denní trn. průměr",
+    "POKLADNA_DNI_ROK": "Počet dní otevřené pokladny / rok",
 
     # ── 🏠 Nájemné ────────────────────────────────────────────────
     "VLASTNICTVI":                 "Vlastnictví",
@@ -668,7 +669,7 @@ COLS_TO_FIX = [
     'CASH_OUT_PREVODITELNA_CASTKA',  'CASH_OUT_NEPREVODITELNA_CASTKA',
     'CASH_OUT_PREVODITELNA_POCET',   'CASH_OUT_NEPREVODITELNA_POCET',
     # cash rating
-    'TRN_POCET_CELKEM', 'TRN_CASTKA_CELKEM', 'TRN_DENNI_POCET',
+    'TRN_POCET_CELKEM', 'TRN_CASTKA_CELKEM', 'TRN_DENNI_POCET', 'POKLADNA_DNI_ROK',
     'TRN_SCORE', 'TRN_Q', 'TRN_RNK', 'TRN_POCET_Q', 'TRN_CASTKA_Q',
     # business rating vstupní sloupce
     'FTE', 'PRIMARNI_KLIENTI', 'AKTIVNI_KLIENTI', 'POCET_KLIENTU',
@@ -7830,7 +7831,7 @@ COL_GROUPS = [
         "PEREX", "PEREX kvintil",
         "Business pořadí", "Business rating kvintil",
     ], "#f3e5f5"),
-    ("🏦 Hotovostní rating",   ["Cash rating pořadí", "Vypočítaná strategie", "Cash rating kvintil", "Trn. počet celkem", "Trn. objem celkem", "Denní trn. průměr"], "#e3f2fd"),
+    ("🏦 Hotovostní rating",   ["Cash rating pořadí", "Vypočítaná strategie", "Cash rating kvintil", "Trn. počet celkem", "Trn. objem celkem", "Denní trn. průměr", "Počet dní otevřené pokladny / rok"], "#e3f2fd"),
     ("🏠 Nájemné",             ["Vlastnictví", "Roční nájemné", "Nájemné kvintil", "Začátek smlouvy", "Konec smlouvy", "Výpovědní lhůta"], "#eeddf7"),
     ("🔨 Investice",           ["Poslední investice", "Datum posl. inv.", "Výše posl. inv.", "Nejvyšší investice", "Datum nejv. inv.", "Výše nejv. inv.", "Celkem zainvestováno"], "#fce8d8"),
     ("🚶 Návštěvy",            [
@@ -8421,7 +8422,7 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
         "C/I_RATIO_(YTD_2021)","C/I_RATIO_(YTD_2022)","C/I_RATIO_(YTD_2023)",
         "C/I_RATIO_(YTD_2024)","PRIME_NAKLADY/VYNOSY",
         "CAP_REV_FTE","CAP_NEWCLI_FTE","CAP_PRIMCLI_FTE","CAP_SCHUZKY_FTE","CAP_PEREX",
-        "PRIM_RATIO","AKTIVNI_RATIO","CASH_PREVODITELNOST_PCT","TRN_DENNI_POCET",
+        "PRIM_RATIO","AKTIVNI_RATIO","CASH_PREVODITELNOST_PCT","TRN_DENNI_POCET","POKLADNA_DNI_ROK",
         "NAVSTEV_NA_BANKERE","SCHUZEK_ONLINE_NA_BANKERE","SCHUZEK_FYZICKE_NA_BANKERE",
         "BEZHOT_WALKIN_NA_BANKERE","HOT_WALKIN_NA_BANKERE",
     ]
@@ -11766,10 +11767,13 @@ if pokladni_dny and 'TRN_POCET_CELKEM' in df.columns:
     _ph_days = df['BRANCH_CODE'].map(pokladni_dny)
     _has_days = _ph_days.notna()
     _divisor  = _ph_days.where(_has_days, WORKING_DAYS_PER_YEAR).clip(lower=1)
-    df['TRN_DENNI_POCET'] = (df['TRN_POCET_CELKEM'] / _divisor).round(1)
+    df['TRN_DENNI_POCET']  = (df['TRN_POCET_CELKEM'] / _divisor).round(1)
+    df['POKLADNA_DNI_ROK'] = _divisor.round(0).astype(int)
     _covered = _has_days.sum()
     print(f"✅ TRN_DENNI_POCET přepočítán pro {_covered} poboček dle skutečných dní "
           f"({len(df) - _covered} použilo výchozích {WORKING_DAYS_PER_YEAR} dní)")
+else:
+    df['POKLADNA_DNI_ROK'] = WORKING_DAYS_PER_YEAR
 
 # Výpočet hotovostního ratingu (45 % počet + 55 % objem)
 df = compute_cash_rating(df)
