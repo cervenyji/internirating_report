@@ -182,6 +182,7 @@ SEKCE_POBOCKA = {
     "vekove_segmenty": True,   # 👥 Věkové segmenty klientů & cizinci
     "metriky":         True,   # 📊 Výkonnostní metriky
     "specialiste":     True,   # 👷 Obsazení pozic + spádové pobočky
+    "oteviraci_doba":  True,   # 🕐 Otevírací doba pobočky
     "navstevnost":     True,   # 🚶 Mapa návštěvnosti 2025
     "atm":             True,   # 🏧 Bankomaty na pobočce
 }
@@ -362,6 +363,13 @@ soubory = {
         "source_desc": "Pokladní hodiny poboček — dny a hodiny otevření pokladen. Slouží k výpočtu skutečného počtu otevřených dní ročně pro Denní trn. průměr.",
         "extra_params": {},
         "no_merge": True
+    },
+    "oteviraci_doba": {
+        "path": '../vypocet_ir_2026/zdroje/report_od_pobocky_dbs_04_2026.xlsx',
+        "validity": "2026-04-01",
+        "source_desc": "Otevírací doba poboček z DB sítě — hodiny a dny otevření. Slouží pro zobrazení ot. doby v pobočkovém reportu a výpočet návštěvnosti na hodinu.",
+        "extra_params": {},
+        "no_merge": True
     }
 }
 
@@ -513,6 +521,12 @@ NOVE_NAZVY = {
     "TRN_CASTKA_CELKEM":"Trn. objem celkem",
     "TRN_DENNI_POCET":  "Denní trn. průměr",
     "POKLADNA_DNI_ROK": "Počet dní otevřené pokladny / rok",
+
+    # ── 🕐 Otevírací doba ─────────────────────────────────────────
+    "OD_PH_TYDEN":           "Týdenní ot. hodiny",
+    "OD_VIKEND":             "Víkendová pobočka",
+    "OD_OBED_PAUZA":         "Polední pauza",
+    "OD_NAVSTEVY_NA_HODINU": "Návštěvy / ot. hod.",
 
     # ── 🏠 Nájemné ────────────────────────────────────────────────
     "VLASTNICTVI":                 "Vlastnictví",
@@ -670,6 +684,7 @@ COLS_TO_FIX = [
     'CASH_OUT_PREVODITELNA_POCET',   'CASH_OUT_NEPREVODITELNA_POCET',
     # cash rating
     'TRN_POCET_CELKEM', 'TRN_CASTKA_CELKEM', 'TRN_DENNI_POCET', 'POKLADNA_DNI_ROK',
+    'OD_PH_TYDEN', 'OD_VIKEND', 'OD_OBED_PAUZA', 'OD_NAVSTEVY_NA_HODINU',
     'TRN_SCORE', 'TRN_Q', 'TRN_RNK', 'TRN_POCET_Q', 'TRN_CASTKA_Q',
     # business rating vstupní sloupce
     'FTE', 'PRIMARNI_KLIENTI', 'AKTIVNI_KLIENTI', 'POCET_KLIENTU',
@@ -7831,7 +7846,8 @@ COL_GROUPS = [
         "PEREX", "PEREX kvintil",
         "Business pořadí", "Business rating kvintil",
     ], "#f3e5f5"),
-    ("🏦 Hotovostní rating",   ["Cash rating pořadí", "Vypočítaná strategie", "Cash rating kvintil", "Trn. počet celkem", "Trn. objem celkem", "Denní trn. průměr", "Počet dní otevřené pokladny / rok"], "#e3f2fd"),
+    ("🏦 Hotovostní rating",   ["Cash rating pořadí", "Vypočítaná strategie", "Cash rating kvintil", "Trn. počet celkem", "Trn. objem celkem", "Denní trn. průměr"], "#e3f2fd"),
+    ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Návštěvy / ot. hod.", "Počet dní otevřené pokladny / rok"], "#e8f5e9"),
     ("🏠 Nájemné",             ["Vlastnictví", "Roční nájemné", "Nájemné kvintil", "Začátek smlouvy", "Konec smlouvy", "Výpovědní lhůta"], "#eeddf7"),
     ("🔨 Investice",           ["Poslední investice", "Datum posl. inv.", "Výše posl. inv.", "Nejvyšší investice", "Datum nejv. inv.", "Výše nejv. inv.", "Celkem zainvestováno"], "#fce8d8"),
     ("🚶 Návštěvy",            [
@@ -7906,6 +7922,7 @@ COL_GROUP_ACCENT = [
     '#2e7d32',   # Výnosy
     '#7b1fa2',   # Business rating
     '#1565c0',   # Hotovostní rating
+    '#2e7d32',   # Otevírací doba
     '#6a1b9a',   # Nájemné
     '#e65100',   # Investice
     '#ad1457',   # Návštěvy
@@ -8423,6 +8440,7 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
         "C/I_RATIO_(YTD_2024)","PRIME_NAKLADY/VYNOSY",
         "CAP_REV_FTE","CAP_NEWCLI_FTE","CAP_PRIMCLI_FTE","CAP_SCHUZKY_FTE","CAP_PEREX",
         "PRIM_RATIO","AKTIVNI_RATIO","CASH_PREVODITELNOST_PCT","TRN_DENNI_POCET","POKLADNA_DNI_ROK",
+        "OD_PH_TYDEN","OD_NAVSTEVY_NA_HODINU",
         "NAVSTEV_NA_BANKERE","SCHUZEK_ONLINE_NA_BANKERE","SCHUZEK_FYZICKE_NA_BANKERE",
         "BEZHOT_WALKIN_NA_BANKERE","HOT_WALKIN_NA_BANKERE",
     ]
@@ -11286,6 +11304,61 @@ except Exception as _e:
         "řádků": "—", "sloupců": "—", "platnost": "", "pozn": str(_e)})
     print(f"⚠️ Pokladní hodiny nenačteny: {_e}")
 
+# ── Otevírací doba — hodiny a dny otevření pobočky ─────────────────────────
+# Slouží pro zobrazení ot. doby v pobočkovém reportu a výpočet OD_NAVSTEVY_NA_HODINU
+_OD_DAYS = [
+    ('PONDELI', 'PO'), ('UTERY', 'UT'), ('STREDA', 'ST'),
+    ('CTVRTEK', 'CT'), ('PATEK', 'PA'), ('SOBOTA', 'SO'), ('NEDELE', 'NE'),
+]
+oteviraci_doba_df     = pd.DataFrame()
+oteviraci_doba_detail = {}
+try:
+    _od_path = soubory["oteviraci_doba"]["path"]
+    _od_raw  = pd.read_excel(_od_path, dtype=str)
+    if 'KOD_POBOCKY' in _od_raw.columns:
+        _od_raw['_kp'] = pd.to_numeric(_od_raw['KOD_POBOCKY'], errors='coerce')
+        _od_raw['OD_PH_TYDEN'] = pd.to_numeric(
+            _od_raw['PH'] if 'PH' in _od_raw.columns else '0', errors='coerce'
+        ).fillna(0.0)
+
+        def _od_is_vikend(r):
+            return (str(r.get('SO', '')).strip() not in ('00:00', '0:00', '', 'nan')
+                    or str(r.get('NE', '')).strip() not in ('00:00', '0:00', '', 'nan'))
+
+        def _od_has_pauza(r):
+            for _dn, _ in _OD_DAYS:
+                _dd = str(r.get(f'{_dn}_DOP._DO', '')).strip()
+                _oo = str(r.get(f'{_dn}_ODP._OD', '')).strip()
+                if _dd not in ('00:00', '0:00', '', 'nan') and _dd != _oo:
+                    return True
+            return False
+
+        _od_raw['OD_VIKEND']     = _od_raw.apply(_od_is_vikend, axis=1)
+        _od_raw['OD_OBED_PAUZA'] = _od_raw.apply(_od_has_pauza, axis=1)
+
+        _od_clean = _od_raw.dropna(subset=['_kp']).copy()
+        _od_clean['_kp'] = _od_clean['_kp'].astype(int)
+        for _, _r in _od_clean.iterrows():
+            oteviraci_doba_detail[int(_r['_kp'])] = _r.to_dict()
+
+        oteviraci_doba_df = _od_clean[['_kp', 'OD_PH_TYDEN', 'OD_VIKEND', 'OD_OBED_PAUZA']].rename(
+            columns={'_kp': 'BRANCH_CODE'})
+        _od_n = len(oteviraci_doba_df)
+        _load_log.append({"jmeno": "oteviraci_doba", "status": "✅", "typ": "XLSX",
+            "řádků": f"{len(_od_raw):,}", "sloupců": str(len(_od_raw.columns)),
+            "platnost": soubory["oteviraci_doba"]["validity"],
+            "pozn": f"{_od_n} poboček · ot. hodiny, víkend, polední pauza"})
+        print(f"✅ Otevírací doba: {_od_n} poboček načteno")
+    else:
+        _load_log.append({"jmeno": "oteviraci_doba", "status": "⚠️", "typ": "XLSX",
+            "řádků": f"{len(_od_raw):,}", "sloupců": str(len(_od_raw.columns)),
+            "platnost": "", "pozn": "chybí sloupec KOD_POBOCKY"})
+        print("⚠️ Otevírací doba: chybí sloupec KOD_POBOCKY")
+except Exception as _ode:
+    _load_log.append({"jmeno": "oteviraci_doba", "status": "❌", "typ": "XLSX",
+        "řádků": "—", "sloupců": "—", "platnost": "", "pozn": str(_ode)})
+    print(f"⚠️ Otevírací doba nenačtena: {_ode}")
+
 # ── Zobraz souhrnnou tabulku načtených datasetů ───────────────────────────────
 _show_load_summary()
 
@@ -11774,6 +11847,22 @@ if pokladni_dny and 'TRN_POCET_CELKEM' in df.columns:
           f"({len(df) - _covered} použilo výchozích {WORKING_DAYS_PER_YEAR} dní)")
 else:
     df['POKLADNA_DNI_ROK'] = WORKING_DAYS_PER_YEAR
+
+# ── Merge otevírací doby do df ─────────────────────────────────────────────
+if not oteviraci_doba_df.empty:
+    df = df.merge(oteviraci_doba_df, on='BRANCH_CODE', how='left')
+    _od_cov = df['OD_PH_TYDEN'].notna().sum()
+    print(f"✅ Otevírací doba merged: {_od_cov} poboček pokryto")
+else:
+    for _odc in ['OD_PH_TYDEN', 'OD_VIKEND', 'OD_OBED_PAUZA']:
+        df[_odc] = None
+
+# OD_NAVSTEVY_NA_HODINU — roční návštěvy / roční ot. hodiny
+if 'POCET_NAVSTEV_CELKEM' in df.columns and 'OD_PH_TYDEN' in df.columns:
+    _od_ann = (df['OD_PH_TYDEN'].fillna(0) * 52).clip(lower=1)
+    df['OD_NAVSTEVY_NA_HODINU'] = (
+        df['POCET_NAVSTEV_CELKEM'].fillna(0) / _od_ann
+    ).where(df['POCET_NAVSTEV_CELKEM'].fillna(0) > 0).round(2)
 
 # Výpočet hotovostního ratingu (45 % počet + 55 % objem)
 df = compute_cash_rating(df)
@@ -12377,7 +12466,7 @@ def generate_specialiste_summary_table(branch_codes_list, title="👥 Přehled o
 }})();
 </script>"""
 
-def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovostni_trn=None, hotovostni_trn_detail=None, export_atm=None, kapacita_atm=None, visits=None, parties_full=None, spadovky=None):
+def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovostni_trn=None, hotovostni_trn_detail=None, export_atm=None, kapacita_atm=None, visits=None, parties_full=None, spadovky=None, oteviraci_doba_detail=None):
     """
     Generuje jeden HTML report pro každou pobočku v rating_status.
     Každý report obsahuje:
@@ -13925,6 +14014,112 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
   <p style="color:#aaa;font-style:italic;font-size:0.85rem;">Nejsou k dispozici data pro výpočet kvintilů.</p>
 </div>"""
 
+        # ── Otevírací doba pobočky ───────────────────────────────────────────
+        _od_html = ""
+        if oteviraci_doba_detail and branch_code in oteviraci_doba_detail:
+            _od = oteviraci_doba_detail[branch_code]
+            _OD_DAY_NAMES = [
+                ('PONDELI', 'PO', 'Pondělí'),
+                ('UTERY',   'UT', 'Úterý'),
+                ('STREDA',  'ST', 'Středa'),
+                ('CTVRTEK', 'CT', 'Čtvrtek'),
+                ('PATEK',   'PA', 'Pátek'),
+                ('SOBOTA',  'SO', 'Sobota'),
+                ('NEDELE',  'NE', 'Neděle'),
+            ]
+            def _odv(k): return str(_od.get(k, '') or '').strip()
+            def _od_closed(v): return v in ('00:00', '0:00', '', 'nan', 'None')
+
+            _od_rows = ""
+            for _dn, _ds, _dcz in _OD_DAY_NAMES:
+                _dop_od = _odv(f'{_dn}_DOP._OD'); _dop_do = _odv(f'{_dn}_DOP._DO')
+                _odp_od = _odv(f'{_dn}_ODP._OD'); _odp_do = _odv(f'{_dn}_ODP._DO')
+                _total  = _odv(_ds)
+                _closed = _od_closed(_total)
+                _wknd   = _dn in ('SOBOTA', 'NEDELE')
+                if _closed:
+                    _od_rows += (
+                        f'<tr style="background:{"#fdf2f2" if _wknd else "#fafafa"};">'
+                        f'<td style="padding:6px 12px;font-weight:600;color:#bbb;white-space:nowrap;">{_dcz}</td>'
+                        f'<td colspan="3" style="padding:6px 12px;color:#ccc;font-style:italic;text-align:center;">Zavřeno</td></tr>'
+                    )
+                else:
+                    _pauza = not _od_closed(_dop_do) and _dop_do != _odp_od
+                    _picon = " 🍽" if _pauza else ""
+                    _dop_s = f"{_dop_od}–{_dop_do}" if not _od_closed(_dop_od) else "—"
+                    _odp_s = (f"{_odp_od}–{_odp_do}{_picon}" if not _od_closed(_odp_od) else "—")
+                    _clr   = '#d97706' if _wknd else '#1a2a4a'
+                    _bg    = '#fffbf0' if _wknd else 'white'
+                    _od_rows += (
+                        f'<tr style="background:{_bg};">'
+                        f'<td style="padding:6px 12px;font-weight:600;color:{_clr};white-space:nowrap;">'
+                        f'{"🌅 " if _wknd else ""}{_dcz}</td>'
+                        f'<td style="padding:6px 12px;text-align:center;color:#555;">{_dop_s}</td>'
+                        f'<td style="padding:6px 12px;text-align:center;color:#555;">{_odp_s}</td>'
+                        f'<td style="padding:6px 12px;text-align:center;font-weight:700;color:#2770f0;">{_total}h</td></tr>'
+                    )
+
+            _od_ph    = float(_od.get('OD_PH_TYDEN', 0) or 0)
+            _od_vik   = bool(_od.get('OD_VIKEND', False))
+            _od_pauza = bool(_od.get('OD_OBED_PAUZA', False))
+            _nav_tot  = int(_v(row, 'POCET_NAVSTEV_CELKEM', 0) or 0)
+            _nav_hod  = round(_nav_tot / max(_od_ph * 52, 1), 2) if _od_ph > 0 and _nav_tot > 0 else None
+            _od_dn    = int(_v(row, 'POKLADNA_DNI_ROK', 252) or 252)
+
+            _badges = (
+                ('<span style="background:#d97706;color:white;border-radius:12px;'
+                 'padding:3px 10px;font-size:0.72rem;font-weight:700;margin-right:6px;">'
+                 '🌅 Víkendová pobočka</span>' if _od_vik else '') +
+                ('<span style="background:#6b7280;color:white;border-radius:12px;'
+                 'padding:3px 10px;font-size:0.72rem;font-weight:700;margin-right:6px;">'
+                 '🍽 Polední pauza</span>' if _od_pauza else '')
+            )
+            _nav_card = (
+                f'<div style="background:#f0f4ff;border-radius:8px;padding:12px 16px;border-left:4px solid #2770f0;">'
+                f'<div style="font-size:0.7rem;color:#888;font-weight:600;text-transform:uppercase;">Návštěvy / ot. hod.</div>'
+                f'<div style="font-size:1.4rem;font-weight:800;color:#2770f0;line-height:1.1;">{_nav_hod:.2f}</div>'
+                f'<div style="font-size:0.7rem;color:#aaa;">z {_nav_tot:,} návštěv · {_od_ph:.0f}h/týden × 52</div>'
+                f'</div>'
+            ) if _nav_hod is not None else ''
+            _od_html = f"""
+<div style="margin-top:28px;padding-top:20px;border-top:2px solid #e0e6f5;">
+  <div class="section-header">🕐 Otevírací doba pobočky</div>
+  <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;">
+    <div style="background:#fff;border-radius:10px;overflow:hidden;
+                box-shadow:0 2px 8px rgba(0,0,0,.07);flex:1;min-width:260px;">
+      <table style="border-collapse:collapse;width:100%;font-size:0.82rem;">
+        <thead>
+          <tr style="background:#2770f0;color:white;">
+            <th style="padding:7px 12px;text-align:left;">Den</th>
+            <th style="padding:7px 12px;text-align:center;">Dopoledne</th>
+            <th style="padding:7px 12px;text-align:center;">Odpoledne</th>
+            <th style="padding:7px 12px;text-align:center;">Celkem</th>
+          </tr>
+        </thead>
+        <tbody>
+          {_od_rows}
+          <tr style="background:#f0f4ff;font-weight:700;">
+            <td style="padding:6px 12px;color:#2770f0;">Celkem / týden</td>
+            <td colspan="2" style="padding:6px 12px;"></td>
+            <td style="padding:6px 12px;text-align:center;color:#2770f0;">{_od_ph:.0f}h</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;min-width:200px;">
+      <div style="background:#f8f9fb;border-radius:8px;padding:12px 16px;border:1px solid #e0e6f5;">
+        <div style="font-size:0.7rem;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:8px;">Charakteristiky</div>
+        {_badges if _badges else '<span style="color:#bbb;font-size:0.8rem;font-style:italic;">Bez víkendu, bez polední pauzy</span>'}
+      </div>
+      <div style="background:#f0fff4;border-radius:8px;padding:12px 16px;border-left:4px solid #27ae60;">
+        <div style="font-size:0.7rem;color:#888;font-weight:600;text-transform:uppercase;">Pokladní dny / rok</div>
+        <div style="font-size:1.4rem;font-weight:800;color:#27ae60;line-height:1.1;">{_od_dn}</div>
+      </div>
+      {_nav_card}
+    </div>
+  </div>
+</div>"""
+
         # ── Mapa návštěvnosti (visits) ────────────────────────────────────────
         visits_html = ""
         if visits is not None and not visits.empty:
@@ -14306,7 +14501,7 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
       <div style="background:#f0fff4;border-radius:8px;padding:10px 16px;
                   border-left:4px solid #27ae60;min-width:110px;">
         <div style="font-size:0.7rem;color:#888;font-weight:600;text-transform:uppercase;">Průměr / den</div>
-        <div style="font-size:1.6rem;font-weight:800;color:#27ae60;line-height:1.1;">{_total_v/252:.1f}</div>
+        <div style="font-size:1.6rem;font-weight:800;color:#27ae60;line-height:1.1;">{_total_v/max(int(_v(row,'POKLADNA_DNI_ROK',252) or 252),1):.1f}</div>
       </div>
       <div style="background:#fff8f0;border-radius:8px;padding:10px 16px;
                   border-left:4px solid #e07020;min-width:110px;">
@@ -14642,6 +14837,7 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
   </div>'''
             if _SP.get('specialiste', True) else ''
         )
+        _f_od          = _sp('oteviraci_doba', _od_html)
         _f_visits      = _sp('navstevnost',   visits_html)
         _f_atm         = _sp('atm',           atm_html)
 
@@ -14704,6 +14900,8 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
   {_f_metriky}
 
   {_f_spec}
+
+  {_f_od}
 
   {_f_visits}
 
@@ -14862,4 +15060,4 @@ generate_report(rating_status, mode='static', output_prefix="report_rating_2026"
 generate_report(rating_status, mode='regional', output_prefix="report")
 
 # Pobočkové reporty (jeden soubor per pobočka)
-generate_branch_reports(rating_status, output_dir="report_pobocky", hotovostni_trn=hotovostni_trn, hotovostni_trn_detail=hotovostni_trn_detail, export_atm=export_atm, kapacita_atm=kapacita_atm, visits=visits, parties_full=parties_full, spadovky=spadovky)
+generate_branch_reports(rating_status, output_dir="report_pobocky", hotovostni_trn=hotovostni_trn, hotovostni_trn_detail=hotovostni_trn_detail, export_atm=export_atm, kapacita_atm=kapacita_atm, visits=visits, parties_full=parties_full, spadovky=spadovky, oteviraci_doba_detail=oteviraci_doba_detail)
