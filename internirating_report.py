@@ -11318,7 +11318,9 @@ try:
     if 'KOD_POBOCKY' in _od_raw.columns:
         _od_raw['_kp'] = pd.to_numeric(_od_raw['KOD_POBOCKY'], errors='coerce')
         _od_raw['OD_PH_TYDEN'] = pd.to_numeric(
-            _od_raw['PH'] if 'PH' in _od_raw.columns else '0', errors='coerce'
+            (_od_raw['PH'] if 'PH' in _od_raw.columns else pd.Series(['0'] * len(_od_raw)))
+            .astype(str).str.replace(',', '.', regex=False),
+            errors='coerce'
         ).fillna(0.0)
 
         def _od_is_vikend(r):
@@ -11837,16 +11839,17 @@ else:
 # ── Přepočet TRN_DENNI_POCET dle skutečného počtu otevřených dní pobočky ──────
 # Nahrazuje konstantu WORKING_DAYS_PER_YEAR per-branch hodnotou z Pokladních hodin
 if pokladni_dny and 'TRN_POCET_CELKEM' in df.columns:
-    _ph_days = df['BRANCH_CODE'].map(pokladni_dny)
+    _ph_days  = df['BRANCH_CODE'].map(pokladni_dny)
     _has_days = _ph_days.notna()
     _divisor  = _ph_days.where(_has_days, WORKING_DAYS_PER_YEAR).clip(lower=1)
     df['TRN_DENNI_POCET']  = (df['TRN_POCET_CELKEM'] / _divisor).round(1)
-    df['POKLADNA_DNI_ROK'] = _divisor.round(0).astype(int)
+    # POKLADNA_DNI_ROK jen pro pobočky s pokladnou (v pokladni_dny); cashless = NaN
+    df['POKLADNA_DNI_ROK'] = _ph_days.where(_has_days).round(0)
     _covered = _has_days.sum()
     print(f"✅ TRN_DENNI_POCET přepočítán pro {_covered} poboček dle skutečných dní "
-          f"({len(df) - _covered} použilo výchozích {WORKING_DAYS_PER_YEAR} dní)")
+          f"({len(df) - _covered} cashless / bez pokladny — POKLADNA_DNI_ROK prázdné)")
 else:
-    df['POKLADNA_DNI_ROK'] = WORKING_DAYS_PER_YEAR
+    df['POKLADNA_DNI_ROK'] = None
 
 # ── Merge otevírací doby do df ─────────────────────────────────────────────
 if not oteviraci_doba_df.empty:
