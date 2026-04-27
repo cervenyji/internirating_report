@@ -797,22 +797,30 @@ def format_int_sep(val):
     except: return "0"
 
 
-dot_scale = {1: '#0ab33f', 2: '#42db72', 3: '#f0b55d', 4: '#f0845d', 5: '#e64343'}
+Q_BADGE_COLORS = {
+    1: '#1b8c4e',  # Q1 — top 20 % (dark green)
+    2: '#55b87a',  # Q2 — 20–40 %
+    3: '#c8a600',  # Q3 — 40–60 % (gold)
+    4: '#e07a2a',  # Q4 — 60–80 % (orange)
+    5: '#c0392b',  # Q5 — bottom 20 % (dark red)
+}
+# Zachováváme alias pro zpětnou kompatibilitu
+dot_scale = Q_BADGE_COLORS
 
-# Sjednocená funkce pro všechny kvintily — tečka + šedé číslo kvintilu
+# Sjednocená funkce pro všechny kvintily — barevný badge s číslem kvintilu
 def get_quintile_dot(val, tooltip_prefix="Kvintil"):
     """
-    Barevná tečka + šedé číslo kvintilu.
+    Barevný badge Q1–Q5 (bílý text na barevném pozadí).
     1 = nejlepší (zelená), 5 = nejhorší (červená).
     Používá se pro všechna kvintilová zobrazení v reportu.
     """
     try:
         v = int(val)
-        color = dot_scale.get(v, "gray")
+        color = Q_BADGE_COLORS.get(v, "#999")
         label = {1: "top 20 %", 2: "20–40 %", 3: "40–60 %", 4: "60–80 %", 5: "bottom 20 %"}.get(v, "")
-        return (f'<span title="{tooltip_prefix} {v}: {label}" '
-                f'style="color:{color}; font-size:22px; line-height:1; cursor:default;">●</span>'
-                f'<span style="font-size:0.72rem;color:#888;margin-left:3px;">{v}</span>')
+        return (f"<span title='{tooltip_prefix} {v}: {label}' "
+                f"style='background:{color};color:white;padding:1px 8px;border-radius:10px;"
+                f"font-weight:700;font-size:0.78rem;'>Q{v}</span>")
     except:
         return ""
 
@@ -2087,7 +2095,7 @@ def generate_obchody_table(target_df, table_id="obchody-tbl"):
             cnt25_fmt = f"{int(cnt25):,}".replace(",", "\u00a0")
             obj24_fmt = f"{int(obj24):,}".replace(",", "\u00a0") + "\u00a0Kč"
             obj25_fmt = f"{int(obj25):,}".replace(",", "\u00a0") + "\u00a0Kč"
-            dot_html  = get_quintile_dot(q_val, tooltip_prefix="Prodeje kvintil") if pd.notna(q_val) else "<span style='color:#ccc;'>●</span>"
+            dot_html  = get_quintile_dot(q_val, tooltip_prefix="Prodeje kvintil") if pd.notna(q_val) else "<span style='color:#ccc;font-size:0.78rem;'>—</span>"
             dcnt = cnt25 - cnt24
             dobj = obj25 - obj24
 
@@ -3460,7 +3468,6 @@ def generate_ie_top5_html(df, title="Top 5 — Index expozice", n=5):
         return ''
 
     _RANK_COLS = {1:'#0ab33f', 2:'#42db72', 3:'#74aaf5', 4:'#9cc4f8', 5:'#c2dafc'}
-    _ie_dot_scale = {1:'#0ab33f', 2:'#42db72', 3:'#f0b55d', 4:'#f0845d', 5:'#eb4d79'}
 
     cards = ''
     for rank, (_, row) in enumerate(d.iterrows(), 1):
@@ -3475,10 +3482,7 @@ def generate_ie_top5_html(df, title="Top 5 — Index expozice", n=5):
         fmt_col = {'small':'#f59e0b','medium economy':'#fb923c',
                    'medium':'#2770f0','flagship':'#0ab33f'}.get(fmt, '#aaa')
 
-        qi_html = (
-            f'<span style="color:{_ie_dot_scale.get(qi,"#aaa")};font-size:16px;">&#9679;</span>'
-            f'<span style="font-size:0.7rem;color:#888;margin-left:2px;">Q{qi}</span>'
-        ) if qi else ''
+        qi_html = get_quintile_dot(qi, tooltip_prefix="IE kvintil") if qi else ''
 
         cards += (
             f'<div style="display:flex;align-items:stretch;gap:0;border-radius:8px;overflow:hidden;'
@@ -6561,14 +6565,7 @@ def prepare_rating_status(df):
             rating_status[c] = pd.to_numeric(rating_status[c], errors='coerce').fillna(0)
         rating_status['POCET_PRODEJU_CELKEM_2025'] = rating_status[_prod_sum_cols].sum(axis=1)
 
-    # Kvintil pro každý produkt (1=nejméně, 5=nejvíce) + HTML tečka
-    _q_dot = {
-        1: ('<span style="color:#eb4d79;font-size:18px;">&#9679;</span>', 'bottom 20%'),
-        2: ('<span style="color:#f0845d;font-size:18px;">&#9679;</span>', '20–40%'),
-        3: ('<span style="color:#f0b55d;font-size:18px;">&#9679;</span>', '40–60%'),
-        4: ('<span style="color:#42db72;font-size:18px;">&#9679;</span>', '60–80%'),
-        5: ('<span style="color:#0ab33f;font-size:18px;">&#9679;</span>', 'top 20%'),
-    }
+    # Kvintil pro každý produkt (1=nejméně, 5=nejvíce) + badge
     _ir_mask = (rating_status.get('IR_FLAG', pd.Series('Y', index=rating_status.index)) == 'Y')
     for _pk in _prod_keys:
         _col25  = f'POCET_PRODEJU_{_pk}_2025'
@@ -6588,14 +6585,9 @@ def prepare_rating_status(df):
         else:
             rating_status[_qcol] = np.nan
 
-        def _mk_dot(v, _qd=_q_dot):
-            try:
-                qi = int(float(v))
-                dot, lbl = _qd.get(qi, ('', ''))
-                return f'<span title="Q{qi} — {lbl}">{dot}</span>'
-            except Exception:
-                return ''
-        rating_status[_qhtml] = rating_status[_qcol].map(_mk_dot)
+        rating_status[_qhtml] = rating_status[_qcol].map(
+            lambda v: get_quintile_dot(v, tooltip_prefix="Kvintil prodejů") if pd.notna(v) and float(v) > 0 else ''
+        )
     _exp_atm = globals().get('export_atm')
     _kap_atm = globals().get('kapacita_atm')
 
@@ -6951,20 +6943,9 @@ def prepare_rating_status(df):
             _ie_rank = pd.qcut(rating_status.loc[_ie_mask, _ie_col],
                                q=5, labels=False, duplicates='drop')  # 0=nejmenší, 4=největší
             rating_status.loc[_ie_mask, 'IE_Q'] = 5 - _ie_rank  # Q1=největší, Q5=nejmenší
-            # Q1=zelená (nejlepší), Q5=červená (nejhorší)
-            _ie_dot_scale = {1: '#0ab33f', 2: '#42db72', 3: '#f0b55d',
-                             4: '#f0845d', 5: '#eb4d79'}
-            def _ie_dot(v):
-                try:
-                    qi = int(float(v))
-                    c  = _ie_dot_scale.get(qi, '#aaa')
-                    lbl = {1:'top 20% — nejlepší',2:'60–80%',3:'40–60%',
-                           4:'20–40%',5:'bottom 20% — nejhorší'}.get(qi,'')
-                    return (f'<span title="IE kvintil {qi}: {lbl}" '
-                            f'style="color:{c};font-size:22px;line-height:1;cursor:default;">&#9679;</span>'
-                            f'<span style="font-size:0.72rem;color:#888;margin-left:3px;">{qi}</span>')
-                except: return ''
-            rating_status['IE_Q_HTML'] = rating_status['IE_Q'].map(_ie_dot)
+            rating_status['IE_Q_HTML'] = rating_status['IE_Q'].map(
+                lambda v: get_quintile_dot(v, tooltip_prefix="Index expozice kvintil")
+            )
         else:
             rating_status['IE_Q']     = np.nan
             rating_status['IE_Q_HTML'] = ''
@@ -7301,18 +7282,9 @@ def prepare_rating_status(df):
             except Exception:
                 pass
 
-            _ir22_q_colors = {
-                1: '#1b8c4e', 2: '#55b87a', 3: '#c8a600', 4: '#e07a2a', 5: '#c0392b'
-            }
-            def _ir22_q_html(x):
-                try:
-                    q = int(float(x))
-                    c = _ir22_q_colors.get(q, '#999')
-                    return (f"<span style='background:{c};color:white;padding:1px 8px;"
-                            f"border-radius:10px;font-weight:700;font-size:0.78rem;'>Q{q}</span>")
-                except Exception:
-                    return '—'
-            rating_status['IR22_Q_HTML'] = rating_status['IR22_Q'].apply(_ir22_q_html)
+            rating_status['IR22_Q_HTML'] = rating_status['IR22_Q'].apply(
+                lambda x: get_quintile_dot(x, tooltip_prefix="Rating 22 kvintil") if pd.notna(x) else '—'
+            )
         else:
             for _c in ['IR22_SCORE', 'IR22', 'IR22_Q', 'IR22_Q_HTML']:
                 rating_status[_c] = np.nan
@@ -7879,10 +7851,11 @@ def prepare_excel_df(target_df, excluded_cols=None):
         if _qhtml in d.columns and _qcol in d.columns:
             d[_qhtml] = pd.to_numeric(d[_qcol], errors='coerce')
 
-    # Ostatní kvintilové HTML sloupce kde je jen tečka bez čísla — nahraď _Q
+    # Kvintilové HTML badge sloupce → nahraď číselnou hodnotou _Q (pro Excel)
     _q_html_to_q = {
         'IE_Q_HTML':             'IE_Q',
         'IR_Q_HTML':             'IR_Q',
+        'IR22_Q_HTML':           'IR22_Q',
         'CAP_Q_HTML':            'CAP_Q',
         'TRN_Q_HTML':            'TRN_Q',
         'CAP_REV_FTE_Q_HTML':    'CAP_REV_FTE_Q',
@@ -7953,15 +7926,17 @@ def write_excel_sheet(ws, df_excel, freeze="D2"):
         return f"{min(r,255):02X}{min(g,255):02X}{min(b,255):02X}"
 
     # Barvy kvintilů — zelená=Q1 (nejlepší), červená=Q5 (nejhorší)
-    Q_BG  = {1:"C6EFCE", 2:"CCFFCC", 3:"FFEB9C", 4:"FFCC99", 5:"FFC7CE"}
-    Q_FG  = {1:"276221", 2:"276221", 3:"7A5800", 4:"8A3300", 5:"9C0006"}
+    # Excel barvy odpovídají web badge paletě (Q_BADGE_COLORS)
+    Q_BG  = {1:"C8E6D5", 2:"D6EFE1", 3:"FFF0B3", 4:"FFD9B3", 5:"F5C6C2"}
+    Q_FG  = {1:"1b8c4e", 2:"2d7a52", 3:"7A5800", 4:"8A3300", 5:"9C0006"}
     Q_LBL = {1:"Q1", 2:"Q2", 3:"Q3", 4:"Q4", 5:"Q5"}
 
     # Všechny sloupce kde chceme kvintilové formátování
     # — statické kvintily + dynamické produktové kvintily
     Q_COLS_STATIC = {
         "C/I kvintil", "Nové výnosy kvintil", "Nájemné kvintil",
-        "Rating 25 kvintil", "Cash rating kvintil", "Business rating kvintil",
+        "Rating 25 kvintil", "Rating 22 kvintil",
+        "Cash rating kvintil", "Business rating kvintil",
         "Výnos/bankéř kvintil", "Noví klienti/bankéř kvintil",
         "Prim. klienti/bankéř kvintil", "Schůzky/bankéř kvintil", "PEREX kvintil",
         "Index expozice kvintil",
@@ -12380,11 +12355,15 @@ def generate_metrics_overview(df_input, title="📊 Přehled výkonnostních met
                 vi = int(float(s))
                 if 1 <= vi <= 5: return vi
             except: pass
-            m = _re.search(r'title="[^"]*\s([1-5]):', s)
+            # badge formát: >Q1< nebo >Q5<
+            m = _re.search(r'>Q([1-5])<', s)
             if m: return int(m.group(1))
+            # title atribut (jednoduchá i dvojitá uvozovka): kvintil N:
+            m = _re.search(r'title=["\'][^"\']*\s([1-5]):', s)
+            if m: return int(m.group(1))
+            # legacy: prostý číselný text
             m = _re.search(r'>([1-5])<', s)
             if m: return int(m.group(1))
-        # přímý _Q sloupec
         v = row.get(qsrc + '_Q')
         if v is not None:
             try:
@@ -12410,8 +12389,8 @@ def generate_metrics_overview(df_input, title="📊 Přehled výkonnostních met
         ("Plocha D5",        "PLOCHA_POUZE_D5"),
     ]
 
-    # Barvy kuličky — shodné s get_quintile_dot
-    DOT_COLOR = {1:"#2ca02c", 2:"#6abf69", 3:"#f0a500", 4:"#e07020", 5:"#d62728"}
+    # Badge barvy — shodné s Q_BADGE_COLORS / get_quintile_dot
+    DOT_COLOR = {1:"#1b8c4e", 2:"#55b87a", 3:"#c8a600", 4:"#e07a2a", 5:"#c0392b"}
     TOOLTIP   = {1:"top 20 %", 2:"20–40 %", 3:"40–60 %", 4:"60–80 %", 5:"bottom 20 %"}
 
     # ── Sestavit data ─────────────────────────────────────────────────────────
@@ -12497,10 +12476,10 @@ def generate_metrics_overview(df_input, title="📊 Přehled výkonnostních met
 
   function dot(q, label) {{
     if (!q || !DOT_COL[q])
-      return '<span style="color:#ccc;font-size:20px;line-height:1;" title="' + label + ': bez dat">●</span>';
+      return '<span style="color:#ccc;font-size:0.78rem;font-weight:700;" title="' + label + ': bez dat">—</span>';
     return '<span title="' + label + ' — Q' + q + ': ' + (TT[q]||'') + '" '
-      + 'style="color:' + DOT_COL[q] + ';font-size:22px;line-height:1;cursor:default;">●</span>'
-      + '<span style="font-size:0.70rem;color:#888;margin-left:2px;">' + q + '</span>';
+      + 'style="background:' + DOT_COL[q] + ';color:white;padding:1px 8px;border-radius:10px;'
+      + 'font-weight:700;font-size:0.78rem;white-space:nowrap;display:inline-block;">Q' + q + '</span>';
   }}
 
   sel.addEventListener('change', function() {{
@@ -13990,7 +13969,10 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
                     vi = int(float(str(v)))
                     if 1 <= vi <= 5: return vi
                 except: pass
-                m = _re2.search(r'title="[^"]*\s([1-5]):', str(v))
+                s2 = str(v)
+                m = _re2.search(r'>Q([1-5])<', s2)
+                if m: return int(m.group(1))
+                m = _re2.search(r'title=["\'][^"\']*\s([1-5]):', s2)
                 if m: return int(m.group(1))
             return None
 
@@ -14010,7 +13992,7 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
         _radar_scores = []      # tato pobočka
         _radar_qs     = []
 
-        _RADAR_COLOR = {1:"#2ca02c", 2:"#6abf69", 3:"#f0a500", 4:"#e07020", 5:"#d62728", 0:"#cccccc"}
+        _RADAR_COLOR = {1:"#1b8c4e", 2:"#55b87a", 3:"#c8a600", 4:"#e07a2a", 5:"#c0392b", 0:"#cccccc"}
 
         for lbl, qsrc in ALL_METRICS_B:
             q_col = _Q_ALIAS.get(qsrc, qsrc + "_Q")
@@ -14030,11 +14012,12 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
 
         _metric_pills = "".join(
             f'<div style="display:flex;align-items:center;gap:6px;padding:3px 0;">'
-            f'<span style="color:{_RADAR_COLOR[q or 0]};font-size:16px;line-height:1;">●</span>'
             f'<span style="font-size:0.78rem;font-weight:600;color:#333;min-width:130px;">{lbl}</span>'
-            f'<span style="font-size:0.75rem;font-weight:700;color:{_RADAR_COLOR[q or 0]};">'
-            f'{"Q" + str(q) + " — " + TOOLTIP_M[q] if q else "bez dat"}</span>'
-            f'</div>'
+            + (f'<span style="background:{_RADAR_COLOR[q]};color:white;padding:1px 8px;'
+               f'border-radius:10px;font-weight:700;font-size:0.78rem;white-space:nowrap;">'
+               f'Q{q} — {TOOLTIP_M[q]}</span>'
+               if q else '<span style="font-size:0.75rem;color:#ccc;">bez dat</span>')
+            + f'</div>'
             for (lbl, _), q in zip(ALL_METRICS_B, _radar_qs)
         )
 
