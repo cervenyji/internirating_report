@@ -474,6 +474,7 @@ NOVE_NAZVY = {
     "IR_Q_HTML":             "Rating 25 kvintil",
     "IR_CHANGE_HTML":        "Změna ratingu 25/24",
     "IR_PERC_CHANGE_HTML":   "Změna ratingu perc 25/24",
+    "DZ_STITKY":             "⚠️ Nebezpečná zóna",
 
     # ── 📊 C/I ────────────────────────────────────────────────────
     "C/I_RATIO_(YTD_2021)":  "C/I ratio 21",
@@ -2988,6 +2989,95 @@ def generate_danger_zone_table(df):
   }});
 }})();
 </script>"""
+
+
+def compute_danger_zone_col(df):
+    """
+    Vrátí Series (index = df.index) s HTML štítky nebezpečné zóny per pobočka.
+    Prázdný řetězec = pobočka není v nebezpečné zóně.
+    Používá stejná kritéria jako generate_danger_zone_table (A–E).
+    """
+    _dz_descs = {
+        'A': 'Vysoké nájemné + nízké výnosy',
+        'B': 'Vysoké C/I + slabé výnosy + málo FTE',
+        'C': 'Rating se zhoršuje 2 roky za sebou',
+        'D': 'Nízká primární klientela (pod Q25)',
+        'E': 'Nízké výnosy + stagnace prodejů',
+    }
+    _dz_icons = {'A': '🏠', 'B': '📉', 'C': '📛', 'D': '👤', 'E': '📦'}
+    _dz_cols  = {'A': '#eb4d79', 'B': '#f59e0b', 'C': '#7c3aed', 'D': '#0891b2', 'E': '#059669'}
+
+    d = df.copy()
+    for c in ['OBJEM_VYNOSU_CZK', 'ROCNI_SPLATKY_S_DPH_CZK', 'PRIME_NAKLADY/VYNOSY', 'FTE',
+              'IR', 'INTERNI_RATING_2024', 'INTERNI_RATING_2023', 'IR_DIFF_NUM',
+              'PRIM_RATIO', 'POCET_PRODEJU_CELKEM_2025']:
+        if c in d.columns:
+            d[c] = pd.to_numeric(d[c], errors='coerce')
+
+    if 'IR_FLAG' in d.columns:
+        dv = d[d['IR_FLAG'] == 'Y']
+    elif 'IR' in d.columns:
+        dv = d[d['IR'].notna() & (d['IR'] > 0)]
+    else:
+        dv = d
+
+    _rev_med  = dv['OBJEM_VYNOSU_CZK'].median()              if 'OBJEM_VYNOSU_CZK' in dv.columns else None
+    _rent_q75 = dv['ROCNI_SPLATKY_S_DPH_CZK'].quantile(0.75) if 'ROCNI_SPLATKY_S_DPH_CZK' in dv.columns else None
+    _ci_q75   = dv['PRIME_NAKLADY/VYNOSY'].quantile(0.75)     if 'PRIME_NAKLADY/VYNOSY' in dv.columns else None
+    _fte_q25  = dv['FTE'].quantile(0.25)                      if 'FTE' in dv.columns else None
+    _rev_q25  = dv['OBJEM_VYNOSU_CZK'].quantile(0.25)         if 'OBJEM_VYNOSU_CZK' in dv.columns else None
+    _rev_q20  = dv['OBJEM_VYNOSU_CZK'].quantile(0.20)         if 'OBJEM_VYNOSU_CZK' in dv.columns else None
+    _prim_q25 = dv['PRIM_RATIO'].quantile(0.25)               if 'PRIM_RATIO' in dv.columns else None
+
+    bc_flags = {}  # {branch_code: list of reason keys}
+
+    if _rent_q75 is not None and _rev_med is not None and 'ROCNI_SPLATKY_S_DPH_CZK' in dv.columns and 'OBJEM_VYNOSU_CZK' in dv.columns:
+        for bc in dv.loc[(dv['ROCNI_SPLATKY_S_DPH_CZK'] > _rent_q75) & (dv['OBJEM_VYNOSU_CZK'] < _rev_med), 'BRANCH_CODE']:
+            try: bc_flags.setdefault(int(bc), []).append('A')
+            except: pass
+
+    if _ci_q75 is not None and _rev_q25 is not None and _fte_q25 is not None and all(c in dv.columns for c in ['PRIME_NAKLADY/VYNOSY', 'OBJEM_VYNOSU_CZK', 'FTE']):
+        _mb = (dv['PRIME_NAKLADY/VYNOSY'] > _ci_q75) & (dv['OBJEM_VYNOSU_CZK'] < _rev_q25) & (dv['FTE'] <= _fte_q25)
+        for bc in dv.loc[_mb, 'BRANCH_CODE']:
+            try: bc_flags.setdefault(int(bc), []).append('B')
+            except: pass
+
+    if all(c in dv.columns for c in ['IR', 'INTERNI_RATING_2024', 'INTERNI_RATING_2023', 'IR_DIFF_NUM']):
+        _mc = (dv['IR_DIFF_NUM'] > 0) & dv['INTERNI_RATING_2024'].notna() & dv['INTERNI_RATING_2023'].notna() & (dv['INTERNI_RATING_2024'] > dv['INTERNI_RATING_2023'])
+        for bc in dv.loc[_mc, 'BRANCH_CODE']:
+            try: bc_flags.setdefault(int(bc), []).append('C')
+            except: pass
+
+    if _prim_q25 is not None and 'PRIM_RATIO' in dv.columns:
+        for bc in dv.loc[dv['PRIM_RATIO'] < _prim_q25, 'BRANCH_CODE']:
+            try: bc_flags.setdefault(int(bc), []).append('D')
+            except: pass
+
+    if _rev_q20 is not None and 'POCET_PRODEJU_CELKEM_2025' in dv.columns and 'OBJEM_VYNOSU_CZK' in dv.columns:
+        _p24 = [c for c in dv.columns if c.startswith('POCET_PRODEJU_') and c.endswith('_2024')]
+        _sum24 = dv[_p24].sum(axis=1) if _p24 else pd.Series(0, index=dv.index)
+        _me = (dv['OBJEM_VYNOSU_CZK'] < _rev_q20) & (dv['POCET_PRODEJU_CELKEM_2025'] <= _sum24)
+        for bc in dv.loc[_me, 'BRANCH_CODE']:
+            try: bc_flags.setdefault(int(bc), []).append('E')
+            except: pass
+
+    def _badge_html(reasons):
+        return ''.join(
+            f"<span title='{_dz_descs[r]}' style='background:{_dz_cols[r]}18;color:{_dz_cols[r]};"
+            f"border:1px solid {_dz_cols[r]}55;border-radius:4px;padding:1px 5px;"
+            f"font-size:0.7rem;font-weight:700;margin-right:2px;white-space:nowrap;"
+            f"display:inline-block;'>{_dz_icons[r]} {r}</span>"
+            for r in reasons
+        )
+
+    def _get_html(bc):
+        try:
+            k = int(bc)
+            return _badge_html(bc_flags[k]) if k in bc_flags else ''
+        except:
+            return ''
+
+    return df['BRANCH_CODE'].map(_get_html)
 
 
 def generate_age_pyramid(df):
@@ -7268,6 +7358,10 @@ def _apply_common_formatting(d, cols_to_show):
         if _pc in cols_to_show and _pc in d.columns:
             d[_pc] = d[_pc].apply(_fmt_pool)
 
+    if 'DZ_STITKY' in cols_to_show and 'DZ_STITKY' in d.columns:
+        d['DZ_STITKY'] = d['DZ_STITKY'].apply(
+            lambda x: x if x and str(x).strip() not in ('', 'nan', 'None') else '—')
+
     # Vlastnictví: L = Pronajatá (oranžová), O = Vlastní (modrá)
     if 'VLASTNICTVI' in cols_to_show and 'VLASTNICTVI' in d.columns:
         def _fmt_vlast(x):
@@ -7872,7 +7966,7 @@ COL_GROUPS = [
     ("🏢 Budova",              ["Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
     ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
     # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
-    ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25", "Trend ratingu 23–25", "Rating 25 kvintil", "Změna ratingu 25/24", "Změna ratingu perc 25/24"], "#fff8e1"),
+    ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25", "Trend ratingu 23–25", "Rating 25 kvintil", "Změna ratingu 25/24", "Změna ratingu perc 25/24", "⚠️ Nebezpečná zóna"], "#fff8e1"),
     ("📈 Business rating",     [
         "Výnos/bankéř", "Výnos/bankéř kvintil",
         "Noví klienti/bankéř", "Noví klienti/bankéř kvintil",
@@ -8547,21 +8641,14 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
   #wrapper-{table_id} .ft-count {{ font-size:0.82rem; color:#888; }}
   #wrapper-{table_id} .ft-label {{ font-size:0.85rem; color:#555; font-weight:600; }}
   #wrapper-{table_id} .col-toggle-bar {{
-    display:flex; flex-wrap:nowrap; overflow-x:auto; gap:4px; margin-bottom:10px;
+    display:flex; flex-wrap:wrap; gap:4px 5px; margin-bottom:10px;
     padding:7px 10px; background:#f8faff; border:1px solid #dde4f5;
     border-radius:8px; align-items:center;
-    scrollbar-width:thin; scrollbar-color:#c0cfe8 transparent;
-  }}
-  #wrapper-{table_id} .col-toggle-bar::-webkit-scrollbar {{
-    height:4px;
-  }}
-  #wrapper-{table_id} .col-toggle-bar::-webkit-scrollbar-thumb {{
-    background:#c0cfe8; border-radius:2px;
   }}
   #wrapper-{table_id} .col-toggle-btn {{
-    display:flex; align-items:center; gap:4px;
-    padding:3px 8px; border-radius:20px; border:2px solid transparent;
-    font-size:0.78rem; cursor:pointer; user-select:none;
+    display:flex; align-items:center; gap:3px;
+    padding:2px 7px; border-radius:20px; border:2px solid transparent;
+    font-size:0.75rem; cursor:pointer; user-select:none;
     transition: opacity 0.15s; white-space:nowrap; flex-shrink:0;
     color: #333;
   }}
@@ -8569,11 +8656,11 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
     opacity: 0.35;
   }}
   #wrapper-{table_id} .col-toggle-btn input {{
-    width:12px; height:12px; cursor:pointer; margin:0;
+    width:11px; height:11px; cursor:pointer; margin:0;
   }}
   #wrapper-{table_id} .col-toggle-all {{
-    padding:3px 10px; border-radius:20px; border:1px solid #aaa;
-    background:#f0f0f0; font-size:0.78rem; cursor:pointer; font-weight:600;
+    padding:2px 9px; border-radius:20px; border:1px solid #aaa;
+    background:#f0f0f0; font-size:0.75rem; cursor:pointer; font-weight:600;
     color:#333; white-space:nowrap; flex-shrink:0;
   }}
   /* ── Expanded (fullscreen) mode ── */
@@ -8798,12 +8885,12 @@ setTimeout(function() {{
   groupColIdxs.forEach(function(g) {{
     if (g.subgroup && g.subgroup !== _lastSubgroup) {{
       if (_lastSubgroup !== null) {{
-        var _sep = document.createElement("div");
-        _sep.style.cssText = "align-self:stretch;width:1px;background:#c0cfe8;margin:0 5px;flex-shrink:0;";
-        toggleBar.appendChild(_sep);
+        var _spacer = document.createElement("div");
+        _spacer.style.cssText = "flex-basis:100%;height:0;margin:0;";
+        toggleBar.appendChild(_spacer);
       }}
       var _hdr = document.createElement("div");
-      _hdr.style.cssText = "font-size:0.6rem;font-weight:700;color:#8899bb;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;flex-shrink:0;padding:0 3px 0 1px;";
+      _hdr.style.cssText = "flex-basis:100%;font-size:0.6rem;font-weight:700;color:#8899bb;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;padding:2px 1px 0 1px;line-height:1;";
       _hdr.textContent = g.subgroup;
       toggleBar.appendChild(_hdr);
       _lastSubgroup = g.subgroup;
@@ -15150,6 +15237,14 @@ _q_cols_to_sync = [c for c in df.columns if c.endswith("_Q") and c not in rating
 if _q_cols_to_sync and "BRANCH_CODE" in df.columns and "BRANCH_CODE" in rating_status.columns:
     _q_sync = df[["BRANCH_CODE"] + _q_cols_to_sync].drop_duplicates("BRANCH_CODE")
     rating_status = rating_status.merge(_q_sync, on="BRANCH_CODE", how="left")
+
+# ── Výpočet sloupce nebezpečné zóny ─────────────────────────────────────────
+print("🚨 Počítám sloupec nebezpečné zóny...")
+try:
+    rating_status['DZ_STITKY'] = compute_danger_zone_col(rating_status)
+except Exception as _dz_col_err:
+    print(f"  ⚠️  DZ_STITKY výpočet selhal: {_dz_col_err}")
+    rating_status['DZ_STITKY'] = ''
 
 # Statický report (celkový přehled)
 generate_report(rating_status, mode='static', output_prefix="report_rating_2026")
