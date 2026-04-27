@@ -8547,26 +8547,34 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
   #wrapper-{table_id} .ft-count {{ font-size:0.82rem; color:#888; }}
   #wrapper-{table_id} .ft-label {{ font-size:0.85rem; color:#555; font-weight:600; }}
   #wrapper-{table_id} .col-toggle-bar {{
-    display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;
-    padding:10px 12px; background:#f8faff; border:1px solid #dde4f5;
-    border-radius:8px;
+    display:flex; flex-wrap:nowrap; overflow-x:auto; gap:4px; margin-bottom:10px;
+    padding:7px 10px; background:#f8faff; border:1px solid #dde4f5;
+    border-radius:8px; align-items:center;
+    scrollbar-width:thin; scrollbar-color:#c0cfe8 transparent;
+  }}
+  #wrapper-{table_id} .col-toggle-bar::-webkit-scrollbar {{
+    height:4px;
+  }}
+  #wrapper-{table_id} .col-toggle-bar::-webkit-scrollbar-thumb {{
+    background:#c0cfe8; border-radius:2px;
   }}
   #wrapper-{table_id} .col-toggle-btn {{
-    display:flex; align-items:center; gap:5px;
-    padding:4px 10px; border-radius:20px; border:2px solid transparent;
-    font-size:0.82rem; cursor:pointer; user-select:none;
-    transition: opacity 0.15s;
+    display:flex; align-items:center; gap:4px;
+    padding:3px 8px; border-radius:20px; border:2px solid transparent;
+    font-size:0.78rem; cursor:pointer; user-select:none;
+    transition: opacity 0.15s; white-space:nowrap; flex-shrink:0;
     color: #333;
   }}
   #wrapper-{table_id} .col-toggle-btn.inactive {{
     opacity: 0.35;
   }}
   #wrapper-{table_id} .col-toggle-btn input {{
-    width:13px; height:13px; cursor:pointer; margin:0;
+    width:12px; height:12px; cursor:pointer; margin:0;
   }}
   #wrapper-{table_id} .col-toggle-all {{
-    padding:4px 12px; border-radius:20px; border:1px solid #aaa;
-    background:#f0f0f0; font-size:0.82rem; cursor:pointer; font-weight:600; color:#333;
+    padding:3px 10px; border-radius:20px; border:1px solid #aaa;
+    background:#f0f0f0; font-size:0.78rem; cursor:pointer; font-weight:600;
+    color:#333; white-space:nowrap; flex-shrink:0;
   }}
   /* ── Expanded (fullscreen) mode ── */
   #wrapper-{table_id}.tbl-expanded {{
@@ -8791,11 +8799,11 @@ setTimeout(function() {{
     if (g.subgroup && g.subgroup !== _lastSubgroup) {{
       if (_lastSubgroup !== null) {{
         var _sep = document.createElement("div");
-        _sep.style.cssText = "width:100%;height:1px;background:#dde4f5;margin:4px 0 2px 0;";
+        _sep.style.cssText = "align-self:stretch;width:1px;background:#c0cfe8;margin:0 5px;flex-shrink:0;";
         toggleBar.appendChild(_sep);
       }}
       var _hdr = document.createElement("div");
-      _hdr.style.cssText = "width:100%;font-size:0.65rem;font-weight:700;color:#9aa;text-transform:uppercase;letter-spacing:0.6px;padding:2px 2px 1px 2px;";
+      _hdr.style.cssText = "font-size:0.6rem;font-weight:700;color:#8899bb;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;flex-shrink:0;padding:0 3px 0 1px;";
       _hdr.textContent = g.subgroup;
       toggleBar.appendChild(_hdr);
       _lastSubgroup = g.subgroup;
