@@ -563,6 +563,8 @@ NOVE_NAZVY = {
     "FOOTPRINT_STRATEGIE_(2030)":  "Strategie BNS",
     "BNS_IR_FLAG":                 "Strategie BNS dle IR 25",
     "SIM_250_FLAG":                "Simulace 250",
+    "POOL_FHC":                    "Pool FHC",
+    "POOL_NF":                     "Pool NF",
     "PLAN_CLOSE_(ROK)":            "Rok uzavření",
     "INVESTICE_NF_(ROK)":          "Rok investice NF",
     "INVESTICE_FHC_(ROK)":         "Rok investice FHC",
@@ -685,6 +687,7 @@ COLS_TO_FIX = [
     # cash rating
     'TRN_POCET_CELKEM', 'TRN_CASTKA_CELKEM', 'TRN_DENNI_POCET', 'POKLADNA_DNI_ROK',
     'OD_PH_TYDEN', 'OD_VIKEND', 'OD_OBED_PAUZA', 'OD_NAVSTEVY_NA_HODINU',
+    'POOL_FHC', 'POOL_NF',
     'TRN_SCORE', 'TRN_Q', 'TRN_RNK', 'TRN_POCET_Q', 'TRN_CASTKA_Q',
     # business rating vstupní sloupce
     'FTE', 'PRIMARNI_KLIENTI', 'AKTIVNI_KLIENTI', 'POCET_KLIENTU',
@@ -7228,6 +7231,43 @@ def _apply_common_formatting(d, cols_to_show):
         if _bc in cols_to_show and _bc in d.columns:
             d[_bc] = d[_bc].apply(_fmt_bool)
 
+    # Otevírací doba — Ano výrazně, Ne šedě
+    def _fmt_bool_od(x):
+        s = str(x).strip().upper()
+        if s in ('Y', 'YES', 'ANO', '1', 'TRUE'):
+            return "<span style='color:#d97706;font-weight:700;'>Ano</span>"
+        if s in ('N', 'NO', 'NE', '0', 'FALSE'):
+            return "<span style='color:#d1d5db;'>Ne</span>"
+        return '—' if s in ('', 'NAN', 'NONE', 'NAT') else str(x)
+    for _odc in ['OD_VIKEND', 'OD_OBED_PAUZA']:
+        if _odc in cols_to_show and _odc in d.columns:
+            d[_odc] = d[_odc].apply(_fmt_bool_od)
+
+    # Počet dní otevřené pokladny / rok — 0 = proškrtnutě šedě
+    if 'POKLADNA_DNI_ROK' in cols_to_show and 'POKLADNA_DNI_ROK' in d.columns:
+        def _fmt_pok_dni(x):
+            if pd.isna(x) or str(x).strip() in ('nan', 'None', ''):
+                return '—'
+            try:
+                v = int(float(x))
+            except Exception:
+                return str(x)
+            if v == 0:
+                return "<span style='color:#ccc;text-decoration:line-through;'>0</span>"
+            return str(v)
+        d['POKLADNA_DNI_ROK'] = d['POKLADNA_DNI_ROK'].apply(_fmt_pok_dni)
+
+    # Pool FHC / Pool NF — Ano jako badge, prázdné jako —
+    def _fmt_pool(x):
+        s = str(x).strip()
+        if s.upper() in ('ANO', 'YES', '1', 'TRUE'):
+            return ("<span style='background:#2770f0;color:white;border-radius:10px;"
+                    "padding:2px 8px;font-size:0.75rem;font-weight:700;'>Ano</span>")
+        return '—' if s.upper() in ('', 'NAN', 'NONE', 'FALSE', '0', 'NE') else s
+    for _pc in ['POOL_FHC', 'POOL_NF']:
+        if _pc in cols_to_show and _pc in d.columns:
+            d[_pc] = d[_pc].apply(_fmt_pool)
+
     # Vlastnictví: L = Pronajatá (oranžová), O = Vlastní (modrá)
     if 'VLASTNICTVI' in cols_to_show and 'VLASTNICTVI' in d.columns:
         def _fmt_vlast(x):
@@ -7827,17 +7867,12 @@ def write_excel_sheet(ws, df_excel, freeze="D2"):
 
 # Skupiny sloupců pro přepínání v hlavní tabulce regionu
 COL_GROUPS = [
+    # ── 🗄️ Databáze síť ───────────────────────────────────────────────────────
     ("📍 Adresa",              ["Oblast", "Město", "Obvod / část", "Ulice", "Č. popisné", "Č. orientační", "RUIAN ID", "ORP", "ORP kód"], "#f0f4f8"),
-    ("👥 Klienti",             ["Klienti EOY 2021", "Klienti EOY 2022", "Klienti EOY 2023",
-                                "Klienti EOY 2024", "Klienti EOY 2025", "Trend klientů 21–25",
-                                "Primární klienti", "Aktivní klienti",
-                                "Poměr klientů", "Primární / celkem", "Aktivní / celkem",
-                                "Cizinci celkem", "Cizinci SK", "Cizinci UA"], "#e0f7fa"),
+    ("🏢 Budova",              ["Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
+    ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
+    # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
     ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25", "Trend ratingu 23–25", "Rating 25 kvintil", "Změna ratingu 25/24", "Změna ratingu perc 25/24"], "#fff8e1"),
-    ("📊 C/I",                 ["C/I ratio 21", "C/I ratio 22", "C/I ratio 23", "C/I ratio 24", "C/I ratio 25", "Trend C/I 21–25", "C/I kvintil", "Změna C/I 25/24"], "#dceeff"),
-    ("💰 Výnosy",              ["Výnosy 21", "Výnosy 22", "Výnosy 23", "Výnosy 24", "Výnosy 25",
-                                "Trend výnosů 21–25",
-                                "Nové výnosy 24", "Nové výnosy 25", "Nové výnosy kvintil", "Změna nových výnosů 25/24"], "#d4f5e0"),
     ("📈 Business rating",     [
         "Výnos/bankéř", "Výnos/bankéř kvintil",
         "Noví klienti/bankéř", "Noví klienti/bankéř kvintil",
@@ -7845,43 +7880,8 @@ COL_GROUPS = [
         "Schůzky/bankéř", "Schůzky/bankéř kvintil",
         "PEREX", "PEREX kvintil",
         "Business pořadí", "Business rating kvintil",
-    ], "#f3e5f5"),
-    ("🏦 Hotovostní rating",   ["Cash rating pořadí", "Vypočítaná strategie", "Cash rating kvintil", "Trn. počet celkem", "Trn. objem celkem", "Denní trn. průměr"], "#e3f2fd"),
-    ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Návštěvy / ot. hod.", "Počet dní otevřené pokladny / rok"], "#e8f5e9"),
-    ("🏠 Nájemné",             ["Vlastnictví", "Roční nájemné", "Nájemné kvintil", "Začátek smlouvy", "Konec smlouvy", "Výpovědní lhůta"], "#eeddf7"),
-    ("🔨 Investice",           ["Poslední investice", "Datum posl. inv.", "Výše posl. inv.", "Nejvyšší investice", "Datum nejv. inv.", "Výše nejv. inv.", "Celkem zainvestováno"], "#fce8d8"),
-    ("🚶 Návštěvy",            [
-        "Poměr návštěv",
-        "Online schůzky", "Fyzické schůzky", "Bezhot. walkin", "Hot. walkin", "Celkové návštěvy",
-        "Návštěvy/bankéř", "Online schůzky/bankéř", "Fyzické schůzky/bankéř",
-        "Bezhot. walkin/bankéř", "Hot. walkin/bankéř",
-    ], "#fad8e0"),
-    ("🗺️ Strategie BNS",      ["Strategie BNS", "Strategie BNS dle IR 25", "Simulace 250",
-                               "Rok uzavření", "Rok investice NF", "Rok investice FHC", "Rok plánované investice"], "#faf0cc"),
-    ("💵 Strategie hotovosti", ["Rok cashless přechodu", "Status cashless", "Bezhotovostní", "Datum bezhotovostní"], "#e8f5e9"),
-    ("📐 Alokační report",     [
-        "Pouze D5", "WPL max 2026", "WPL využito 2026",
-        "Celk. plocha pobočky", "Plocha pouze D5", "Plocha nad optimál",
-    ], "#fce4ec"),
-    ("🏢 Budova",              ["Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Bezhotovostní", "Datum bezhotovostní"], "#d8edd8"),
-    ("💵 Transakční data",     [
-        "% převoditelnosti",
-        "Cash IN převod. Kč", "Cash IN nepřevod. Kč",
-        "Cash IN převod. počet", "Cash IN nepřevod. počet",
-        "Cash OUT převod. Kč", "Cash OUT nepřevod. Kč",
-        "Cash OUT převod. počet", "Cash OUT nepřevod. počet",
-    ], "#fff3cd"),
-    ("🔀 Spádová oblast",     [
-        "Spádová pobočka 1", "Spád. návštěvy 1", "Spád. podíl 1",
-        "Spádová pobočka 2", "Spád. návštěvy 2", "Spád. podíl 2",
-        "Spádová pobočka 3", "Spád. návštěvy 3", "Spád. podíl 3",
-    ], "#e8f4fd"),
-    ("👷 FTE",               [
-        "Celková FTE controlling", "Celková FTE redim", "Počet bankéřů redim",
-        "FTE všechny obchodní pozice redim",
-        "FTE MMMA", "FTE SBC", "FTE HC", "FTE EPC", "FTE EPB", "FTE PROVOZ", "FTE RKC",
-        "Přítomnost segmentů",
-    ], "#e8f0fe"),
+    ], "#fff3c4"),
+    ("🏦 Hotovostní rating",   ["Cash rating pořadí", "Vypočítaná strategie", "Cash rating kvintil", "Trn. počet celkem", "Trn. objem celkem", "Denní trn. průměr"], "#ffeaa0"),
     ("🏅 Sdružené ratingy",   [
         "Rating 25 kvintil",
         "C/I kvintil",
@@ -7894,7 +7894,20 @@ COL_GROUPS = [
         "PEREX kvintil",
         "Cash rating kvintil",
         "Nájemné kvintil",
-    ], "#fef9e7"),
+    ], "#ffd870"),
+    ("📡 Index expozice",      ["Index expozice", "Index expozice kvintil"], "#ffc840"),
+    # ── 📈 Performance ────────────────────────────────────────────────────────
+    ("📊 C/I",                 ["C/I ratio 21", "C/I ratio 22", "C/I ratio 23", "C/I ratio 24", "C/I ratio 25", "Trend C/I 21–25", "C/I kvintil", "Změna C/I 25/24"], "#e0f7fa"),
+    ("💰 Výnosy",              ["Výnosy 21", "Výnosy 22", "Výnosy 23", "Výnosy 24", "Výnosy 25",
+                                "Trend výnosů 21–25",
+                                "Nové výnosy 24", "Nové výnosy 25", "Nové výnosy kvintil", "Změna nových výnosů 25/24"], "#ccf2f7"),
+    ("💵 Transakční data",     [
+        "% převoditelnosti",
+        "Cash IN převod. Kč", "Cash IN nepřevod. Kč",
+        "Cash IN převod. počet", "Cash IN nepřevod. počet",
+        "Cash OUT převod. Kč", "Cash OUT nepřevod. Kč",
+        "Cash OUT převod. počet", "Cash OUT nepřevod. počet",
+    ], "#b2eaf0"),
     ("🛍️ Prodeje",             [
         "Prodeje celkem 2025",
         "Prodeje Účty 2025",        "Účty kvintil",
@@ -7906,38 +7919,74 @@ COL_GROUPS = [
         "Prodeje Revol. úvěry 2025","Revol. úvěry kvintil",
         "Prodeje Úvěry 2025",       "Úvěry kvintil",
         "Prodeje Penze 2025",       "Penze kvintil",
-    ], "#fff0e8"),
-    ("📡 Index expozice",      ["Index expozice", "Index expozice kvintil"], "#e8f5e9"),
+    ], "#98e2e8"),
+    ("👷 FTE",               [
+        "Celková FTE controlling", "Celková FTE redim", "Počet bankéřů redim",
+        "FTE všechny obchodní pozice redim",
+        "FTE MMMA", "FTE SBC", "FTE HC", "FTE EPC", "FTE EPB", "FTE PROVOZ", "FTE RKC",
+        "Přítomnost segmentů",
+    ], "#7ddbe3"),
+    # ── 🎯 Strategie ──────────────────────────────────────────────────────────
+    ("🗺️ Strategie BNS",      ["Strategie BNS", "Strategie BNS dle IR 25", "Simulace 250",
+                               "Pool FHC", "Pool NF",
+                               "Rok uzavření", "Rok investice NF", "Rok investice FHC", "Rok plánované investice"], "#fff3e0"),
+    ("💵 Strategie hotovosti", ["Rok cashless přechodu", "Status cashless", "Bezhotovostní", "Datum bezhotovostní"], "#ffe8c8"),
+    # ── 👥 Klient a návštěvy ─────────────────────────────────────────────────
+    ("👥 Klienti",             ["Klienti EOY 2021", "Klienti EOY 2022", "Klienti EOY 2023",
+                                "Klienti EOY 2024", "Klienti EOY 2025", "Trend klientů 21–25",
+                                "Primární klienti", "Aktivní klienti",
+                                "Poměr klientů", "Primární / celkem", "Aktivní / celkem",
+                                "Cizinci celkem", "Cizinci SK", "Cizinci UA"], "#fce4ec"),
+    ("🚶 Návštěvy",            [
+        "Poměr návštěv",
+        "Online schůzky", "Fyzické schůzky", "Bezhot. walkin", "Hot. walkin", "Celkové návštěvy",
+        "Návštěvy/bankéř", "Online schůzky/bankéř", "Fyzické schůzky/bankéř",
+        "Bezhot. walkin/bankéř", "Hot. walkin/bankéř",
+        "Návštěvy / ot. hod.",
+    ], "#f8d2e0"),
+    ("🔀 Spádová oblast",     [
+        "Spádová pobočka 1", "Spád. návštěvy 1", "Spád. podíl 1",
+        "Spádová pobočka 2", "Spád. návštěvy 2", "Spád. podíl 2",
+        "Spádová pobočka 3", "Spád. návštěvy 3", "Spád. podíl 3",
+    ], "#f3bcd0"),
+    # ── 🏠 Majetek ────────────────────────────────────────────────────────────
+    ("🏠 Nájemné",             ["Vlastnictví", "Roční nájemné", "Nájemné kvintil", "Začátek smlouvy", "Konec smlouvy", "Výpovědní lhůta"], "#f3e5f5"),
+    ("🔨 Investice",           ["Poslední investice", "Datum posl. inv.", "Výše posl. inv.", "Nejvyšší investice", "Datum nejv. inv.", "Výše nejv. inv.", "Celkem zainvestováno"], "#e9d5f0"),
+    ("📐 Alokační report",     [
+        "Pouze D5", "WPL max 2026", "WPL využito 2026",
+        "Celk. plocha pobočky", "Plocha pouze D5", "Plocha nad optimál",
+    ], "#ddc5ea"),
+    # ── 🔧 Ostatní ────────────────────────────────────────────────────────────
     ("🏧 ATM",                ["ATM přehled", "ATM volná kap. %",
                                 "ATM výběry průměr/měs.", "ATM vklady průměr/měs.",
-                                "ATM výběry po převodu/měs.", "ATM vklady po převodu/měs."], "#e8f4fd"),
+                                "ATM výběry po převodu/měs.", "ATM vklady po převodu/měs."], "#e3f2fd"),
 ]
 
-# Odpovídající akcentové barvy pro okraje přepínačů (pořadí odpovídá COL_GROUPS)
-COL_GROUP_ACCENT = [
-    '#607d8b',   # Adresa
-    '#0097a7',   # Klienti
-    '#f9a825',   # Interní rating
-    '#1565c0',   # C/I
-    '#2e7d32',   # Výnosy
-    '#7b1fa2',   # Business rating
-    '#1565c0',   # Hotovostní rating
-    '#2e7d32',   # Otevírací doba
-    '#6a1b9a',   # Nájemné
-    '#e65100',   # Investice
-    '#ad1457',   # Návštěvy
-    '#f57f17',   # Strategie BNS
-    '#33691e',   # Strategie hotovosti
-    '#c2185b',   # Alokační report
-    '#388e3c',   # Budova
-    '#b8860b',   # Transakční data
-    '#0277bd',   # Spádová oblast
-    '#3f51b5',   # FTE
-    '#d4a017',   # Sdružené ratingy
-    '#d4682a',   # Prodeje
-    '#2e7d32',   # Index expozice
-    '#1565c0',   # ATM
-]
+# Meta pro každou skupinu: akcentová barva a podskupina pro přepínač
+COL_GROUP_META = {
+    "📍 Adresa":              {"accent": "#607d8b", "subgroup": "🗄️ Databáze síť"},
+    "🏢 Budova":              {"accent": "#546e7a", "subgroup": "🗄️ Databáze síť"},
+    "🕐 Otevírací doba":      {"accent": "#455a64", "subgroup": "🗄️ Databáze síť"},
+    "⭐ Interní rating":      {"accent": "#f9a825", "subgroup": "⭐ Ratingy"},
+    "📈 Business rating":     {"accent": "#f57f17", "subgroup": "⭐ Ratingy"},
+    "🏦 Hotovostní rating":   {"accent": "#ef6c00", "subgroup": "⭐ Ratingy"},
+    "🏅 Sdružené ratingy":   {"accent": "#e65100", "subgroup": "⭐ Ratingy"},
+    "📡 Index expozice":      {"accent": "#bf360c", "subgroup": "⭐ Ratingy"},
+    "📊 C/I":                 {"accent": "#00acc1", "subgroup": "📈 Performance"},
+    "💰 Výnosy":              {"accent": "#0097a7", "subgroup": "📈 Performance"},
+    "💵 Transakční data":     {"accent": "#00838f", "subgroup": "📈 Performance"},
+    "🛍️ Prodeje":             {"accent": "#006978", "subgroup": "📈 Performance"},
+    "👷 FTE":               {"accent": "#004d5f", "subgroup": "📈 Performance"},
+    "🗺️ Strategie BNS":      {"accent": "#f57f17", "subgroup": "🎯 Strategie"},
+    "💵 Strategie hotovosti": {"accent": "#e65100", "subgroup": "🎯 Strategie"},
+    "👥 Klienti":             {"accent": "#e91e63", "subgroup": "👥 Klient a návštěvy"},
+    "🚶 Návštěvy":            {"accent": "#c2185b", "subgroup": "👥 Klient a návštěvy"},
+    "🔀 Spádová oblast":     {"accent": "#ad1457", "subgroup": "👥 Klient a návštěvy"},
+    "🏠 Nájemné":             {"accent": "#8e24aa", "subgroup": "🏠 Majetek"},
+    "🔨 Investice":           {"accent": "#6a1b9a", "subgroup": "🏠 Majetek"},
+    "📐 Alokační report":     {"accent": "#4a148c", "subgroup": "🏠 Majetek"},
+    "🏧 ATM":                {"accent": "#1565c0", "subgroup": "🔧 Ostatní"},
+}
 
 
 def generate_column_map_html():
@@ -8462,7 +8511,11 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
     # ──────────────────────────────────────────────────────────────────────────
 
     col_groups_js = json.dumps([
-        (label, [c for c in cols if c not in _excl_display], color, COL_GROUP_ACCENT[i % len(COL_GROUP_ACCENT)])
+        (label,
+         [c for c in cols if c not in _excl_display],
+         color,
+         COL_GROUP_META.get(label, {}).get("accent", "#888888"),
+         COL_GROUP_META.get(label, {}).get("subgroup", ""))
         for i, (label, cols, color) in enumerate(COL_GROUPS)
     ])
 
@@ -8659,13 +8712,13 @@ setTimeout(function() {{
   var alwaysVisible = ["id pobočky", "název pobočky", "region"];
 
   var groupColIdxs = colGroups.map(function(g) {{
-    var label = g[0], names = g[1], pastel = g[2], accent = g[3];
+    var label = g[0], names = g[1], pastel = g[2], accent = g[3], subgroup = g[4] || "";
     var idxs = [];
     names.forEach(function(n) {{
       var idx = headerMap[n.toLowerCase()];
       if (idx !== undefined) idxs.push(idx);
     }});
-    return {{label: label, idxs: idxs, pastel: pastel, accent: accent}};
+    return {{label: label, idxs: idxs, pastel: pastel, accent: accent, subgroup: subgroup}};
   }}).filter(function(g) {{ return g.idxs.length > 0; }});
 
   var groupActive = {{}};
@@ -8733,7 +8786,20 @@ setTimeout(function() {{
     updateSummary();
   }}
 
+  var _lastSubgroup = null;
   groupColIdxs.forEach(function(g) {{
+    if (g.subgroup && g.subgroup !== _lastSubgroup) {{
+      if (_lastSubgroup !== null) {{
+        var _sep = document.createElement("div");
+        _sep.style.cssText = "width:100%;height:1px;background:#dde4f5;margin:4px 0 2px 0;";
+        toggleBar.appendChild(_sep);
+      }}
+      var _hdr = document.createElement("div");
+      _hdr.style.cssText = "width:100%;font-size:0.65rem;font-weight:700;color:#9aa;text-transform:uppercase;letter-spacing:0.6px;padding:2px 2px 1px 2px;";
+      _hdr.textContent = g.subgroup;
+      toggleBar.appendChild(_hdr);
+      _lastSubgroup = g.subgroup;
+    }}
     var btn = document.createElement("label");
     btn.className = "col-toggle-btn";
     btn.title = "Zobrazit / skrýt: " + g.label;
@@ -11866,6 +11932,27 @@ if 'POCET_NAVSTEV_CELKEM' in df.columns and 'OD_PH_TYDEN' in df.columns:
     df['OD_NAVSTEVY_NA_HODINU'] = (
         df['POCET_NAVSTEV_CELKEM'].fillna(0) / _od_ann
     ).where(df['POCET_NAVSTEV_CELKEM'].fillna(0) > 0).round(2)
+
+# ── Pool FHC — NF pobočky zrekonstruované do 2018 se strategií keep ───────────
+if all(c in df.columns for c in ['BRANCH_BUILDING_NF_SF', 'NEW_FORMAT_SINCE', 'FOOTPRINT_STRATEGIE_(2030)']):
+    _nf_yr = pd.to_datetime(df['NEW_FORMAT_SINCE'], errors='coerce').dt.year
+    df['POOL_FHC'] = (
+        (df['BRANCH_BUILDING_NF_SF'].astype(str).str.strip().str.upper() == 'NF')
+        & _nf_yr.notna() & (_nf_yr <= 2018)
+        & (df['FOOTPRINT_STRATEGIE_(2030)'].astype(str).str.strip().str.lower() == 'keep')
+    ).map({True: 'Ano', False: ''})
+else:
+    df['POOL_FHC'] = ''
+
+# ── Pool NF — SF pobočky s dobrým ratingem (kvintil < 5) ─────────────────────
+if all(c in df.columns for c in ['BRANCH_BUILDING_NF_SF', 'IR_Q']):
+    _ir_q_n = pd.to_numeric(df['IR_Q'], errors='coerce')
+    df['POOL_NF'] = (
+        (df['BRANCH_BUILDING_NF_SF'].astype(str).str.strip().str.upper() == 'SF')
+        & _ir_q_n.notna() & (_ir_q_n < 5)
+    ).map({True: 'Ano', False: ''})
+else:
+    df['POOL_NF'] = ''
 
 # Výpočet hotovostního ratingu (45 % počet + 55 % objem)
 df = compute_cash_rating(df)
