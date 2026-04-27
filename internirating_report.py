@@ -476,6 +476,11 @@ NOVE_NAZVY = {
     "IR_PERC_CHANGE_HTML":   "Změna ratingu perc 25/24",
     "DZ_STITKY":             "⚠️ Nebezpečná zóna",
 
+    # ── 🕰️ Interní rating — metodika 2022 ────────────────────────
+    "IR22":                  "Rating 22",
+    "IR22_Q_HTML":           "Rating 22 kvintil",
+    "IR22_SCORE":            "Rating 22 skóre",
+
     # ── 📊 C/I ────────────────────────────────────────────────────
     "C/I_RATIO_(YTD_2021)":  "C/I ratio 21",
     "C/I_RATIO_(YTD_2022)":  "C/I ratio 22",
@@ -7252,6 +7257,70 @@ def prepare_rating_status(df):
     except Exception:
         rating_status['SIM_250_FLAG'] = ''
 
+    # ── Interní rating — metodika 2022 ──────────────────────────────────────────
+    # Vstupní metriky: C/I ratio 25 (30%), Výnosy 25 (20%),
+    #                  Celkové návštěvy (25%), Prodeje celkem 2025 (25%)
+    # Skóre = vážený součet percentilových pořadí (0=nejlepší, 100=nejhorší).
+    # Konečný rank a kvintil jsou vypočítány jen pro pobočky s IR_FLAG == 'Y'.
+    _ir22_inputs = [
+        ('PRIME_NAKLADY/VYNOSY',      0.30, True),   # C/I — nižší = lepší
+        ('VYNOSY',                    0.20, False),  # Výnosy 25 — vyšší = lepší
+        ('POCET_NAVSTEV_CELKEM',      0.25, False),  # Návštěvy — vyšší = lepší
+        ('POCET_PRODEJU_CELKEM_2025', 0.25, False),  # Prodeje — vyšší = lepší
+    ]
+    _ir22_avail = [(col, w, asc) for col, w, asc in _ir22_inputs if col in rating_status.columns]
+    try:
+        if len(_ir22_avail) == len(_ir22_inputs):
+            _ir22_m = (
+                (rating_status['IR_FLAG'] == 'Y') if 'IR_FLAG' in rating_status.columns
+                else pd.Series(True, index=rating_status.index)
+            )
+            _ir22_idx = rating_status.index[_ir22_m]
+            _ir22_score = pd.Series(np.nan, index=rating_status.index)
+            _s = pd.Series(0.0, index=_ir22_idx)
+            for col, w, asc in _ir22_avail:
+                _num = pd.to_numeric(rating_status.loc[_ir22_idx, col], errors='coerce')
+                # pct rank: 0=nejlepší pro danou metriku → nejnižší skóre = nejlepší pobočka
+                _pct = _num.rank(method='average', pct=True, ascending=asc) * 100
+                _s += w * _pct
+            _ir22_score.loc[_ir22_idx] = _s
+            rating_status['IR22_SCORE'] = _ir22_score
+
+            _valid_idx = _ir22_idx[_ir22_score.loc[_ir22_idx].notna()]
+            rating_status['IR22'] = np.nan
+            rating_status.loc[_valid_idx, 'IR22'] = (
+                rating_status.loc[_valid_idx, 'IR22_SCORE']
+                .rank(ascending=True, method='first').astype(int)
+            )
+            rating_status['IR22_Q'] = np.nan
+            try:
+                rating_status.loc[_valid_idx, 'IR22_Q'] = (
+                    pd.qcut(rating_status.loc[_valid_idx, 'IR22'], q=5,
+                            labels=False, duplicates='drop') + 1
+                )
+            except Exception:
+                pass
+
+            _ir22_q_colors = {
+                1: '#1b8c4e', 2: '#55b87a', 3: '#c8a600', 4: '#e07a2a', 5: '#c0392b'
+            }
+            def _ir22_q_html(x):
+                try:
+                    q = int(float(x))
+                    c = _ir22_q_colors.get(q, '#999')
+                    return (f"<span style='background:{c};color:white;padding:1px 8px;"
+                            f"border-radius:10px;font-weight:700;font-size:0.78rem;'>Q{q}</span>")
+                except Exception:
+                    return '—'
+            rating_status['IR22_Q_HTML'] = rating_status['IR22_Q'].apply(_ir22_q_html)
+        else:
+            for _c in ['IR22_SCORE', 'IR22', 'IR22_Q', 'IR22_Q_HTML']:
+                rating_status[_c] = np.nan
+    except Exception as _ir22_err:
+        print(f"  ⚠️  IR22 výpočet selhal: {_ir22_err}")
+        for _c in ['IR22_SCORE', 'IR22', 'IR22_Q', 'IR22_Q_HTML']:
+            rating_status[_c] = np.nan
+
     return rating_status
 
 
@@ -7277,9 +7346,15 @@ def _fmt_year_int(val):
 def _apply_common_formatting(d, cols_to_show):
     """Sdílená formátovací logika pro prepare_table a prepare_table_cols."""
     # Ratingy jako celá čísla
-    for c in ['INTERNI_RATING_2023', 'INTERNI_RATING_2024', 'IR']:
+    for c in ['INTERNI_RATING_2023', 'INTERNI_RATING_2024', 'IR', 'IR22']:
         if c in cols_to_show and c in d.columns:
             d[c] = d[c].apply(lambda x: int(float(x)) if x not in ('', None) and not (isinstance(x, float) and np.isnan(x)) else "")
+
+    # IR22_SCORE — jedno desetinné místo
+    if 'IR22_SCORE' in cols_to_show and 'IR22_SCORE' in d.columns:
+        d['IR22_SCORE'] = d['IR22_SCORE'].apply(
+            lambda x: f"{float(x):.1f}" if pd.notna(x) and str(x) not in ('nan', '') else '—'
+        )
 
     # Poměry klientů — procenta
     for c in ['PRIM_RATIO', 'AKTIVNI_RATIO']:
@@ -7967,6 +8042,7 @@ COL_GROUPS = [
     ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
     # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
     ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25", "Trend ratingu 23–25", "Rating 25 kvintil", "Změna ratingu 25/24", "Změna ratingu perc 25/24", "⚠️ Nebezpečná zóna"], "#fff8e1"),
+    ("🕰️ Interní rating (metodika 2022)", ["Rating 22", "Rating 22 kvintil", "Rating 22 skóre"], "#fef9e7"),
     ("📈 Business rating",     [
         "Výnos/bankéř", "Výnos/bankéř kvintil",
         "Noví klienti/bankéř", "Noví klienti/bankéř kvintil",
@@ -8062,6 +8138,7 @@ COL_GROUP_META = {
     "🏢 Budova":              {"accent": "#546e7a", "subgroup": "🗄️ Databáze síť"},
     "🕐 Otevírací doba":      {"accent": "#455a64", "subgroup": "🗄️ Databáze síť"},
     "⭐ Interní rating":      {"accent": "#f9a825", "subgroup": "⭐ Ratingy"},
+    "🕰️ Interní rating (metodika 2022)": {"accent": "#c8a600", "subgroup": "⭐ Ratingy"},
     "📈 Business rating":     {"accent": "#f57f17", "subgroup": "⭐ Ratingy"},
     "🏦 Hotovostní rating":   {"accent": "#ef6c00", "subgroup": "⭐ Ratingy"},
     "🏅 Sdružené ratingy":   {"accent": "#e65100", "subgroup": "⭐ Ratingy"},
@@ -8195,7 +8272,7 @@ def generate_column_map_html():
 
     # Vypočítané sloupce
     computed = [
-        # Interní rating
+        # Interní rating (aktuální metodika)
         ("IR_SCORE",              COMPUTED_NOTE, "CI_RATIO_PERC×0.4 + NEW_BUSINESS_VOL_RNK×0.6",        "interní rating"),
         ("IR",                    COMPUTED_NOTE, "rank(IR_SCORE) — 1=nejlepší",                           "interní rating"),
         ("IR_Q",                  COMPUTED_NOTE, "qcut(IR, q=5) — 1=nejlepší",                            "interní rating"),
@@ -8204,6 +8281,10 @@ def generate_column_map_html():
         ("IR_DIFF_NUM",           COMPUTED_NOTE, "IR − INTERNI_RATING_2024",                              "interní rating"),
         ("NEW_BUSINESS_VOL_Q",    COMPUTED_NOTE, "qcut(OBJEM_VYNOSU_CZK, q=5)",                           "interní rating"),
         ("CI_RATIO_Q",            COMPUTED_NOTE, "qcut(PRIME_NAKLADY/VYNOSY, q=5)",                       "interní rating"),
+        # Interní rating — metodika 2022
+        ("IR22_SCORE",            COMPUTED_NOTE, "C/I%rank×0.30 + Výnosy%rank×0.20 + Návštěvy%rank×0.25 + Prodeje%rank×0.25 (0=nejlepší)", "interní rating 2022"),
+        ("IR22",                  COMPUTED_NOTE, "rank(IR22_SCORE) — 1=nejlepší",                          "interní rating 2022"),
+        ("IR22_Q",                COMPUTED_NOTE, "qcut(IR22, q=5) — 1=nejlepší",                           "interní rating 2022"),
         # Formát pobočky
         ("BRANCH_FORMAT",         COMPUTED_NOTE, "FTE: ≥25→flagship, ≥10→medium, ≥5→medium economy, jinak small", "formát"),
         ("BRANCH_FORMAT_OBCHODNI",COMPUTED_NOTE, "OBCHODNI_FTE: stejná pravidla jako BRANCH_FORMAT",      "formát"),
