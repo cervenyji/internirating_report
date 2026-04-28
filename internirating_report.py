@@ -9928,8 +9928,8 @@ def _render_top_revenues_table(df, region_label="", n=10):
     return f'{src_note}<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;">{left}{right}</div>'
 
 
-def generate_client_persona_html(parties_all_df):
-    """Vizualizace průměrného klienta dle CP_SEGMENT_ID — SVG persona karty."""
+def generate_client_persona_html(parties_all_df, branch_region_df=None):
+    """Vizualizace průměrného klienta dle regionu × CP_SEGMENT_ID — emoji persona karty."""
     if parties_all_df is None or parties_all_df.empty:
         return "<p style='color:#aaa;font-style:italic;'>parties_all není k dispozici.</p>"
 
@@ -9940,15 +9940,27 @@ def generate_client_persona_html(parties_all_df):
     if missing:
         return f"<p style='color:#c00;font-style:italic;'>Chybí sloupce: {', '.join(missing)}</p>"
 
+    # Join region from branch mapping
+    _has_region = False
+    if branch_region_df is not None and not branch_region_df.empty and 'REGION_NAME' in branch_region_df.columns:
+        _br = branch_region_df[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates('BRANCH_CODE').copy()
+        _br['BRANCH_CODE'] = pd.to_numeric(_br['BRANCH_CODE'], errors='coerce')
+        if 'DBS_HOME_BRANCH_CODE' in _df.columns:
+            _df['DBS_HOME_BRANCH_CODE'] = pd.to_numeric(_df['DBS_HOME_BRANCH_CODE'], errors='coerce')
+            _df = _df.merge(_br, left_on='DBS_HOME_BRANCH_CODE', right_on='BRANCH_CODE', how='left')
+            _has_region = _df['REGION_NAME'].notna().any()
+    if not _has_region:
+        _df['REGION_NAME'] = 'Celá síť'
+
     _BIG8 = [
-        ('CP_BIG8_CURACC_FLAG',    '💳 Běžný účet'),
-        ('CP_BIG8_SAVINGS_FLAG',   '💰 Spoření'),
-        ('CP_BIG8_BSD_FLAG',       '🏠 Stavební spoření'),
-        ('CP_BIG8_PENSION_FLAG',   '👴 Penzijko'),
-        ('CP_BIG8_INSLIFE_FLAG',   '🛡️ Životní pojištění'),
-        ('CP_BIG8_INVEST_FLAG',    '📈 Investice'),
-        ('CP_BIG8_LOANSEC_FLAG',   '🏡 Hypotéka'),
-        ('CP_BIG8_LOANUNSEC_FLAG', '💵 Spotřebitelský úvěr'),
+        ('CP_BIG8_CURACC_FLAG',    '\U0001f4b3 Běžný účet'),
+        ('CP_BIG8_SAVINGS_FLAG',   '\U0001f4b0 Spoření'),
+        ('CP_BIG8_BSD_FLAG',       '\U0001f3e0 Stavební spoření'),
+        ('CP_BIG8_PENSION_FLAG',   '\U0001f474 Penzijko'),
+        ('CP_BIG8_INSLIFE_FLAG',   '\U0001f6e1️ Životní pojištění'),
+        ('CP_BIG8_INVEST_FLAG',    '\U0001f4c8 Investice'),
+        ('CP_BIG8_LOANSEC_FLAG',   '\U0001f3e1 Hypotéka'),
+        ('CP_BIG8_LOANUNSEC_FLAG', '\U0001f4b5 Spotřebitelský úvěr'),
     ]
     _big8_present = [(c, lbl) for c, lbl in _BIG8 if c in _df.columns]
 
@@ -9958,23 +9970,57 @@ def generate_client_persona_html(parties_all_df):
     for _fc in _FLAG_COLS:
         if _fc in _df.columns:
             _df[_fc] = (_df[_fc].astype(str).str.upper() == 'Y').astype(int)
-    _df['_is_woman'] = _df['CP_CLIENT_GENDER'].astype(str).str.upper().str.contains('ŽENA|ZENA|FEMALE').fillna(False).astype(int)
 
-    _agg = {'CP_CLIENT_AGE': 'mean', 'CP_OPERATING_INCOME_12M_CZK': 'mean',
-            '_is_woman': 'mean', 'CP_CLIENT_GENDER': 'count'}
-    if 'IBA_SUM_LOGIN_MOBILE_COUNT' in _df.columns:
-        _agg['IBA_SUM_LOGIN_MOBILE_COUNT'] = 'mean'
-    for _fc in _FLAG_COLS:
-        if _fc in _df.columns:
-            _agg[_fc] = 'mean'
-    for _c, _ in _big8_present:
-        _agg[_c] = 'mean'
+    # Age group bins for mode calculation
+    def _age_grp(a):
+        try:
+            return 'young' if float(a) < 35 else ('senior' if float(a) >= 56 else 'middle')
+        except Exception:
+            return 'middle'
+    _df['_age_grp'] = _df['CP_CLIENT_AGE'].apply(_age_grp)
 
-    _seg = _df.groupby('CP_SEGMENT_ID').agg(_agg).rename(columns={'CP_CLIENT_GENDER': '_count'}).reset_index()
+    # Emoji lookup keyed by (gender, age_group)
+    _EMOJI = {
+        ('female', 'young'):  '\U0001f467\U0001f3fd',
+        ('female', 'middle'): '\U0001f471\U0001f3fd‍♀️',
+        ('female', 'senior'): '\U0001f475\U0001f3fd',
+        ('male',   'young'):  '\U0001f9d2\U0001f3fd',
+        ('male',   'middle'): '\U0001f468\U0001f3fd‍\U0001f9b0',
+        ('male',   'senior'): '\U0001f474\U0001f3fd',
+    }
 
-    _inc_vals = _seg['CP_OPERATING_INCOME_12M_CZK'].dropna()
-    _inc_min  = _inc_vals.min() if len(_inc_vals) else 0
-    _inc_max  = _inc_vals.max() if len(_inc_vals) else 1
+    def _get_emoji(gender_mode, age_grp_mode):
+        _gm = str(gender_mode).upper()
+        _is_f = 'ŽENA' in _gm or 'ZENA' in _gm or 'FEMALE' in _gm
+        return _EMOJI.get(('female' if _is_f else 'male', age_grp_mode), '\U0001f9d1')
+
+    def _gender_label(gender_mode):
+        _gm = str(gender_mode).upper()
+        return 'Žena' if ('ŽENA' in _gm or 'ZENA' in _gm or 'FEMALE' in _gm) else 'Muž'
+
+    # Per-group aggregation: mode for gender + age_grp, mean for numerics
+    def _agg_grp(grp):
+        _res = {}
+        _res['_count']    = len(grp)
+        _res['_age_mean'] = grp['CP_CLIENT_AGE'].mean()
+        _res['_income']   = grp['CP_OPERATING_INCOME_12M_CZK'].mean()
+        _res['_gender']   = grp['CP_CLIENT_GENDER'].mode().iloc[0] if len(grp) else 'MUŽ'
+        _res['_age_grp']  = grp['_age_grp'].mode().iloc[0] if len(grp) else 'middle'
+        if 'IBA_SUM_LOGIN_MOBILE_COUNT' in grp.columns:
+            _res['_logins'] = grp['IBA_SUM_LOGIN_MOBILE_COUNT'].mean()
+        for _fc in _FLAG_COLS:
+            if _fc in grp.columns:
+                _res[_fc] = grp[_fc].mean()
+        for _c, _ in _big8_present:
+            _res[_c] = grp[_c].mean()
+        return pd.Series(_res)
+
+    _grouped = _df.groupby(['REGION_NAME', 'CP_SEGMENT_ID']).apply(_agg_grp).reset_index()
+
+    # Global income range for consistent coloring across all region+segment combos
+    _inc_all  = _grouped['_income'].dropna()
+    _inc_min  = _inc_all.min() if len(_inc_all) else 0
+    _inc_max  = _inc_all.max() if len(_inc_all) else 1
 
     def _inc_color(v):
         if pd.isna(v) or _inc_max == _inc_min: return '#78909c'
@@ -9984,30 +10030,6 @@ def generate_client_persona_html(parties_all_df):
         if p < 0.6:  return '#43a047'
         if p < 0.8:  return '#fb8c00'
         return '#8e24aa'
-
-    def _svg_person(female, color, age):
-        op = '0.95' if age < 35 else ('0.85' if age < 55 else '0.75')
-        if female:
-            return (f'<svg width="70" height="108" viewBox="0 0 70 108" xmlns="http://www.w3.org/2000/svg">'
-                    f'<ellipse cx="35" cy="18" rx="19" ry="8" fill="{color}" opacity="0.55"/>'
-                    f'<circle cx="35" cy="25" r="15" fill="{color}" opacity="{op}"/>'
-                    f'<rect x="31" y="38" width="8" height="6" fill="{color}" opacity="{op}"/>'
-                    f'<path d="M23,44 L13,86 L57,86 L47,44 Z" fill="{color}" opacity="{op}"/>'
-                    f'<line x1="24" y1="50" x2="9" y2="70" stroke="{color}" stroke-width="5" stroke-linecap="round" opacity="{op}"/>'
-                    f'<line x1="46" y1="50" x2="61" y2="70" stroke="{color}" stroke-width="5" stroke-linecap="round" opacity="{op}"/>'
-                    f'<line x1="27" y1="86" x2="21" y2="106" stroke="{color}" stroke-width="5" stroke-linecap="round" opacity="{op}"/>'
-                    f'<line x1="43" y1="86" x2="49" y2="106" stroke="{color}" stroke-width="5" stroke-linecap="round" opacity="{op}"/>'
-                    f'</svg>')
-        else:
-            return (f'<svg width="70" height="108" viewBox="0 0 70 108" xmlns="http://www.w3.org/2000/svg">'
-                    f'<circle cx="35" cy="23" r="15" fill="{color}" opacity="{op}"/>'
-                    f'<rect x="31" y="36" width="8" height="6" fill="{color}" opacity="{op}"/>'
-                    f'<rect x="17" y="42" width="36" height="38" rx="3" fill="{color}" opacity="{op}"/>'
-                    f'<line x1="17" y1="48" x2="4" y2="73" stroke="{color}" stroke-width="6" stroke-linecap="round" opacity="{op}"/>'
-                    f'<line x1="53" y1="48" x2="66" y2="73" stroke="{color}" stroke-width="6" stroke-linecap="round" opacity="{op}"/>'
-                    f'<line x1="27" y1="80" x2="21" y2="106" stroke="{color}" stroke-width="6" stroke-linecap="round" opacity="{op}"/>'
-                    f'<line x1="43" y1="80" x2="49" y2="106" stroke="{color}" stroke-width="6" stroke-linecap="round" opacity="{op}"/>'
-                    f'</svg>')
 
     def _pct_bar(pct, color='#2770f0'):
         bw = max(2, int(pct * 90))
@@ -10021,96 +10043,106 @@ def generate_client_persona_html(parties_all_df):
             bg = '#e8f5e9' if val > 0.6 else ('#fff8e1' if val > 0.35 else '#fce4ec')
             tc = '#2e7d32' if val > 0.6 else ('#6d4c00' if val > 0.35 else '#b71c1c')
         else:
-            vs = f'{val:,.0f}×'.replace(',', ' ')
+            vs = f'{val:,.0f}×'.replace(',', ' ')
             bg = '#e3f2fd'; tc = '#0d47a1'
         return (f'<div style="text-align:center;background:{bg};border-radius:7px;padding:4px 7px;min-width:54px;">'
                 f'<div style="font-size:0.67rem;color:#666;white-space:nowrap;">{icon} {label}</div>'
                 f'<div style="font-size:0.84rem;font-weight:700;color:{tc};">{vs}</div></div>')
 
-    _SEG_NAMES = {'MM': 'Mass Market', 'AF': 'Affluent', 'PB': 'Private Banking',
-                  'SME': 'SME', 'BB': 'Business Banking'}
-    _SEG_ORD   = {'PB': 0, 'AF': 1, 'MM': 2, 'SME': 3, 'BB': 4}
-    _seg['_ord'] = _seg['CP_SEGMENT_ID'].map(_SEG_ORD).fillna(99)
-    _seg = _seg.sort_values(['_ord', 'CP_SEGMENT_ID'])
+    _SEG_NAMES = {'MM': 'Mass Market', 'MA': 'Mass Affluent', 'PREMIER': 'Premier', 'EPB': 'Elite Private'}
+    _SEG_ORD   = {'MM': 0, 'MA': 1, 'PREMIER': 2, 'EPB': 3}
 
-    _cards = []
-    for _, _r in _seg.iterrows():
-        _sid      = _r['CP_SEGMENT_ID']
-        _age      = float(_r.get('CP_CLIENT_AGE', 0) or 0)
-        _income   = float(_r.get('CP_OPERATING_INCOME_12M_CZK', 0) or 0)
-        _female   = float(_r.get('_is_woman', 0.5) or 0.5) >= 0.5
-        _count    = int(_r.get('_count', 0) or 0)
-        _color    = _inc_color(_income)
-        _svg      = _svg_person(_female, _color, _age)
-        _g_icon   = '♀' if _female else '♂'
-        _g_label  = 'Žena' if _female else 'Muž'
-        _sname    = _SEG_NAMES.get(_sid, _sid)
-        _cnt_str  = f'{_count:,}'.replace(',', ' ')
+    def _build_card(row):
+        _sid    = row['CP_SEGMENT_ID']
+        _age    = float(row.get('_age_mean', 0) or 0)
+        _income = row.get('_income', 0)
+        _income_f = float(_income) if not pd.isna(_income) else 0.0
+        _count  = int(row.get('_count', 0) or 0)
+        _color  = _inc_color(_income_f)
+        _emoji  = _get_emoji(row.get('_gender', 'MUŽ'), row.get('_age_grp', 'middle'))
+        _glabel = _gender_label(row.get('_gender', 'MUŽ'))
+        _sname  = _SEG_NAMES.get(_sid, _sid)
+        _cnt    = f'{_count:,}'.replace(',', ' ')
 
-        _inc_yr   = f'{_income:,.0f} Kč/rok'.replace(',', ' ') if not pd.isna(_income) else 'N/A'
-        _inc_mo   = (f'≈ {_income/12:,.0f} Kč/měs'.replace(',', ' ')
-                     if not pd.isna(_income) and _income else '')
-
-        _logins    = _r.get('IBA_SUM_LOGIN_MOBILE_COUNT', None)
-        _digi      = _r.get('CP_DIGI_FLAG', None)
-        _mobile    = _r.get('CP_MOBILE_ACTIVE_FLAG', None)
-        _prim      = _r.get('CP_PRIMARY_FLAG', None)
-        _prim_inc  = _r.get('CP_PRIMARY_INCOME_FLAG', None)
+        _inc_yr = f'{_income_f:,.0f} Kč/rok'.replace(',', ' ') if _income_f else 'N/A'
+        _inc_mo = f'≈ {_income_f/12:,.0f} Kč/měs'.replace(',', ' ') if _income_f else ''
 
         _pills = ''.join([
-            _pill('Digitální',    _digi,     'pct', '📱'),
-            _pill('Primární',     _prim,     'pct', '⭐'),
-            _pill('Prim. příjem', _prim_inc, 'pct', '💼'),
-            _pill('Mob. login',   _logins,   'num', '🔑'),
+            _pill('Digitální',    row.get('CP_DIGI_FLAG'),             'pct', '\U0001f4f1'),
+            _pill('Primární',     row.get('CP_PRIMARY_FLAG'),          'pct', '⭐'),
+            _pill('Prim. příjem', row.get('CP_PRIMARY_INCOME_FLAG'),   'pct', '\U0001f4bc'),
+            _pill('Mob. login',   row.get('_logins'),                  'num', '\U0001f511'),
         ])
 
         _big8_rows = ''
         for _bc, _blbl in _big8_present:
-            _bp = float(_r.get(_bc, 0) or 0)
-            _bc_color = '#1b8c4e' if _bp > 0.7 else ('#43a047' if _bp > 0.4 else ('#fb8c00' if _bp > 0.15 else '#bdbdbd'))
+            _bp = float(row.get(_bc, 0) or 0)
+            _bcolor = '#1b8c4e' if _bp > 0.7 else ('#43a047' if _bp > 0.4 else ('#fb8c00' if _bp > 0.15 else '#bdbdbd'))
             _big8_rows += (f'<div style="display:flex;align-items:center;gap:5px;margin:2px 0;">'
-                           f'<span style="font-size:0.69rem;color:#555;width:135px;white-space:nowrap;overflow:hidden;">{_blbl}</span>'
-                           f'{_pct_bar(_bp, _bc_color)}'
+                           f'<span style="font-size:0.69rem;color:#555;width:140px;white-space:nowrap;overflow:hidden;">{_blbl}</span>'
+                           f'{_pct_bar(_bp, _bcolor)}'
                            f'<span style="font-size:0.69rem;color:#666;min-width:32px;">{_bp:.0%}</span></div>')
+        _big8_sec = (f'<div style="margin-top:10px;width:100%;">'
+                     f'<div style="font-size:0.68rem;font-weight:700;color:#777;text-transform:uppercase;'
+                     f'letter-spacing:.3px;margin-bottom:5px;">Big8 produkty</div>{_big8_rows}</div>') if _big8_rows else ''
 
-        _big8_section = (f'<div style="margin-top:10px;width:100%;">'
-                         f'<div style="font-size:0.68rem;font-weight:700;color:#777;text-transform:uppercase;'
-                         f'letter-spacing:.3px;margin-bottom:5px;">Big8 produkty</div>{_big8_rows}</div>') if _big8_rows else ''
-
-        _cards.append(
-            f'<div style="background:white;border:1.5px solid #e0e6f3;border-radius:12px;padding:16px 14px;'
-            f'min-width:225px;max-width:275px;flex:1;box-shadow:0 2px 8px rgba(0,0,0,0.07);'
+        return (
+            f'<div style="background:white;border:1.5px solid #e0e6f3;border-radius:12px;padding:14px 12px;'
+            f'min-width:210px;max-width:260px;flex:1;box-shadow:0 2px 8px rgba(0,0,0,0.06);'
             f'display:flex;flex-direction:column;align-items:center;">'
 
-            f'<div style="width:100%;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
-            f'<span style="font-size:0.78rem;font-weight:700;color:{_color};background:{_color}1a;'
-            f'padding:2px 9px;border-radius:12px;letter-spacing:.3px;">{_sid}</span>'
-            f'<span style="font-size:0.7rem;color:#aaa;">{_cnt_str}&nbsp;klientů</span></div>'
+            f'<div style="width:100%;display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+            f'<span style="font-size:0.76rem;font-weight:700;color:{_color};background:{_color}1a;'
+            f'padding:2px 8px;border-radius:12px;letter-spacing:.3px;">{_sid}</span>'
+            f'<span style="font-size:0.68rem;color:#bbb;">{_cnt} klientů</span></div>'
 
-            f'<div style="margin:4px 0;">{_svg}</div>'
-            f'<div style="text-align:center;margin-top:4px;">'
-            f'<span style="font-size:1.15rem;color:{_color};">{_g_icon}</span>'
-            f'<span style="font-size:0.85rem;font-weight:600;color:#333;margin-left:3px;">{_g_label}</span>'
-            f'<span style="font-size:0.8rem;color:#777;margin-left:5px;">·&nbsp;{_age:.0f}&nbsp;let</span></div>'
-            f'<div style="font-size:0.72rem;color:#aaa;margin-top:1px;">{_sname}</div>'
+            f'<div style="font-size:3rem;line-height:1.1;margin:6px 0 2px 0;">{_emoji}</div>'
+            f'<div style="text-align:center;margin-top:2px;">'
+            f'<span style="font-size:0.85rem;font-weight:600;color:#333;">{_glabel}</span>'
+            f'<span style="font-size:0.8rem;color:#888;margin-left:5px;">· {_age:.0f} let</span></div>'
+            f'<div style="font-size:0.7rem;color:#bbb;margin-top:1px;">{_sname}</div>'
 
-            f'<div style="margin-top:9px;text-align:center;background:{_color}12;border-radius:8px;'
+            f'<div style="margin-top:8px;text-align:center;background:{_color}12;border-radius:8px;'
             f'padding:5px 10px;width:100%;box-sizing:border-box;">'
-            f'<div style="font-size:0.67rem;color:#888;">Průměrný příjem (12M)</div>'
+            f'<div style="font-size:0.67rem;color:#999;">Výnos z klienta (12M)</div>'
             f'<div style="font-size:0.88rem;font-weight:700;color:{_color};">{_inc_yr}</div>'
             f'<div style="font-size:0.7rem;color:{_color};">{_inc_mo}</div></div>'
 
-            f'<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center;margin:8px 0;">{_pills}</div>'
-            f'{_big8_section}'
+            f'<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center;margin:7px 0;">{_pills}</div>'
+            f'{_big8_sec}'
             f'</div>'
         )
 
-    if not _cards:
+    # Build region sections — sorted alphabetically, 'Celá síť' first if present
+    _regions_raw = sorted(_grouped['REGION_NAME'].dropna().unique())
+    _regions = ([r for r in _regions_raw if r == 'Celá síť']
+                + [r for r in _regions_raw if r != 'Celá síť'])
+    _sections = []
+    for _reg in _regions:
+        _rdf = _grouped[_grouped['REGION_NAME'] == _reg].copy()
+        _rdf['_ord'] = _rdf['CP_SEGMENT_ID'].map(_SEG_ORD).fillna(99)
+        _rdf = _rdf.sort_values(['_ord', 'CP_SEGMENT_ID'])
+
+        _reg_cards = ''.join(_build_card(r) for _, r in _rdf.iterrows())
+        if not _reg_cards:
+            continue
+
+        _det_open = ' open' if _reg == 'Celá síť' else ''
+        _sections.append(
+            f'<details{_det_open} style="margin-bottom:10px;">'
+            f'<summary style="cursor:pointer;padding:7px 12px;background:#f0f4ff;border-radius:8px;'
+            f'font-weight:700;font-size:0.82rem;color:#2770f0;list-style:none;'
+            f'display:flex;align-items:center;gap:6px;user-select:none;">'
+            f'▶ {_reg}</summary>'
+            f'<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;'
+            f'padding:12px 4px 4px 4px;">{_reg_cards}</div>'
+            f'</details>'
+        )
+
+    if not _sections:
         return "<p style='color:#aaa;font-style:italic;'>Žádná data k zobrazení.</p>"
 
-    return (f'<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;padding:4px 0;">'
-            + ''.join(_cards) + '</div>')
-
+    return '<div>' + ''.join(_sections) + '</div>'
 
 def generate_report(rating_status, mode='static', output_prefix="report"):
     """
@@ -10599,7 +10631,8 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
 
         print("  👤 Generuji vizualizaci průměrného klienta dle segmentu...")
         _pa_arg = globals().get('parties_all')
-        _persona_html = generate_client_persona_html(_pa_arg)
+        _br_reg = df_sorted[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates() if 'REGION_NAME' in df_sorted.columns else None
+        _persona_html = generate_client_persona_html(_pa_arg, _br_reg)
         print("  ✅ Bloky připraveny, sestavuji HTML...")
 
         # ── Aplikace SEKCE_CELKOVY konfigurace ────────────────────────────────
