@@ -9944,9 +9944,9 @@ def generate_client_persona_html(parties_all_df, branch_region_df=None):
     _has_region = False
     if branch_region_df is not None and not branch_region_df.empty and 'REGION_NAME' in branch_region_df.columns:
         _br = branch_region_df[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates('BRANCH_CODE').copy()
-        _br['BRANCH_CODE'] = pd.to_numeric(_br['BRANCH_CODE'], errors='coerce')
+        _br['BRANCH_CODE'] = pd.to_numeric(_br['BRANCH_CODE'], errors='coerce').astype(float)
         if 'DBS_HOME_BRANCH_CODE' in _df.columns:
-            _df['DBS_HOME_BRANCH_CODE'] = pd.to_numeric(_df['DBS_HOME_BRANCH_CODE'], errors='coerce')
+            _df['DBS_HOME_BRANCH_CODE'] = pd.to_numeric(_df['DBS_HOME_BRANCH_CODE'], errors='coerce').astype(float)
             _df = _df.merge(_br, left_on='DBS_HOME_BRANCH_CODE', right_on='BRANCH_CODE', how='left')
             _has_region = _df['REGION_NAME'].notna().any()
     if not _has_region:
