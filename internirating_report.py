@@ -205,6 +205,7 @@ SEKCE_CELKOVY = {
     "atm":             True,   # 🏧 Bankomaty — celková síť
     "index_expozice":  True,   # 📡 Index expozice — top 5
     "klienti_heatmapa":True,   # 💎 Kde bydlí klienti s nejvyššími výnosy
+    "klienti_profil":  True,   # 👤 Průměrný klient dle segmentu (CP_SEGMENT_ID)
     "simulace":        True,   # 🏦 Simulace sítě 250 poboček
     "specialiste":     True,   # 👷 Přehled obsazení pozic
     "metriky":         True,   # 📊 Přehled výkonnostních metrik
@@ -287,6 +288,13 @@ soubory = {
         "extra_params": {},
         "merge_on": {"left_on": "BRANCH_CODE", "right_on": "DBS_HOME_BRANCH_CODE"},
         "drop_key": "DBS_HOME_BRANCH_CODE",
+    },
+    "parties_all": {
+        "path": "parties_all_2026.pkl",
+        "validity": "31.12.2025",
+        "source_desc": "Rozšířený dataset klientů z client profile (CP_SEGMENT_ID, pohlaví, věk, příjem, Big8 produkty, digitální chování).",
+        "extra_params": {},
+        "no_merge": True,
     },
     "obchody_detail": {
         "path": "export_obchodu_detail_2026.pkl",
@@ -9920,6 +9928,190 @@ def _render_top_revenues_table(df, region_label="", n=10):
     return f'{src_note}<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;">{left}{right}</div>'
 
 
+def generate_client_persona_html(parties_all_df):
+    """Vizualizace průměrného klienta dle CP_SEGMENT_ID — SVG persona karty."""
+    if parties_all_df is None or parties_all_df.empty:
+        return "<p style='color:#aaa;font-style:italic;'>parties_all není k dispozici.</p>"
+
+    _df = parties_all_df.copy()
+
+    required = ['CP_SEGMENT_ID', 'CP_CLIENT_GENDER', 'CP_CLIENT_AGE', 'CP_OPERATING_INCOME_12M_CZK']
+    missing  = [c for c in required if c not in _df.columns]
+    if missing:
+        return f"<p style='color:#c00;font-style:italic;'>Chybí sloupce: {', '.join(missing)}</p>"
+
+    _BIG8 = [
+        ('CP_BIG8_CURACC_FLAG',    '💳 Běžný účet'),
+        ('CP_BIG8_SAVINGS_FLAG',   '💰 Spoření'),
+        ('CP_BIG8_BSD_FLAG',       '🏠 Stavební spoření'),
+        ('CP_BIG8_PENSION_FLAG',   '👴 Penzijko'),
+        ('CP_BIG8_INSLIFE_FLAG',   '🛡️ Životní pojištění'),
+        ('CP_BIG8_INVEST_FLAG',    '📈 Investice'),
+        ('CP_BIG8_LOANSEC_FLAG',   '🏡 Hypotéka'),
+        ('CP_BIG8_LOANUNSEC_FLAG', '💵 Spotřebitelský úvěr'),
+    ]
+    _big8_present = [(c, lbl) for c, lbl in _BIG8 if c in _df.columns]
+
+    _FLAG_COLS = ['CP_DIGI_FLAG', 'CP_MOBILE_ACTIVE_FLAG', 'CP_PRIMARY_FLAG', 'CP_PRIMARY_INCOME_FLAG']
+    for _c, _ in _big8_present:
+        _df[_c] = (_df[_c].astype(str).str.upper() == 'Y').astype(int)
+    for _fc in _FLAG_COLS:
+        if _fc in _df.columns:
+            _df[_fc] = (_df[_fc].astype(str).str.upper() == 'Y').astype(int)
+    _df['_is_woman'] = _df['CP_CLIENT_GENDER'].astype(str).str.upper().str.contains('ŽENA|ZENA|FEMALE').fillna(False).astype(int)
+
+    _agg = {'CP_CLIENT_AGE': 'mean', 'CP_OPERATING_INCOME_12M_CZK': 'mean',
+            '_is_woman': 'mean', 'CP_CLIENT_GENDER': 'count'}
+    if 'IBA_SUM_LOGIN_MOBILE_COUNT' in _df.columns:
+        _agg['IBA_SUM_LOGIN_MOBILE_COUNT'] = 'mean'
+    for _fc in _FLAG_COLS:
+        if _fc in _df.columns:
+            _agg[_fc] = 'mean'
+    for _c, _ in _big8_present:
+        _agg[_c] = 'mean'
+
+    _seg = _df.groupby('CP_SEGMENT_ID').agg(_agg).rename(columns={'CP_CLIENT_GENDER': '_count'}).reset_index()
+
+    _inc_vals = _seg['CP_OPERATING_INCOME_12M_CZK'].dropna()
+    _inc_min  = _inc_vals.min() if len(_inc_vals) else 0
+    _inc_max  = _inc_vals.max() if len(_inc_vals) else 1
+
+    def _inc_color(v):
+        if pd.isna(v) or _inc_max == _inc_min: return '#78909c'
+        p = (v - _inc_min) / (_inc_max - _inc_min)
+        if p < 0.2:  return '#78909c'
+        if p < 0.4:  return '#26a69a'
+        if p < 0.6:  return '#43a047'
+        if p < 0.8:  return '#fb8c00'
+        return '#8e24aa'
+
+    def _svg_person(female, color, age):
+        op = '0.95' if age < 35 else ('0.85' if age < 55 else '0.75')
+        if female:
+            return (f'<svg width="70" height="108" viewBox="0 0 70 108" xmlns="http://www.w3.org/2000/svg">'
+                    f'<ellipse cx="35" cy="18" rx="19" ry="8" fill="{color}" opacity="0.55"/>'
+                    f'<circle cx="35" cy="25" r="15" fill="{color}" opacity="{op}"/>'
+                    f'<rect x="31" y="38" width="8" height="6" fill="{color}" opacity="{op}"/>'
+                    f'<path d="M23,44 L13,86 L57,86 L47,44 Z" fill="{color}" opacity="{op}"/>'
+                    f'<line x1="24" y1="50" x2="9" y2="70" stroke="{color}" stroke-width="5" stroke-linecap="round" opacity="{op}"/>'
+                    f'<line x1="46" y1="50" x2="61" y2="70" stroke="{color}" stroke-width="5" stroke-linecap="round" opacity="{op}"/>'
+                    f'<line x1="27" y1="86" x2="21" y2="106" stroke="{color}" stroke-width="5" stroke-linecap="round" opacity="{op}"/>'
+                    f'<line x1="43" y1="86" x2="49" y2="106" stroke="{color}" stroke-width="5" stroke-linecap="round" opacity="{op}"/>'
+                    f'</svg>')
+        else:
+            return (f'<svg width="70" height="108" viewBox="0 0 70 108" xmlns="http://www.w3.org/2000/svg">'
+                    f'<circle cx="35" cy="23" r="15" fill="{color}" opacity="{op}"/>'
+                    f'<rect x="31" y="36" width="8" height="6" fill="{color}" opacity="{op}"/>'
+                    f'<rect x="17" y="42" width="36" height="38" rx="3" fill="{color}" opacity="{op}"/>'
+                    f'<line x1="17" y1="48" x2="4" y2="73" stroke="{color}" stroke-width="6" stroke-linecap="round" opacity="{op}"/>'
+                    f'<line x1="53" y1="48" x2="66" y2="73" stroke="{color}" stroke-width="6" stroke-linecap="round" opacity="{op}"/>'
+                    f'<line x1="27" y1="80" x2="21" y2="106" stroke="{color}" stroke-width="6" stroke-linecap="round" opacity="{op}"/>'
+                    f'<line x1="43" y1="80" x2="49" y2="106" stroke="{color}" stroke-width="6" stroke-linecap="round" opacity="{op}"/>'
+                    f'</svg>')
+
+    def _pct_bar(pct, color='#2770f0'):
+        bw = max(2, int(pct * 90))
+        return (f'<div style="width:90px;height:7px;background:#e8ecf3;border-radius:4px;overflow:hidden;display:inline-block;">'
+                f'<div style="width:{bw}px;height:100%;background:{color};border-radius:4px;"></div></div>')
+
+    def _pill(label, val, fmt, icon=''):
+        if val is None or pd.isna(val): return ''
+        if fmt == 'pct':
+            vs = f'{val:.0%}'
+            bg = '#e8f5e9' if val > 0.6 else ('#fff8e1' if val > 0.35 else '#fce4ec')
+            tc = '#2e7d32' if val > 0.6 else ('#6d4c00' if val > 0.35 else '#b71c1c')
+        else:
+            vs = f'{val:,.0f}×'.replace(',', ' ')
+            bg = '#e3f2fd'; tc = '#0d47a1'
+        return (f'<div style="text-align:center;background:{bg};border-radius:7px;padding:4px 7px;min-width:54px;">'
+                f'<div style="font-size:0.67rem;color:#666;white-space:nowrap;">{icon} {label}</div>'
+                f'<div style="font-size:0.84rem;font-weight:700;color:{tc};">{vs}</div></div>')
+
+    _SEG_NAMES = {'MM': 'Mass Market', 'AF': 'Affluent', 'PB': 'Private Banking',
+                  'SME': 'SME', 'BB': 'Business Banking'}
+    _SEG_ORD   = {'PB': 0, 'AF': 1, 'MM': 2, 'SME': 3, 'BB': 4}
+    _seg['_ord'] = _seg['CP_SEGMENT_ID'].map(_SEG_ORD).fillna(99)
+    _seg = _seg.sort_values(['_ord', 'CP_SEGMENT_ID'])
+
+    _cards = []
+    for _, _r in _seg.iterrows():
+        _sid      = _r['CP_SEGMENT_ID']
+        _age      = float(_r.get('CP_CLIENT_AGE', 0) or 0)
+        _income   = float(_r.get('CP_OPERATING_INCOME_12M_CZK', 0) or 0)
+        _female   = float(_r.get('_is_woman', 0.5) or 0.5) >= 0.5
+        _count    = int(_r.get('_count', 0) or 0)
+        _color    = _inc_color(_income)
+        _svg      = _svg_person(_female, _color, _age)
+        _g_icon   = '♀' if _female else '♂'
+        _g_label  = 'Žena' if _female else 'Muž'
+        _sname    = _SEG_NAMES.get(_sid, _sid)
+        _cnt_str  = f'{_count:,}'.replace(',', ' ')
+
+        _inc_yr   = f'{_income:,.0f} Kč/rok'.replace(',', ' ') if not pd.isna(_income) else 'N/A'
+        _inc_mo   = (f'≈ {_income/12:,.0f} Kč/měs'.replace(',', ' ')
+                     if not pd.isna(_income) and _income else '')
+
+        _logins    = _r.get('IBA_SUM_LOGIN_MOBILE_COUNT', None)
+        _digi      = _r.get('CP_DIGI_FLAG', None)
+        _mobile    = _r.get('CP_MOBILE_ACTIVE_FLAG', None)
+        _prim      = _r.get('CP_PRIMARY_FLAG', None)
+        _prim_inc  = _r.get('CP_PRIMARY_INCOME_FLAG', None)
+
+        _pills = ''.join([
+            _pill('Digitální',    _digi,     'pct', '📱'),
+            _pill('Primární',     _prim,     'pct', '⭐'),
+            _pill('Prim. příjem', _prim_inc, 'pct', '💼'),
+            _pill('Mob. login',   _logins,   'num', '🔑'),
+        ])
+
+        _big8_rows = ''
+        for _bc, _blbl in _big8_present:
+            _bp = float(_r.get(_bc, 0) or 0)
+            _bc_color = '#1b8c4e' if _bp > 0.7 else ('#43a047' if _bp > 0.4 else ('#fb8c00' if _bp > 0.15 else '#bdbdbd'))
+            _big8_rows += (f'<div style="display:flex;align-items:center;gap:5px;margin:2px 0;">'
+                           f'<span style="font-size:0.69rem;color:#555;width:135px;white-space:nowrap;overflow:hidden;">{_blbl}</span>'
+                           f'{_pct_bar(_bp, _bc_color)}'
+                           f'<span style="font-size:0.69rem;color:#666;min-width:32px;">{_bp:.0%}</span></div>')
+
+        _big8_section = (f'<div style="margin-top:10px;width:100%;">'
+                         f'<div style="font-size:0.68rem;font-weight:700;color:#777;text-transform:uppercase;'
+                         f'letter-spacing:.3px;margin-bottom:5px;">Big8 produkty</div>{_big8_rows}</div>') if _big8_rows else ''
+
+        _cards.append(
+            f'<div style="background:white;border:1.5px solid #e0e6f3;border-radius:12px;padding:16px 14px;'
+            f'min-width:225px;max-width:275px;flex:1;box-shadow:0 2px 8px rgba(0,0,0,0.07);'
+            f'display:flex;flex-direction:column;align-items:center;">'
+
+            f'<div style="width:100%;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+            f'<span style="font-size:0.78rem;font-weight:700;color:{_color};background:{_color}1a;'
+            f'padding:2px 9px;border-radius:12px;letter-spacing:.3px;">{_sid}</span>'
+            f'<span style="font-size:0.7rem;color:#aaa;">{_cnt_str}&nbsp;klientů</span></div>'
+
+            f'<div style="margin:4px 0;">{_svg}</div>'
+            f'<div style="text-align:center;margin-top:4px;">'
+            f'<span style="font-size:1.15rem;color:{_color};">{_g_icon}</span>'
+            f'<span style="font-size:0.85rem;font-weight:600;color:#333;margin-left:3px;">{_g_label}</span>'
+            f'<span style="font-size:0.8rem;color:#777;margin-left:5px;">·&nbsp;{_age:.0f}&nbsp;let</span></div>'
+            f'<div style="font-size:0.72rem;color:#aaa;margin-top:1px;">{_sname}</div>'
+
+            f'<div style="margin-top:9px;text-align:center;background:{_color}12;border-radius:8px;'
+            f'padding:5px 10px;width:100%;box-sizing:border-box;">'
+            f'<div style="font-size:0.67rem;color:#888;">Průměrný příjem (12M)</div>'
+            f'<div style="font-size:0.88rem;font-weight:700;color:{_color};">{_inc_yr}</div>'
+            f'<div style="font-size:0.7rem;color:{_color};">{_inc_mo}</div></div>'
+
+            f'<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center;margin:8px 0;">{_pills}</div>'
+            f'{_big8_section}'
+            f'</div>'
+        )
+
+    if not _cards:
+        return "<p style='color:#aaa;font-style:italic;'>Žádná data k zobrazení.</p>"
+
+    return (f'<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;padding:4px 0;">'
+            + ''.join(_cards) + '</div>')
+
+
 def generate_report(rating_status, mode='static', output_prefix="report"):
     """
     Generuje HTML report(y).
@@ -10404,6 +10596,10 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
         print("  💎 Generuji heatmapu výnosových klientů...")
         _pf_arg = globals().get('parties_full')
         _rev_heatmap_html = generate_revenue_client_heatmap(df_sorted, _pf_arg)
+
+        print("  👤 Generuji vizualizaci průměrného klienta dle segmentu...")
+        _pa_arg = globals().get('parties_all')
+        _persona_html = generate_client_persona_html(_pa_arg)
         print("  ✅ Bloky připraveny, sestavuji HTML...")
 
         # ── Aplikace SEKCE_CELKOVY konfigurace ────────────────────────────────
@@ -10534,6 +10730,11 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
     {_sc('klienti_heatmapa', make_collapsible("revenue-heatmap-static", "💎 Kde bydlí klienti s nejvyššími výnosy — top 20 % poboček",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Geografická heatmapa bydliště klientů generujících nejvyšší výnosy — identifikuje spádové oblasti a potenciál pro rozvoj sítě.</p>'
         + _rev_heatmap_html, default_open=False))}
+
+    <!-- 16b. Průměrný klient dle segmentu -->
+    {_sc('klienti_profil', make_collapsible("client-persona-static", "👤 Průměrný klient dle segmentu",
+        '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Profil průměrného klienta v každém segmentu (CP_SEGMENT_ID) — pohlaví, věk, příjem, digitální chování a penetrace Big8 produktů.</p>'
+        + _persona_html, default_open=False))}
 
     <!-- 17. Simulace sítě -->
     {_sc('simulace', make_collapsible("inv-impact-static", "🏦 Simulace sítě 250 poboček",
