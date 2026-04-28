@@ -9964,7 +9964,10 @@ def generate_client_persona_html(parties_all_df, branch_region_df=None):
     ]
     _big8_present = [(c, lbl) for c, lbl in _BIG8 if c in _df.columns]
 
-    _FLAG_COLS = ['CP_DIGI_FLAG', 'CP_MOBILE_ACTIVE_FLAG', 'CP_PRIMARY_FLAG', 'CP_PRIMARY_INCOME_FLAG']
+    _FLAG_COLS = ['CP_DIGI_FLAG', 'CP_IN_PORTFOLIO_FLAG', 'CP_MOBILE_ACTIVE_FLAG',
+                  'CP_WEB_ACTIVE_FLAG', 'CP_PRIMARY_FLAG', 'CP_PRIMARY_INCOME_FLAG']
+    _NUM_COLS  = ['IBA_SUM_LOGIN_MOBILE_COUNT', 'IBA_SUM_LOGIN_WEB_COUNT',
+                  'NFI_AC_ACCOUNT_TRN_CNT_AVG', 'NFI_AC_POS_TRN_CNT_AVG', 'NFI_AC_ATM_TRN_CNT_AVG']
     for _c, _ in _big8_present:
         _df[_c] = (_df[_c].astype(str).str.upper() == 'Y').astype(int)
     for _fc in _FLAG_COLS:
@@ -10006,11 +10009,12 @@ def generate_client_persona_html(parties_all_df, branch_region_df=None):
         _res['_income']   = grp['CP_OPERATING_INCOME_12M_CZK'].mean()
         _res['_gender']   = grp['CP_CLIENT_GENDER'].mode().iloc[0] if len(grp) else 'MUŽ'
         _res['_age_grp']  = grp['_age_grp'].mode().iloc[0] if len(grp) else 'middle'
-        if 'IBA_SUM_LOGIN_MOBILE_COUNT' in grp.columns:
-            _res['_logins'] = grp['IBA_SUM_LOGIN_MOBILE_COUNT'].mean()
         for _fc in _FLAG_COLS:
             if _fc in grp.columns:
                 _res[_fc] = grp[_fc].mean()
+        for _nc in _NUM_COLS:
+            if _nc in grp.columns:
+                _res[_nc] = grp[_nc].mean()
         for _c, _ in _big8_present:
             _res[_c] = grp[_c].mean()
         return pd.Series(_res)
@@ -10042,9 +10046,12 @@ def generate_client_persona_html(parties_all_df, branch_region_df=None):
             vs = f'{val:.0%}'
             bg = '#e8f5e9' if val > 0.6 else ('#fff8e1' if val > 0.35 else '#fce4ec')
             tc = '#2e7d32' if val > 0.6 else ('#6d4c00' if val > 0.35 else '#b71c1c')
-        else:
+        elif fmt == 'cnt':
             vs = f'{val:,.0f}×'.replace(',', ' ')
             bg = '#e3f2fd'; tc = '#0d47a1'
+        else:
+            vs = f'{val:,.1f}'.replace(',', ' ')
+            bg = '#f3f4f6'; tc = '#374151'
         return (f'<div style="text-align:center;background:{bg};border-radius:7px;padding:4px 7px;min-width:54px;">'
                 f'<div style="font-size:0.67rem;color:#666;white-space:nowrap;">{icon} {label}</div>'
                 f'<div style="font-size:0.84rem;font-weight:700;color:{tc};">{vs}</div></div>')
@@ -10067,12 +10074,29 @@ def generate_client_persona_html(parties_all_df, branch_region_df=None):
         _inc_yr = f'{_income_f:,.0f} Kč/rok'.replace(',', ' ') if _income_f else 'N/A'
         _inc_mo = f'≈ {_income_f/12:,.0f} Kč/měs'.replace(',', ' ') if _income_f else ''
 
-        _pills = ''.join([
-            _pill('Digitální',    row.get('CP_DIGI_FLAG'),             'pct', '\U0001f4f1'),
+        # Flags row
+        _pills_flags = ''.join([
+            _pill('Digi',         row.get('CP_DIGI_FLAG'),             'pct', '\U0001f4f1'),
+            _pill('Portfolio',    row.get('CP_IN_PORTFOLIO_FLAG'),     'pct', '\U0001f465'),
             _pill('Primární',     row.get('CP_PRIMARY_FLAG'),          'pct', '⭐'),
             _pill('Prim. příjem', row.get('CP_PRIMARY_INCOME_FLAG'),   'pct', '\U0001f4bc'),
-            _pill('Mob. login',   row.get('_logins'),                  'num', '\U0001f511'),
         ])
+        # George (digital channels) row
+        _pills_george = ''.join([
+            _pill('George Mob',   row.get('CP_MOBILE_ACTIVE_FLAG'),   'pct', '\U0001f4f2'),
+            _pill('George Web',   row.get('CP_WEB_ACTIVE_FLAG'),      'pct', '\U0001f4bb'),
+            _pill('Mob login/r',  row.get('IBA_SUM_LOGIN_MOBILE_COUNT'), 'cnt', '\U0001f511'),
+            _pill('Web login/r',  row.get('IBA_SUM_LOGIN_WEB_COUNT'),    'cnt', '\U0001f310'),
+        ])
+        # Transactions row
+        _pills_trn = ''.join([
+            _pill('Účet trn/m',   row.get('NFI_AC_ACCOUNT_TRN_CNT_AVG'), 'num', '\U0001f4c4'),
+            _pill('POS trn/m',    row.get('NFI_AC_POS_TRN_CNT_AVG'),     'num', '\U0001f4b3'),
+            _pill('ATM op/m',     row.get('NFI_AC_ATM_TRN_CNT_AVG'),     'num', '\U0001f3e7'),
+        ])
+        def _mini_hdr(txt):
+            return (f'<div style="width:100%;font-size:0.62rem;font-weight:700;color:#aab;'
+                    f'text-transform:uppercase;letter-spacing:.4px;margin:5px 0 2px 0;">{txt}</div>')
 
         _big8_rows = ''
         for _bc, _blbl in _big8_present:
@@ -10108,9 +10132,14 @@ def generate_client_persona_html(parties_all_df, branch_region_df=None):
             f'<div style="font-size:0.88rem;font-weight:700;color:{_color};">{_inc_yr}</div>'
             f'<div style="font-size:0.7rem;color:{_color};">{_inc_mo}</div></div>'
 
-            f'<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center;margin:7px 0;">{_pills}</div>'
-            f'{_big8_sec}'
-            f'</div>'
+            + (_mini_hdr('Příznaky')
+               + f'<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center;margin-bottom:6px;">{_pills_flags}</div>')
+            + (_mini_hdr('George') + f'<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center;margin-bottom:6px;">{_pills_george}</div>'
+               if _pills_george else '')
+            + (_mini_hdr('Transakce / měsíc') + f'<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center;margin-bottom:6px;">{_pills_trn}</div>'
+               if _pills_trn else '')
+            + _big8_sec
+            + '</div>'
         )
 
     # Build region sections — sorted alphabetically, 'Celá síť' first if present
@@ -10631,7 +10660,11 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
 
         print("  👤 Generuji vizualizaci průměrného klienta dle segmentu...")
         _pa_arg = globals().get('parties_all')
-        _br_reg = df_sorted[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates() if 'REGION_NAME' in df_sorted.columns else None
+        _dbs_gl  = globals().get('dbs')
+        _br_reg  = (_dbs_gl[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates('BRANCH_CODE')
+                    if _dbs_gl is not None and 'REGION_NAME' in _dbs_gl.columns
+                    else (df_sorted[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates()
+                          if 'REGION_NAME' in df_sorted.columns else None))
         _persona_html = generate_client_persona_html(_pa_arg, _br_reg)
         print("  ✅ Bloky připraveny, sestavuji HTML...")
 
