@@ -254,6 +254,13 @@ soubory = {
         "source_desc": f"Data z databáze síť — export ke dni {DBS_DATE}.",
         "extra_params": {"filter_date": DBS_DATE}
     },
+    "dbs_all": {
+        "path": "../in/tables/dbs_branch_network.csv",
+        "validity": DBS_DATE,
+        "source_desc": f"Kompletní síť všech poboček (vč. EPB) — export ke dni {DBS_DATE}.",
+        "extra_params": {"filter_date": DBS_DATE},
+        "no_merge": True,
+    },
     "old_ir": {
         "path": "../vypocet_ir_2026/zdroje/IR_2024_v06.xlsx",
         "validity": "EOY2024",
@@ -10021,19 +10028,17 @@ def generate_client_persona_html(parties_all_df, branch_region_df=None):
 
     _grouped = _df.groupby(['REGION_NAME', 'CP_SEGMENT_ID']).apply(_agg_grp).reset_index()
 
-    # Global income range for consistent coloring across all region+segment combos
-    _inc_all  = _grouped['_income'].dropna()
-    _inc_min  = _inc_all.min() if len(_inc_all) else 0
-    _inc_max  = _inc_all.max() if len(_inc_all) else 1
+    # Fixed segment colors — identical across all regions so cards are comparable
+    _SEG_COLOR = {
+        'MM':      '#2770f0',   # blue       — mass market
+        'MA':      '#0891b2',   # teal       — mass affluent
+        'PREMIER': '#7c3aed',   # violet     — premier
+        'EPB':     '#c8a600',   # gold       — elite private
+    }
+    _SEG_COLOR_DEFAULT = '#78909c'
 
-    def _inc_color(v):
-        if pd.isna(v) or _inc_max == _inc_min: return '#78909c'
-        p = (v - _inc_min) / (_inc_max - _inc_min)
-        if p < 0.2:  return '#78909c'
-        if p < 0.4:  return '#26a69a'
-        if p < 0.6:  return '#43a047'
-        if p < 0.8:  return '#fb8c00'
-        return '#8e24aa'
+    def _seg_color(sid):
+        return _SEG_COLOR.get(str(sid).upper(), _SEG_COLOR_DEFAULT)
 
     def _pct_bar(pct, color='#2770f0'):
         bw = max(2, int(pct * 90))
@@ -10065,7 +10070,7 @@ def generate_client_persona_html(parties_all_df, branch_region_df=None):
         _income = row.get('_income', 0)
         _income_f = float(_income) if not pd.isna(_income) else 0.0
         _count  = int(row.get('_count', 0) or 0)
-        _color  = _inc_color(_income_f)
+        _color  = _seg_color(_sid)
         _emoji  = _get_emoji(row.get('_gender', 'MUŽ'), row.get('_age_grp', 'middle'))
         _glabel = _gender_label(row.get('_gender', 'MUŽ'))
         _sname  = _SEG_NAMES.get(_sid, _sid)
@@ -10659,12 +10664,18 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
         _rev_heatmap_html = generate_revenue_client_heatmap(df_sorted, _pf_arg)
 
         print("  👤 Generuji vizualizaci průměrného klienta dle segmentu...")
-        _pa_arg = globals().get('parties_all')
-        _dbs_gl  = globals().get('dbs')
-        _br_reg  = (_dbs_gl[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates('BRANCH_CODE')
-                    if _dbs_gl is not None and 'REGION_NAME' in _dbs_gl.columns
-                    else (df_sorted[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates()
-                          if 'REGION_NAME' in df_sorted.columns else None))
+        _pa_arg   = globals().get('parties_all')
+        _dbs_all  = globals().get('dbs_all')
+        _dbs_gl   = globals().get('dbs')
+        _br_src   = (_dbs_all if (_dbs_all is not None and not _dbs_all.empty
+                                  and 'REGION_NAME' in _dbs_all.columns)
+                     else (_dbs_gl if (_dbs_gl is not None and not _dbs_gl.empty
+                                       and 'REGION_NAME' in _dbs_gl.columns)
+                           else None))
+        _br_reg   = (_br_src[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates('BRANCH_CODE')
+                     if _br_src is not None
+                     else (df_sorted[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates()
+                           if 'REGION_NAME' in df_sorted.columns else None))
         _persona_html = generate_client_persona_html(_pa_arg, _br_reg)
         print("  ✅ Bloky připraveny, sestavuji HTML...")
 
