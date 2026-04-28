@@ -10154,6 +10154,7 @@ def generate_client_persona_html(parties_all_df, branch_region_df=None):
     _sections = []
     for _reg in _regions:
         _rdf = _grouped[_grouped['REGION_NAME'] == _reg].copy()
+        _rdf = _rdf[_rdf['_count'] >= 100]
         _rdf['_ord'] = _rdf['CP_SEGMENT_ID'].map(_SEG_ORD).fillna(99)
         _rdf = _rdf.sort_values(['_ord', 'CP_SEGMENT_ID'])
 
