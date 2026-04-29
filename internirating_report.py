@@ -486,6 +486,7 @@ NOVE_NAZVY = {
     "INTERNI_RATING_2023":   "Rating 23",
     "INTERNI_RATING_2024":   "Rating 24",
     "IR":                    "Rating 25",
+    "IR_SCORE_CI_RATIO_PERC": "Rating 25 skóre",
     "IR_SPARKLINE":          "Trend ratingu 23–25",
     "IR_Q_HTML":             "Rating 25 kvintil",
     "IR_CHANGE_HTML":        "Změna ratingu 25/24",
@@ -5257,12 +5258,15 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
     return html1
 
 
-def render_strategy_columns(df):
+def render_strategy_columns(df, uid=None):
     """
     Tři sloupce vedle sebe: Close · Investice · Cashless.
     Badge barva = světlá odvozená od barvy záhlaví, plynule zesvětluje dle roku.
     Karta obsahuje: název, region, výnosy, rating, kvintil ratingu.
+    uid: volitelný unikátní identifikátor pro DOM elementy (výchozí: náhodný hash).
     """
+    import hashlib as _hl
+    _uid = uid or _hl.md5(str(id(df)).encode()).hexdigest()[:8]
     # ── Kvintil ratingu → emoji + barva ──────────────────────────────
     _Q_DOT = {1:'🟢', 2:'🔵', 3:'🟡', 4:'🟠', 5:'🔴'}
     _Q_COL = {1:'#0bb440', 2:'#2770f0', 3:'#f59e0b', 4:'#fb923c', 5:'#eb4d79'}
@@ -5318,9 +5322,10 @@ def render_strategy_columns(df):
         _desc_clean = str(desc or '').strip()
         desc_line = (f"<div style='font-size:0.72rem;color:#555;margin-top:3px;font-style:italic;'>{_desc_clean}</div>"
                      if _desc_clean and _desc_clean not in ('nan', 'None') else '')
+        _reg_attr = region.replace('"', '&quot;')
 
         return f"""
-<div style="display:flex;align-items:stretch;gap:0;border-radius:8px;overflow:hidden;
+<div class="strat-card-{_uid}" data-region="{_reg_attr}" style="display:flex;align-items:stretch;gap:0;border-radius:8px;overflow:hidden;
             border:1px solid #e8edf5;margin-bottom:7px;background:#fff;
             box-shadow:0 1px 3px rgba(0,0,0,0.04);">
   <div style="background:{bg_col};color:white;font-size:0.78rem;font-weight:800;
@@ -5466,6 +5471,12 @@ def render_strategy_columns(df):
     c_invest,   n_invest   = _col_invest(df)
     c_cashless, n_cashless = _col_cashless(df)
 
+    # Collect unique regions across all branches in this df
+    _regions_all = sorted([
+        r for r in df['REGION_NAME'].dropna().unique()
+        if str(r) not in ('', 'nan', 'None')
+    ]) if 'REGION_NAME' in df.columns else []
+
     def _col_wrap(title, icon, n, border_col, cards_html):
         if n == 0:
             return f"""
@@ -5490,7 +5501,46 @@ def render_strategy_columns(df):
   </div>
 </div>"""
 
+    # Region filter buttons
+    _reg_btns = ''
+    if _regions_all:
+        _btn_style_all = ("padding:4px 12px;border:1px solid #2770f0;border-radius:16px;"
+                          "background:#2770f0;color:white;font-size:0.78rem;font-weight:600;"
+                          "cursor:pointer;white-space:nowrap;")
+        _btn_style_reg = ("padding:4px 12px;border:1px solid #ccd6ee;border-radius:16px;"
+                          "background:#f0f4ff;color:#2770f0;font-size:0.78rem;font-weight:600;"
+                          "cursor:pointer;white-space:nowrap;")
+        _btns_html = (f'<button id="strat-btn-all-{_uid}" style="{_btn_style_all}" '
+                      f'onclick="stratFilterRegion(\'{_uid}\', null)">Vše</button>')
+        for _r in _regions_all:
+            _re = _r.replace("'", "\\'").replace('"', '&quot;')
+            _btns_html += (f'<button class="strat-rbtn-{_uid}" data-region="{_re}" '
+                           f'style="{_btn_style_reg}" '
+                           f'onclick="stratFilterRegion(\'{_uid}\', \'{_re}\')">{_r}</button>')
+        _reg_btns = (f'<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;'
+                     f'margin-bottom:12px;padding:8px 10px;background:#f8faff;'
+                     f'border:1px solid #dde4f5;border-radius:8px;">'
+                     f'<span style="font-size:0.78rem;color:#555;font-weight:600;margin-right:4px;">Region:</span>'
+                     f'{_btns_html}</div>'
+                     f'<script>'
+                     f'function stratFilterRegion(uid, region) {{'
+                     f'  var cards = document.querySelectorAll(".strat-card-" + uid);'
+                     f'  cards.forEach(function(c) {{'
+                     f'    c.style.display = (!region || c.getAttribute("data-region") === region) ? "" : "none";'
+                     f'  }});'
+                     f'  var allBtn = document.getElementById("strat-btn-all-" + uid);'
+                     f'  if (allBtn) allBtn.style.background = region ? "#f0f4ff" : "#2770f0";'
+                     f'  if (allBtn) allBtn.style.color = region ? "#2770f0" : "white";'
+                     f'  document.querySelectorAll(".strat-rbtn-" + uid).forEach(function(b) {{'
+                     f'    var active = (b.getAttribute("data-region") === region);'
+                     f'    b.style.background = active ? "#2770f0" : "#f0f4ff";'
+                     f'    b.style.color = active ? "white" : "#2770f0";'
+                     f'  }});'
+                     f'}}'
+                     f'</script>')
+
     return f"""
+{_reg_btns}
 <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
   {_col_wrap('Close', '🔴', n_close, '#eb4d79', c_close)}
   {_col_wrap('Investice', '🔨', n_invest, '#2770f0', c_invest)}
@@ -7338,6 +7388,12 @@ def _apply_common_formatting(d, cols_to_show):
         if c in cols_to_show and c in d.columns:
             d[c] = d[c].apply(lambda x: int(float(x)) if x not in ('', None) and not (isinstance(x, float) and np.isnan(x)) else "")
 
+    # IR_SCORE_CI_RATIO_PERC (Rating 25 skóre) — dvě desetinná místa
+    if 'IR_SCORE_CI_RATIO_PERC' in cols_to_show and 'IR_SCORE_CI_RATIO_PERC' in d.columns:
+        d['IR_SCORE_CI_RATIO_PERC'] = d['IR_SCORE_CI_RATIO_PERC'].apply(
+            lambda x: f"{float(x):.2f}" if pd.notna(x) and str(x) not in ('nan', '') else '—'
+        )
+
     # IR22_SCORE — jedno desetinné místo
     if 'IR22_SCORE' in cols_to_show and 'IR22_SCORE' in d.columns:
         d['IR22_SCORE'] = d['IR22_SCORE'].apply(
@@ -7732,7 +7788,23 @@ def prepare_table(target_df, excluded_cols=None):
     """Naformátuje dataframe a vrátí HTML tabulku pro report."""
     d = target_df.copy()
     _excl = set(excluded_cols or [])
-    cols_to_show = [c for c in NOVE_NAZVY.keys() if c in d.columns and c not in _excl]
+
+    # Build ordered column list: identity cols first, then follow COL_GROUPS order
+    _rev_nove  = {v: k for k, v in NOVE_NAZVY.items()}
+    _in_groups = set()
+    for _, _gcols, _ in COL_GROUPS:
+        _in_groups.update(_gcols)
+    # Identity columns: in NOVE_NAZVY but not assigned to any COL_GROUP display name
+    cols_to_show = [c for c in NOVE_NAZVY
+                    if c in d.columns and c not in _excl and NOVE_NAZVY[c] not in _in_groups]
+    # Then columns in COL_GROUPS order (dedup)
+    _added = set(cols_to_show)
+    for _, _gcols, _ in COL_GROUPS:
+        for _disp in _gcols:
+            _tech = _rev_nove.get(_disp)
+            if _tech and _tech in d.columns and _tech not in _excl and _tech not in _added:
+                cols_to_show.append(_tech)
+                _added.add(_tech)
 
     d = _apply_common_formatting(d, cols_to_show)
     d = _apply_special_dashes(d, cols_to_show)
@@ -8032,7 +8104,7 @@ COL_GROUPS = [
     ("🏢 Budova",              ["Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
     ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
     # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
-    ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25", "Trend ratingu 23–25", "Rating 25 kvintil", "Změna ratingu 25/24", "Změna ratingu perc 25/24", "⚠️ Nebezpečná zóna"], "#fff8e1"),
+    ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25", "Rating 25 skóre", "Trend ratingu 23–25", "Rating 25 kvintil", "Změna ratingu 25/24", "Změna ratingu perc 25/24", "⚠️ Nebezpečná zóna"], "#fff8e1"),
     ("🕰️ Interní rating (metodika 2022)", ["Rating 22", "Rating 22 kvintil", "Rating 22 skóre"], "#fef9e7"),
     ("📈 Business rating",     [
         "Výnos/bankéř", "Výnos/bankéř kvintil",
@@ -10321,6 +10393,94 @@ def generate_client_persona_html(parties_all_df, branch_region_df=None):
             + '</div>'
         )
 
+    # Per-branch aggregation for rankings (age + income)
+    _branch_agg = None
+    if 'DBS_HOME_BRANCH_CODE' in _df.columns and _has_region:
+        _br_cols = ['DBS_HOME_BRANCH_CODE', 'REGION_NAME', 'CP_CLIENT_AGE', 'CP_OPERATING_INCOME_12M_CZK']
+        _br_src = _df[[c for c in _br_cols if c in _df.columns]].copy()
+        # Attach BRANCH_NAME if available from branch_region_df
+        if (branch_region_df is not None and not branch_region_df.empty
+                and 'BRANCH_NAME' in branch_region_df.columns):
+            _bn_map = (branch_region_df[['BRANCH_CODE', 'BRANCH_NAME']]
+                       .drop_duplicates('BRANCH_CODE').copy())
+            _bn_map['BRANCH_CODE'] = pd.to_numeric(_bn_map['BRANCH_CODE'], errors='coerce').astype(float)
+            _br_src['DBS_HOME_BRANCH_CODE'] = pd.to_numeric(_br_src['DBS_HOME_BRANCH_CODE'], errors='coerce').astype(float)
+            _br_src = _br_src.merge(_bn_map, left_on='DBS_HOME_BRANCH_CODE', right_on='BRANCH_CODE', how='left')
+        else:
+            _br_src['BRANCH_NAME'] = _br_src['DBS_HOME_BRANCH_CODE'].astype(str)
+        _branch_agg = (_br_src.groupby(['REGION_NAME', 'DBS_HOME_BRANCH_CODE'])
+                       .agg(_age_mean=('CP_CLIENT_AGE', 'mean'),
+                            _income_mean=('CP_OPERATING_INCOME_12M_CZK', 'mean'),
+                            _cnt=('CP_CLIENT_AGE', 'count'))
+                       .reset_index())
+        # Join branch name
+        _branch_agg = _branch_agg.merge(
+            _br_src[['DBS_HOME_BRANCH_CODE', 'BRANCH_NAME']].drop_duplicates('DBS_HOME_BRANCH_CODE'),
+            on='DBS_HOME_BRANCH_CODE', how='left'
+        )
+        _branch_agg = _branch_agg[_branch_agg['_cnt'] >= 20]  # skip tiny branches
+
+    def _rank_row(icon, label, val_str, branch_name, branch_code):
+        return (f'<div style="display:flex;align-items:center;gap:7px;padding:4px 0;'
+                f'border-bottom:1px solid #f0f4f8;">'
+                f'<span style="font-size:0.88rem;">{icon}</span>'
+                f'<span style="font-size:0.78rem;font-weight:700;color:#0f172a;flex:1;min-width:0;'
+                f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{branch_name}">'
+                f'{branch_name}</span>'
+                f'<span style="font-size:0.68rem;color:#aaa;">#{int(branch_code)}</span>'
+                f'<span style="font-size:0.78rem;font-weight:700;color:#374151;white-space:nowrap;">'
+                f'{val_str}</span></div>')
+
+    def _build_rankings(reg):
+        if _branch_agg is None:
+            return ''
+        _rba = _branch_agg[_branch_agg['REGION_NAME'] == reg].copy()
+        if _rba.empty:
+            return ''
+        # Top 3 oldest
+        _old = _rba.nlargest(3, '_age_mean')
+        # Top 3 youngest
+        _yng = _rba.nsmallest(3, '_age_mean')
+        # Top income
+        _top_inc = _rba.nlargest(1, '_income_mean')
+        # Bottom income
+        _bot_inc = _rba.nsmallest(1, '_income_mean')
+
+        _old_rows = ''.join(
+            _rank_row('👴🏽', '', f'{r["_age_mean"]:.0f} let', str(r.get('BRANCH_NAME', r["DBS_HOME_BRANCH_CODE"])), r["DBS_HOME_BRANCH_CODE"])
+            for _, r in _old.iterrows()
+        )
+        _yng_rows = ''.join(
+            _rank_row('👧🏽', '', f'{r["_age_mean"]:.0f} let', str(r.get('BRANCH_NAME', r["DBS_HOME_BRANCH_CODE"])), r["DBS_HOME_BRANCH_CODE"])
+            for _, r in _yng.iterrows()
+        )
+        _inc_top = ''.join(
+            _rank_row('💰', '', f'{r["_income_mean"]:,.0f} Kč/r'.replace(',', ' '), str(r.get('BRANCH_NAME', r["DBS_HOME_BRANCH_CODE"])), r["DBS_HOME_BRANCH_CODE"])
+            for _, r in _top_inc.iterrows()
+        )
+        _inc_bot = ''.join(
+            _rank_row('📉', '', f'{r["_income_mean"]:,.0f} Kč/r'.replace(',', ' '), str(r.get('BRANCH_NAME', r["DBS_HOME_BRANCH_CODE"])), r["DBS_HOME_BRANCH_CODE"])
+            for _, r in _bot_inc.iterrows()
+        )
+
+        _card_style = ('background:#fff;border:1px solid #e0e6f3;border-radius:10px;'
+                       'padding:10px 12px;min-width:200px;flex:1;')
+        _hdr_style  = ('font-size:0.68rem;font-weight:700;color:#888;text-transform:uppercase;'
+                       'letter-spacing:.4px;margin-bottom:6px;')
+        return (f'<div style="margin-top:14px;padding:10px 4px 4px 4px;">'
+                f'<div style="font-size:0.72rem;font-weight:700;color:#555;text-transform:uppercase;'
+                f'letter-spacing:.5px;margin-bottom:8px;border-bottom:1px solid #e0e6f3;padding-bottom:4px;">'
+                f'📊 Pobočky v regionu — věk &amp; výnosy klientů</div>'
+                f'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;">'
+                f'<div style="{_card_style}">'
+                f'<div style="{_hdr_style}">👴🏽 Top 3 nejstarší klienti</div>{_old_rows}</div>'
+                f'<div style="{_card_style}">'
+                f'<div style="{_hdr_style}">👧🏽 Top 3 nejmladší klienti</div>{_yng_rows}</div>'
+                f'<div style="{_card_style}">'
+                f'<div style="{_hdr_style}">💰 Nejvyšší výnos / klient</div>{_inc_top}'
+                f'<div style="margin-top:10px;{_hdr_style}">📉 Nejnižší výnos / klient</div>{_inc_bot}</div>'
+                f'</div></div>')
+
     # Build region sections — sorted alphabetically, 'Celá síť' first if present
     _regions_raw = sorted(_grouped['REGION_NAME'].dropna().unique())
     _regions = ([r for r in _regions_raw if r == 'Celá síť']
@@ -10336,6 +10496,8 @@ def generate_client_persona_html(parties_all_df, branch_region_df=None):
         if not _reg_cards:
             continue
 
+        _rankings_html = _build_rankings(_reg) if _reg != 'Celá síť' else ''
+
         _det_open = ' open' if _reg == 'Celá síť' else ''
         _sections.append(
             f'<details{_det_open} style="margin-bottom:10px;">'
@@ -10345,7 +10507,8 @@ def generate_client_persona_html(parties_all_df, branch_region_df=None):
             f'▶ {_reg}</summary>'
             f'<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;'
             f'padding:12px 4px 4px 4px;">{_reg_cards}</div>'
-            f'</details>'
+            + _rankings_html
+            + f'</details>'
         )
 
     if not _sections:
