@@ -10420,14 +10420,18 @@ def generate_client_persona_html(parties_all_df, branch_region_df=None):
         )
         _branch_agg = _branch_agg[_branch_agg['_cnt'] >= 20]  # skip tiny branches
 
-    def _rank_row(icon, label, val_str, branch_name, branch_code):
+    def _rank_row(icon, label, val_str, branch_name, branch_code, cnt=None):
+        cnt_html = (f'<span style="font-size:0.66rem;color:#aaa;white-space:nowrap;">'
+                    f'{int(cnt):,} kl.</span>'.replace(',', ' ')
+                    if cnt is not None else '')
         return (f'<div style="display:flex;align-items:center;gap:7px;padding:4px 0;'
                 f'border-bottom:1px solid #f0f4f8;">'
                 f'<span style="font-size:0.88rem;">{icon}</span>'
                 f'<span style="font-size:0.78rem;font-weight:700;color:#0f172a;flex:1;min-width:0;'
                 f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{branch_name}">'
                 f'{branch_name}</span>'
-                f'<span style="font-size:0.68rem;color:#aaa;">#{int(branch_code)}</span>'
+                f'<span style="font-size:0.68rem;color:#bbb;">#{int(branch_code)}</span>'
+                f'{cnt_html}'
                 f'<span style="font-size:0.78rem;font-weight:700;color:#374151;white-space:nowrap;">'
                 f'{val_str}</span></div>')
 
@@ -10447,11 +10451,11 @@ def generate_client_persona_html(parties_all_df, branch_region_df=None):
         _bot_inc = _rba.nsmallest(1, '_income_mean')
 
         _old_rows = ''.join(
-            _rank_row('👴🏽', '', f'{r["_age_mean"]:.0f} let', str(r.get('BRANCH_NAME', r["DBS_HOME_BRANCH_CODE"])), r["DBS_HOME_BRANCH_CODE"])
+            _rank_row('👴🏽', '', f'{r["_age_mean"]:.0f} let', str(r.get('BRANCH_NAME', r["DBS_HOME_BRANCH_CODE"])), r["DBS_HOME_BRANCH_CODE"], cnt=r["_cnt"])
             for _, r in _old.iterrows()
         )
         _yng_rows = ''.join(
-            _rank_row('👧🏽', '', f'{r["_age_mean"]:.0f} let', str(r.get('BRANCH_NAME', r["DBS_HOME_BRANCH_CODE"])), r["DBS_HOME_BRANCH_CODE"])
+            _rank_row('👧🏽', '', f'{r["_age_mean"]:.0f} let', str(r.get('BRANCH_NAME', r["DBS_HOME_BRANCH_CODE"])), r["DBS_HOME_BRANCH_CODE"], cnt=r["_cnt"])
             for _, r in _yng.iterrows()
         )
         _inc_top = ''.join(
@@ -11013,10 +11017,14 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
                      else (_dbs_gl if (_dbs_gl is not None and not _dbs_gl.empty
                                        and 'REGION_NAME' in _dbs_gl.columns)
                            else None))
-        _br_reg   = (_br_src[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates('BRANCH_CODE')
+        _br_reg   = (_br_src[['BRANCH_CODE', 'REGION_NAME']
+                              + (['BRANCH_NAME'] if 'BRANCH_NAME' in _br_src.columns else [])
+                              ].drop_duplicates('BRANCH_CODE')
                      if _br_src is not None
-                     else (df_sorted[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates()
-                           if 'REGION_NAME' in df_sorted.columns else None))
+                     else (df_sorted[['BRANCH_CODE', 'REGION_NAME', 'BRANCH_NAME']].drop_duplicates()
+                           if 'REGION_NAME' in df_sorted.columns and 'BRANCH_NAME' in df_sorted.columns
+                           else (df_sorted[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates()
+                                 if 'REGION_NAME' in df_sorted.columns else None)))
         _persona_html = generate_client_persona_html(_pa_arg, _br_reg)
         print("  ✅ Bloky připraveny, sestavuji HTML...")
 
