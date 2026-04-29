@@ -9964,7 +9964,8 @@ def generate_scatter_analysis_html(df, uid="scatter"):
                 continue
             if pd.isna(xv) or pd.isna(yv):
                 continue
-            q     = int(r.get('IR_Q', 3) or 3)
+            _q_raw = r.get('IR_Q', 3)
+            q     = int(_q_raw) if not pd.isna(_q_raw) else 3
             color = _QC.get(q, '#999999')
             bname = str(r.get('BRANCH_NAME', r.get('BRANCH_CODE', '')))
             bcode = str(r.get('BRANCH_CODE', ''))
