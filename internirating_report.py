@@ -201,6 +201,7 @@ SEKCE_CELKOVY = {
     "vekove_segmenty": True,   # 👥 Věková struktura klientů
     "top_investice":   True,   # 🔨 Top investice — celá síť
     "nebezpecna_zona": True,   # 🚨 Pobočky v nebezpečné zóně
+    "scatter_analyza": True,   # 📉 Scatter analýza: Výnosy vs C/I · Prodeje vs PEREX
     "kohortova":       True,   # 📊 Kohortová analýza výnosů
     "atm":             True,   # 🏧 Bankomaty — celková síť
     "index_expozice":  True,   # 📡 Index expozice — top 5
@@ -9935,6 +9936,174 @@ def _render_top_revenues_table(df, region_label="", n=10):
     return f'{src_note}<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;">{left}{right}</div>'
 
 
+def generate_scatter_analysis_html(df, uid="scatter"):
+    """Dva scatter ploty: Nové výnosy vs C/I ratio a Prodeje vs PEREX.
+    Tečky = pobočky, barva = IR kvintil, CLOSE pobočky zvýrazněny."""
+
+    _QC = {1: '#1b8c4e', 2: '#55b87a', 3: '#c8a600', 4: '#e07a2a', 5: '#c0392b'}
+    _QN = {1: 'Q1 — top 20 %', 2: 'Q2 — 20–40 %', 3: 'Q3 — 40–60 %',
+           4: 'Q4 — 60–80 %', 5: 'Q5 — spodní 20 %'}
+    _CLOSE_STROKE = '#dc2626'
+
+    _X1, _Y1 = 'PRIME_NAKLADY/VYNOSY', 'OBJEM_VYNOSU_CZK'
+    _X2       = 'CAP_PEREX'
+    _Y2       = next((c for c in ['POCET_PRODEJU_CELKEM_2025', 'POCET_PRODEJU'] if c in df.columns), None)
+    _STRAT    = 'FOOTPRINT_STRATEGIE_(2030)'
+    _SIM      = 'SIM_250_FLAG'
+
+    def _is_close(row):
+        return ('close' in str(row.get(_STRAT, '') or '').lower()
+                or 'close' in str(row.get(_SIM,   '') or '').lower())
+
+    def _build_pts(df_sub, xcol, ycol):
+        normal, close = [], []
+        for _, r in df_sub.iterrows():
+            try:
+                xv = float(r[xcol]);  yv = float(r[ycol])
+            except Exception:
+                continue
+            if pd.isna(xv) or pd.isna(yv):
+                continue
+            q     = int(r.get('IR_Q', 3) or 3)
+            color = _QC.get(q, '#999999')
+            bname = str(r.get('BRANCH_NAME', r.get('BRANCH_CODE', '')))
+            bcode = str(r.get('BRANCH_CODE', ''))
+            pt = {'x': round(xv, 6), 'y': round(yv, 2),
+                  'fillColor': color, 'bname': bname, 'bcode': bcode, 'q': q}
+            (close if _is_close(r) else normal).append(pt)
+        return normal, close
+
+    def _pts_js(pts):
+        import json as _json
+        return _json.dumps(pts, ensure_ascii=False)
+
+    def _make_chart(chart_id, xcol, ycol, xlabel, ylabel,
+                    xfmt_js, yfmt_js, xfmt_tt_js, yfmt_tt_js):
+        _d  = df.dropna(subset=[xcol, ycol]).copy()
+        _d  = _d[pd.to_numeric(_d[xcol], errors='coerce').notna()
+                 & pd.to_numeric(_d[ycol], errors='coerce').notna()]
+        if _d.empty:
+            return f"<p style='color:#aaa;'>Sloupce {xcol} / {ycol} nejsou k dispozici.</p>"
+
+        normal_pts, close_pts = _build_pts(_d, xcol, ycol)
+        normal_js = _pts_js(normal_pts)
+        close_js  = _pts_js(close_pts)
+
+        return f"""
+<div id="{chart_id}" style="min-height:360px;"></div>
+<script>
+(function(){{
+  var xFmt    = {xfmt_js};
+  var yFmt    = {yfmt_js};
+  var xFmtTt  = {xfmt_tt_js};
+  var yFmtTt  = {yfmt_tt_js};
+  var opts = {{
+    chart:  {{ type:'scatter', height:360, toolbar:{{ show:false }},
+               zoom:{{ enabled:true, type:'xy' }},
+               background:'transparent',
+               animations:{{ enabled:false }} }},
+    series: [
+      {{ name:'Pobočky', data:{normal_js} }},
+      {{ name:'CLOSE',   data:{close_js}  }}
+    ],
+    markers: {{
+      size:         [5, 8],
+      strokeWidth:  [1, 3],
+      strokeColors: ['#ffffff', '{_CLOSE_STROKE}'],
+      hover: {{ sizeOffset: 3 }}
+    }},
+    xaxis: {{
+      type: 'numeric',
+      title: {{ text: '{xlabel}', style:{{ fontSize:'12px', color:'#555' }} }},
+      labels: {{ formatter: xFmt, style:{{ fontSize:'11px' }} }},
+      crosshairs: {{ show: true }}
+    }},
+    yaxis: {{
+      title: {{ text: '{ylabel}', style:{{ fontSize:'12px', color:'#555' }} }},
+      labels: {{ formatter: yFmt, style:{{ fontSize:'11px' }} }}
+    }},
+    colors: ['#2770f0','#dc2626'],
+    legend: {{
+      show: true,
+      labels: {{ colors: ['#555','#dc2626'] }},
+      markers: {{ width:10, height:10, radius:5 }}
+    }},
+    tooltip: {{
+      custom: function({{seriesIndex, dataPointIndex, w}}) {{
+        var d = w.config.series[seriesIndex].data[dataPointIndex];
+        var isClose = seriesIndex === 1;
+        var qColors = {{'1':'#1b8c4e','2':'#55b87a','3':'#c8a600','4':'#e07a2a','5':'#c0392b'}};
+        var qc = qColors[String(d.q)] || '#999';
+        return '<div style="padding:8px 10px;font-size:0.78rem;line-height:1.55;min-width:160px;">'
+          + '<b style="font-size:0.82rem;">' + d.bname + '</b>'
+          + (isClose ? ' <span style="color:#dc2626;font-weight:700;">● CLOSE</span>' : '')
+          + '<br/><span style="color:#888;"># ' + d.bcode + '</span><br/>'
+          + '<span style="background:' + qc + ';color:#fff;padding:1px 7px;border-radius:10px;font-size:0.72rem;font-weight:700;">Q' + d.q + '</span><br/>'
+          + '<span style="color:#555;">{xlabel}:</span> ' + xFmtTt(d.x) + '<br/>'
+          + '<span style="color:#555;">{ylabel}:</span> ' + yFmtTt(d.y)
+          + '</div>';
+      }}
+    }},
+    grid: {{ borderColor:'#e8ecf3', strokeDashArray:4,
+             xaxis:{{ lines:{{ show:true }} }}, yaxis:{{ lines:{{ show:true }} }} }}
+  }};
+  new ApexCharts(document.getElementById('{chart_id}'), opts).render();
+}})();
+</script>"""
+
+    # ── Chart 1: C/I ratio (x) vs Nové výnosy (y) ───────────────────────────
+    _c1_xfmt    = "function(v){ return (v*100).toFixed(1)+' %'; }"
+    _c1_yfmt    = "function(v){ return (v/1e6).toFixed(2)+' M'; }"
+    _c1_xfmt_tt = "function(v){ return (v*100).toFixed(1)+' %'; }"
+    _c1_yfmt_tt = "function(v){ return v.toLocaleString('cs-CZ',{maximumFractionDigits:0})+' Kč'; }"
+
+    missing1 = [c for c in [_X1, _Y1] if c not in df.columns]
+    html1 = (f"<p style='color:#c00;font-style:italic;'>Chybí: {', '.join(missing1)}</p>"
+             if missing1 else
+             _make_chart(f"{uid}-c1", _X1, _Y1, "C/I ratio", "Nové výnosy",
+                         _c1_xfmt, _c1_yfmt, _c1_xfmt_tt, _c1_yfmt_tt))
+
+    # ── Chart 2: PEREX (x) vs Počet prodejů (y) ─────────────────────────────
+    _c2_xfmt    = "function(v){ return v.toFixed(2); }"
+    _c2_yfmt    = "function(v){ return Math.round(v).toLocaleString('cs-CZ'); }"
+    _c2_xfmt_tt = "function(v){ return v.toFixed(3); }"
+    _c2_yfmt_tt = "function(v){ return Math.round(v).toLocaleString('cs-CZ')+' ks'; }"
+
+    if not _Y2:
+        html2 = "<p style='color:#aaa;font-style:italic;'>Sloupec POCET_PRODEJU_CELKEM_2025 není k dispozici.</p>"
+    else:
+        missing2 = [c for c in [_X2, _Y2] if c not in df.columns]
+        html2 = (f"<p style='color:#c00;font-style:italic;'>Chybí: {', '.join(missing2)}</p>"
+                 if missing2 else
+                 _make_chart(f"{uid}-c2", _X2, _Y2, "PEREX", "Počet prodejů celkem",
+                             _c2_xfmt, _c2_yfmt, _c2_xfmt_tt, _c2_yfmt_tt))
+
+    # ── Legend ───────────────────────────────────────────────────────────────
+    _leg_items = ''.join(
+        f'<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;">'
+        f'<span style="width:10px;height:10px;border-radius:50%;background:{_QC[q]};display:inline-block;"></span>'
+        f'<span style="font-size:0.72rem;color:#555;">Q{q} — {_QN[q].split("—")[1].strip()}</span></span>'
+        for q in range(1, 6)
+    )
+    _leg_close = ('<span style="display:inline-flex;align-items:center;gap:4px;">'
+                  '<span style="width:10px;height:10px;border-radius:50%;background:#dc2626;'
+                  'border:3px solid #dc2626;display:inline-block;"></span>'
+                  '<span style="font-size:0.72rem;color:#dc2626;font-weight:600;">CLOSE pobočky</span></span>')
+    legend_html = (f'<div style="display:flex;flex-wrap:wrap;gap:4px 0;align-items:center;'
+                   f'padding:8px 12px;background:#f8faff;border-radius:8px;margin-bottom:6px;">'
+                   f'{_leg_items}{_leg_close}</div>')
+
+    return (f'{legend_html}'
+            f'<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">'
+            f'<div style="flex:1;min-width:340px;">'
+            f'<div style="font-size:0.77rem;font-weight:600;color:#444;margin-bottom:4px;">'
+            f'Nové výnosy vs C/I ratio</div>{html1}</div>'
+            f'<div style="flex:1;min-width:340px;">'
+            f'<div style="font-size:0.77rem;font-weight:600;color:#444;margin-bottom:4px;">'
+            f'Počet prodejů vs PEREX</div>{html2}</div>'
+            f'</div>')
+
+
 def generate_client_persona_html(parties_all_df, branch_region_df=None):
     """Vizualizace průměrného klienta dle regionu × CP_SEGMENT_ID — emoji persona karty."""
     if parties_all_df is None or parties_all_df.empty:
@@ -10624,6 +10793,9 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
             + f'<div class="age-section-card mb-4">{age_table_html}</div>'
         )
 
+        print("  📉 Generuji scatter analýzu (výnosy×C/I, prodeje×PEREX)...")
+        _scatter_html = generate_scatter_analysis_html(df_sorted, uid="scatter-static")
+
         print("  📊 Generuji kohortovou analýzu...")
         _cohort_html = generate_cohort_analysis(df_sorted)
 
@@ -10786,6 +10958,11 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
     {_sc('nebezpecna_zona', make_collapsible("danger-zone-static", "🚨 Pobočky v nebezpečné zóně",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Pobočky s kombinací špatného ratingu, vysokého C/I a nízkých výnosů — vyžadují zvýšenou pozornost.</p>'
         + _danger_zone_html, default_open=False))}
+
+    <!-- 11b. Scatter analýza -->
+    {_sc('scatter_analyza', make_collapsible("scatter-static", "📉 Scatter analýza výkonnosti poboček",
+        '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Vztah nových výnosů a C/I ratia (vlevo) a počtu prodejů vs PEREX (vpravo) — každá tečka je pobočka, barva odpovídá kvintilu ratingu, červeně orámované jsou CLOSE pobočky.</p>'
+        + _scatter_html, default_open=False))}
 
     <!-- 13. Kohortová analýza -->
     {_sc('kohortova', make_collapsible("cohort-static", "📊 Kohortová analýza výnosů",
