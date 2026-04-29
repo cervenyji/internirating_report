@@ -9937,19 +9937,21 @@ def _render_top_revenues_table(df, region_label="", n=10):
 
 
 def generate_scatter_analysis_html(df, uid="scatter"):
-    """Dva scatter ploty: Nové výnosy vs C/I ratio a Prodeje vs PEREX.
-    Tečky = pobočky, barva = IR kvintil, CLOSE pobočky zvýrazněny."""
+    """Dva scatter ploty: Výnosy vs Prodeje a Výnosy/FTE vs PEREX.
+    Tečky = pobočky, barva = IR kvintil, CLOSE pobočky zvýrazněny černým orámováním."""
 
     _QC = {1: '#1b8c4e', 2: '#55b87a', 3: '#c8a600', 4: '#e07a2a', 5: '#c0392b'}
-    _QN = {1: 'Q1 — top 20 %', 2: 'Q2 — 20–40 %', 3: 'Q3 — 40–60 %',
-           4: 'Q4 — 60–80 %', 5: 'Q5 — spodní 20 %'}
-    _CLOSE_STROKE = '#dc2626'
+    _QN = {1: 'top 20 %', 2: '20–40 %', 3: '40–60 %', 4: '60–80 %', 5: 'spodní 20 %'}
+    _CLOSE_STROKE = '#111827'   # near-black — odlišné od Q5 (červená)
 
-    _X1, _Y1 = 'PRIME_NAKLADY/VYNOSY', 'OBJEM_VYNOSU_CZK'
-    _X2       = 'CAP_PEREX'
-    _Y2       = next((c for c in ['POCET_PRODEJU_CELKEM_2025', 'POCET_PRODEJU'] if c in df.columns), None)
-    _STRAT    = 'FOOTPRINT_STRATEGIE_(2030)'
-    _SIM      = 'SIM_250_FLAG'
+    # Chart 1: Prodeje (x) vs Nové výnosy (y)
+    _X1 = next((c for c in ['POCET_PRODEJU_CELKEM_2025', 'POCET_PRODEJU'] if c in df.columns), None)
+    _Y1 = 'OBJEM_VYNOSU_CZK'
+    # Chart 2: PEREX (x) vs Výnosy/FTE (y)
+    _X2 = 'CAP_PEREX'
+    _Y2 = 'CAP_REV_FTE'
+    _STRAT = 'FOOTPRINT_STRATEGIE_(2030)'
+    _SIM   = 'SIM_250_FLAG'
 
     def _is_close(row):
         return ('close' in str(row.get(_STRAT, '') or '').lower()
@@ -10008,8 +10010,8 @@ def generate_scatter_analysis_html(df, uid="scatter"):
       {{ name:'CLOSE',   data:{close_js}  }}
     ],
     markers: {{
-      size:         [5, 8],
-      strokeWidth:  [1, 3],
+      size:         [5, 9],
+      strokeWidth:  [1, 4],
       strokeColors: ['#ffffff', '{_CLOSE_STROKE}'],
       hover: {{ sizeOffset: 3 }}
     }},
@@ -10023,10 +10025,10 @@ def generate_scatter_analysis_html(df, uid="scatter"):
       title: {{ text: '{ylabel}', style:{{ fontSize:'12px', color:'#555' }} }},
       labels: {{ formatter: yFmt, style:{{ fontSize:'11px' }} }}
     }},
-    colors: ['#2770f0','#dc2626'],
+    colors: ['#2770f0', '{_CLOSE_STROKE}'],
     legend: {{
       show: true,
-      labels: {{ colors: ['#555','#dc2626'] }},
+      labels: {{ colors: ['#444', '{_CLOSE_STROKE}'] }},
       markers: {{ width:10, height:10, radius:5 }}
     }},
     tooltip: {{
@@ -10035,10 +10037,10 @@ def generate_scatter_analysis_html(df, uid="scatter"):
         var isClose = seriesIndex === 1;
         var qColors = {{'1':'#1b8c4e','2':'#55b87a','3':'#c8a600','4':'#e07a2a','5':'#c0392b'}};
         var qc = qColors[String(d.q)] || '#999';
-        return '<div style="padding:8px 10px;font-size:0.78rem;line-height:1.55;min-width:160px;">'
+        return '<div style="padding:8px 10px;font-size:0.78rem;line-height:1.6;min-width:170px;">'
           + '<b style="font-size:0.82rem;">' + d.bname + '</b>'
-          + (isClose ? ' <span style="color:#dc2626;font-weight:700;">● CLOSE</span>' : '')
-          + '<br/><span style="color:#888;"># ' + d.bcode + '</span><br/>'
+          + (isClose ? ' <span style="background:#111827;color:#fff;padding:1px 5px;border-radius:4px;font-size:0.7rem;font-weight:700;vertical-align:middle;">✕ CLOSE</span>' : '')
+          + '<br/><span style="color:#aaa;font-size:0.72rem;"># ' + d.bcode + '</span><br/>'
           + '<span style="background:' + qc + ';color:#fff;padding:1px 7px;border-radius:10px;font-size:0.72rem;font-weight:700;">Q' + d.q + '</span><br/>'
           + '<span style="color:#555;">{xlabel}:</span> ' + xFmtTt(d.x) + '<br/>'
           + '<span style="color:#555;">{ylabel}:</span> ' + yFmtTt(d.y)
@@ -10052,56 +10054,58 @@ def generate_scatter_analysis_html(df, uid="scatter"):
 }})();
 </script>"""
 
-    # ── Chart 1: C/I ratio (x) vs Nové výnosy (y) ───────────────────────────
-    _c1_xfmt    = "function(v){ return (v*100).toFixed(1)+' %'; }"
+    # ── Chart 1: Počet prodejů (x) vs Nové výnosy (y) ───────────────────────
+    _c1_xfmt    = "function(v){ return Math.round(v).toLocaleString('cs-CZ'); }"
     _c1_yfmt    = "function(v){ return (v/1e6).toFixed(2)+' M'; }"
-    _c1_xfmt_tt = "function(v){ return (v*100).toFixed(1)+' %'; }"
+    _c1_xfmt_tt = "function(v){ return Math.round(v).toLocaleString('cs-CZ')+' ks'; }"
     _c1_yfmt_tt = "function(v){ return v.toLocaleString('cs-CZ',{maximumFractionDigits:0})+' Kč'; }"
 
-    missing1 = [c for c in [_X1, _Y1] if c not in df.columns]
-    html1 = (f"<p style='color:#c00;font-style:italic;'>Chybí: {', '.join(missing1)}</p>"
-             if missing1 else
-             _make_chart(f"{uid}-c1", _X1, _Y1, "C/I ratio", "Nové výnosy",
-                         _c1_xfmt, _c1_yfmt, _c1_xfmt_tt, _c1_yfmt_tt))
-
-    # ── Chart 2: PEREX (x) vs Počet prodejů (y) ─────────────────────────────
-    _c2_xfmt    = "function(v){ return v.toFixed(2); }"
-    _c2_yfmt    = "function(v){ return Math.round(v).toLocaleString('cs-CZ'); }"
-    _c2_xfmt_tt = "function(v){ return v.toFixed(3); }"
-    _c2_yfmt_tt = "function(v){ return Math.round(v).toLocaleString('cs-CZ')+' ks'; }"
-
-    if not _Y2:
-        html2 = "<p style='color:#aaa;font-style:italic;'>Sloupec POCET_PRODEJU_CELKEM_2025 není k dispozici.</p>"
+    if not _X1:
+        html1 = "<p style='color:#aaa;font-style:italic;'>Sloupec POCET_PRODEJU_CELKEM_2025 není k dispozici.</p>"
     else:
-        missing2 = [c for c in [_X2, _Y2] if c not in df.columns]
-        html2 = (f"<p style='color:#c00;font-style:italic;'>Chybí: {', '.join(missing2)}</p>"
-                 if missing2 else
-                 _make_chart(f"{uid}-c2", _X2, _Y2, "PEREX", "Počet prodejů celkem",
-                             _c2_xfmt, _c2_yfmt, _c2_xfmt_tt, _c2_yfmt_tt))
+        missing1 = [c for c in [_X1, _Y1] if c not in df.columns]
+        html1 = (f"<p style='color:#c00;font-style:italic;'>Chybí: {', '.join(missing1)}</p>"
+                 if missing1 else
+                 _make_chart(f"{uid}-c1", _X1, _Y1, "Počet prodejů celkem", "Nové výnosy",
+                             _c1_xfmt, _c1_yfmt, _c1_xfmt_tt, _c1_yfmt_tt))
+
+    # ── Chart 2: PEREX (x) vs Nové výnosy / FTE (y) ─────────────────────────
+    _c2_xfmt    = "function(v){ return v.toFixed(2); }"
+    _c2_yfmt    = "function(v){ return (v/1e3).toFixed(0)+' k'; }"
+    _c2_xfmt_tt = "function(v){ return v.toFixed(3); }"
+    _c2_yfmt_tt = "function(v){ return v.toLocaleString('cs-CZ',{maximumFractionDigits:0})+' Kč/FTE'; }"
+
+    missing2 = [c for c in [_X2, _Y2] if c not in df.columns]
+    html2 = (f"<p style='color:#c00;font-style:italic;'>Chybí: {', '.join(missing2)}</p>"
+             if missing2 else
+             _make_chart(f"{uid}-c2", _X2, _Y2, "PEREX (nákl./FTE ÷ výn./FTE)", "Nové výnosy / FTE",
+                         _c2_xfmt, _c2_yfmt, _c2_xfmt_tt, _c2_yfmt_tt))
 
     # ── Legend ───────────────────────────────────────────────────────────────
     _leg_items = ''.join(
         f'<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;">'
         f'<span style="width:10px;height:10px;border-radius:50%;background:{_QC[q]};display:inline-block;"></span>'
-        f'<span style="font-size:0.72rem;color:#555;">Q{q} — {_QN[q].split("—")[1].strip()}</span></span>'
+        f'<span style="font-size:0.72rem;color:#555;">Q{q} — {_QN[q]}</span></span>'
         for q in range(1, 6)
     )
-    _leg_close = ('<span style="display:inline-flex;align-items:center;gap:4px;">'
-                  '<span style="width:10px;height:10px;border-radius:50%;background:#dc2626;'
-                  'border:3px solid #dc2626;display:inline-block;"></span>'
-                  '<span style="font-size:0.72rem;color:#dc2626;font-weight:600;">CLOSE pobočky</span></span>')
-    legend_html = (f'<div style="display:flex;flex-wrap:wrap;gap:4px 0;align-items:center;'
-                   f'padding:8px 12px;background:#f8faff;border-radius:8px;margin-bottom:6px;">'
-                   f'{_leg_items}{_leg_close}</div>')
+    _leg_close = ('<span style="display:inline-flex;align-items:center;gap:5px;margin-left:6px;">'
+                  '<span style="width:10px;height:10px;border-radius:50%;background:transparent;'
+                  f'border:3px solid {_CLOSE_STROKE};display:inline-block;"></span>'
+                  f'<span style="font-size:0.72rem;color:{_CLOSE_STROKE};font-weight:700;">CLOSE</span></span>')
+    legend_html = (f'<div style="display:flex;flex-wrap:wrap;gap:6px 0;align-items:center;'
+                   f'padding:8px 12px;background:#f8faff;border-radius:8px;margin-bottom:8px;">'
+                   f'{_leg_items}'
+                   f'<span style="width:1px;height:14px;background:#dde;margin:0 8px;display:inline-block;"></span>'
+                   f'{_leg_close}</div>')
 
     return (f'{legend_html}'
             f'<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">'
             f'<div style="flex:1;min-width:340px;">'
             f'<div style="font-size:0.77rem;font-weight:600;color:#444;margin-bottom:4px;">'
-            f'Nové výnosy vs C/I ratio</div>{html1}</div>'
+            f'Nové výnosy vs počet prodejů</div>{html1}</div>'
             f'<div style="flex:1;min-width:340px;">'
             f'<div style="font-size:0.77rem;font-weight:600;color:#444;margin-bottom:4px;">'
-            f'Počet prodejů vs PEREX</div>{html2}</div>'
+            f'Nové výnosy / FTE vs PEREX</div>{html2}</div>'
             f'</div>')
 
 
