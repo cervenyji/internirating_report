@@ -485,6 +485,8 @@ NOVE_NAZVY = {
     # ── ⭐ Interní rating ─────────────────────────────────────────
     "INTERNI_RATING_2023":   "Rating 23",
     "INTERNI_RATING_2024":   "Rating 24",
+    "IR24_SCORE":            "Rating 24 skóre",
+    "PERFORMANCE_ZONE_24":   "Performance zone 24",
     "IR":                    "Rating 25",
     "IR_SCORE_CI_RATIO_PERC": "Rating 25 skóre",
     "PERFORMANCE_ZONE_25":   "Performance zone 25",
@@ -7389,11 +7391,12 @@ def _apply_common_formatting(d, cols_to_show):
         if c in cols_to_show and c in d.columns:
             d[c] = d[c].apply(lambda x: int(float(x)) if x not in ('', None) and not (isinstance(x, float) and np.isnan(x)) else "")
 
-    # IR_SCORE_CI_RATIO_PERC (Rating 25 skóre) — dvě desetinná místa
-    if 'IR_SCORE_CI_RATIO_PERC' in cols_to_show and 'IR_SCORE_CI_RATIO_PERC' in d.columns:
-        d['IR_SCORE_CI_RATIO_PERC'] = d['IR_SCORE_CI_RATIO_PERC'].apply(
-            lambda x: f"{float(x):.2f}" if pd.notna(x) and str(x) not in ('nan', '') else '—'
-        )
+    # IR24_SCORE / IR_SCORE_CI_RATIO_PERC (Rating 24/25 skóre) — dvě desetinná místa
+    for _sc_col in ('IR24_SCORE', 'IR_SCORE_CI_RATIO_PERC'):
+        if _sc_col in cols_to_show and _sc_col in d.columns:
+            d[_sc_col] = d[_sc_col].apply(
+                lambda x: f"{float(x):.2f}" if pd.notna(x) and str(x) not in ('nan', '') else '—'
+            )
 
     # IR22_SCORE — jedno desetinné místo
     if 'IR22_SCORE' in cols_to_show and 'IR22_SCORE' in d.columns:
@@ -7755,17 +7758,18 @@ def _apply_common_formatting(d, cols_to_show):
         'Zone 5': ('background:#fce4ec;color:#c0392b;border:1px solid #f48fb1;', '🔴'),
         'Zone 6': ('background:#4a0000;color:#ffcdd2;border:1px solid #b71c1c;', '🚨'),
     }
-    if 'PERFORMANCE_ZONE_25' in cols_to_show and 'PERFORMANCE_ZONE_25' in d.columns:
-        def _fmt_pzone(x):
-            s = str(x).strip()
-            if s in ('nan', 'None', '', '<NA>'):
-                return '—'
-            st, ic = _PZ_STYLE.get(s, ('', ''))
-            if not st:
-                return s
-            return (f'<span style="font-size:0.75rem;font-weight:700;padding:2px 8px;'
-                    f'border-radius:10px;white-space:nowrap;{st}">{ic} {s}</span>')
-        d['PERFORMANCE_ZONE_25'] = d['PERFORMANCE_ZONE_25'].apply(_fmt_pzone)
+    def _fmt_pzone(x):
+        s = str(x).strip()
+        if s in ('nan', 'None', '', '<NA>'):
+            return '—'
+        st, ic = _PZ_STYLE.get(s, ('', ''))
+        if not st:
+            return s
+        return (f'<span style="font-size:0.75rem;font-weight:700;padding:2px 8px;'
+                f'border-radius:10px;white-space:nowrap;{st}">{ic} {s}</span>')
+    for _pz_col in ('PERFORMANCE_ZONE_24', 'PERFORMANCE_ZONE_25'):
+        if _pz_col in cols_to_show and _pz_col in d.columns:
+            d[_pz_col] = d[_pz_col].apply(_fmt_pzone)
 
     return d
 
@@ -8126,7 +8130,10 @@ COL_GROUPS = [
     ("🏢 Budova",              ["Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
     ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
     # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
-    ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25", "Rating 25 skóre", "Performance zone 25", "Trend ratingu 23–25", "Rating 25 kvintil", "Změna ratingu 25/24", "Změna ratingu perc 25/24", "⚠️ Nebezpečná zóna"], "#fff8e1"),
+    ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 24 skóre", "Performance zone 24",
+                               "Rating 25", "Rating 25 skóre", "Performance zone 25",
+                               "Trend ratingu 23–25", "Rating 25 kvintil",
+                               "Změna ratingu 25/24", "Změna ratingu perc 25/24", "⚠️ Nebezpečná zóna"], "#fff8e1"),
     ("🕰️ Interní rating (metodika 2022)", ["Rating 22", "Rating 22 kvintil", "Rating 22 skóre"], "#fef9e7"),
     ("📈 Business rating",     [
         "Výnos/bankéř", "Výnos/bankéř kvintil",
@@ -10618,68 +10625,71 @@ def generate_region_rating_overview(df):
                f'border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.05);">'
                f'<thead>{q_thead}</thead><tbody>{q_tbody}</tbody></table></div>')
 
-    # ── 2) Performance zone 25 distribuce ───────────────────────────────────
+    # ── 2) Performance zóny 24 a 25 distribuce ──────────────────────────────
+    def _stacked_bar(counts, total):
+        if not total:
+            return ''
+        parts = ''
+        for z in PZ_ZONES:
+            cnt = counts.get(z, 0)
+            if cnt == 0:
+                continue
+            w   = cnt / total * 100
+            col, _ = PZ_COLORS[z]
+            parts += (f'<div title="{z}: {cnt} ({w:.0f} %)" '
+                      f'style="width:{w:.1f}%;background:{col};height:14px;'
+                      f'display:inline-block;vertical-align:middle;"></div>')
+        return f'<div style="min-width:100px;border-radius:3px;overflow:hidden;">{parts}</div>'
+
     pz_html = ''
-    if 'PERFORMANCE_ZONE_25' in df.columns:
-        _pd = df[df['PERFORMANCE_ZONE_25'].notna() &
-                 (df['PERFORMANCE_ZONE_25'].astype(str).str.startswith('Zone'))].copy()
-        _pd['_PZ'] = _pd['PERFORMANCE_ZONE_25'].astype(str)
+    for _pz_col, _pz_label in [('PERFORMANCE_ZONE_24', 'Performance zone 24 (Rating 24 skóre)'),
+                                 ('PERFORMANCE_ZONE_25', 'Performance zone 25 (Rating 25 skóre)')]:
+        if _pz_col not in df.columns:
+            continue
+        _pd = df[df[_pz_col].notna() &
+                 (df[_pz_col].astype(str).str.startswith('Zone'))].copy()
+        _pd['_PZ'] = _pd[_pz_col].astype(str)
+        if _pd.empty:
+            continue
 
-        if not _pd.empty:
-            pz_regions = sorted(_pd['REGION_NAME'].dropna().unique())
+        pz_regions = sorted(_pd['REGION_NAME'].dropna().unique())
+        pz_thead = f'<tr><th style="{_th}background:#374151;text-align:left;">Region</th>'
+        for z in PZ_ZONES:
+            col, _ = PZ_COLORS[z]
+            pz_thead += f'<th style="{_th}background:{col};">{z}</th>'
+        pz_thead += (f'<th style="{_th}background:#374151;">Celkem</th>'
+                     f'<th style="{_th}background:#374151;min-width:120px;">Distribuce</th></tr>')
 
-            def _stacked_bar(counts, total):
-                if not total:
-                    return ''
-                parts = ''
-                for z in PZ_ZONES:
-                    cnt = counts.get(z, 0)
-                    if cnt == 0:
-                        continue
-                    w   = cnt / total * 100
-                    col, _ = PZ_COLORS[z]
-                    parts += (f'<div title="{z}: {cnt} ({w:.0f} %)" '
-                              f'style="width:{w:.1f}%;background:{col};height:14px;'
-                              f'display:inline-block;vertical-align:middle;"></div>')
-                return f'<div style="min-width:100px;border-radius:3px;overflow:hidden;">{parts}</div>'
-
-            pz_thead = f'<tr><th style="{_th}background:#374151;text-align:left;">Region</th>'
+        pz_tbody = ''
+        for reg in list(pz_regions) + ['CELKEM']:
+            _tot      = (reg == 'CELKEM')
+            reg_sub   = _pd if _tot else _pd[_pd['REGION_NAME'] == reg]
+            rl        = '<b>Celá síť</b>' if _tot else reg
+            row_total = len(reg_sub)
+            counts    = {z: int((reg_sub['_PZ'] == z).sum()) for z in PZ_ZONES}
+            pz_tbody += f'<tr style="{"background:#f8faff;" if _tot else ""}">'
+            pz_tbody += f'<td style="{_tdr}{"border-top:2px solid #ccc;" if _tot else ""}">{rl}</td>'
             for z in PZ_ZONES:
-                col, _ = PZ_COLORS[z]
-                pz_thead += f'<th style="{_th}background:{col};">{z}</th>'
-            pz_thead += (f'<th style="{_th}background:#374151;">Celkem</th>'
-                         f'<th style="{_th}background:#374151;min-width:120px;">Distribuce</th></tr>')
+                cnt = counts[z]
+                pct = cnt / row_total * 100 if row_total else 0
+                col, bg = PZ_COLORS[z]
+                cb  = bg if cnt > 0 else '#fafbff'
+                cc  = col if cnt > 0 else '#bbb'
+                pz_tbody += f'<td style="{_td}background:{cb};color:{cc};">{cnt}'
+                if cnt > 0 and not _tot:
+                    pz_tbody += f'<span style="font-size:0.67rem;opacity:0.7;"> ({pct:.0f} %)</span>'
+                pz_tbody += '</td>'
+            pz_tbody += f'<td style="{_td}background:#f0f4ff;color:#374151;">{row_total}</td>'
+            pz_tbody += f'<td style="{_td}">{_stacked_bar(counts, row_total)}</td>'
+            pz_tbody += '</tr>'
 
-            pz_tbody = ''
-            for reg in list(pz_regions) + ['CELKEM']:
-                _tot     = (reg == 'CELKEM')
-                reg_sub  = _pd if _tot else _pd[_pd['REGION_NAME'] == reg]
-                rl       = '<b>Celá síť</b>' if _tot else reg
-                row_total = len(reg_sub)
-                counts   = {z: int((reg_sub['_PZ'] == z).sum()) for z in PZ_ZONES}
-                pz_tbody += f'<tr style="{"background:#f8faff;" if _tot else ""}">'
-                pz_tbody += f'<td style="{_tdr}{"border-top:2px solid #ccc;" if _tot else ""}">{rl}</td>'
-                for z in PZ_ZONES:
-                    cnt = counts[z]
-                    pct = cnt / row_total * 100 if row_total else 0
-                    col, bg = PZ_COLORS[z]
-                    cb  = bg if cnt > 0 else '#fafbff'
-                    cc  = col if cnt > 0 else '#bbb'
-                    pz_tbody += f'<td style="{_td}background:{cb};color:{cc};">{cnt}'
-                    if cnt > 0 and not _tot:
-                        pz_tbody += f'<span style="font-size:0.67rem;opacity:0.7;"> ({pct:.0f} %)</span>'
-                    pz_tbody += '</td>'
-                pz_tbody += f'<td style="{_td}background:#f0f4ff;color:#374151;">{row_total}</td>'
-                pz_tbody += f'<td style="{_td}">{_stacked_bar(counts, row_total)}</td>'
-                pz_tbody += '</tr>'
-
-            pz_html = (f'<div style="margin-top:22px;">'
-                       f'<div style="font-size:0.85rem;font-weight:700;color:#374151;margin-bottom:6px;">'
-                       f'Distribuce performance zón 25 (Rating 25 skóre)</div>'
-                       f'<div style="overflow-x:auto;">'
-                       f'<table style="border-collapse:collapse;width:100%;border:1px solid #e0e6f3;'
-                       f'border-radius:8px;overflow:hidden;">'
-                       f'<thead>{pz_thead}</thead><tbody>{pz_tbody}</tbody></table></div></div>')
+        pz_html += (f'<div style="margin-top:22px;">'
+                    f'<div style="font-size:0.85rem;font-weight:700;color:#374151;margin-bottom:6px;">'
+                    f'{_pz_label}</div>'
+                    f'<div style="overflow-x:auto;">'
+                    f'<table style="border-collapse:collapse;width:100%;border:1px solid #e0e6f3;'
+                    f'border-radius:8px;overflow:hidden;">'
+                    f'<thead>{pz_thead}</thead><tbody>{pz_tbody}</tbody></table></div></div>')
 
     rated_count = len(_d)
     total_count = len(df)
@@ -11179,21 +11189,28 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
 
         print("  👤 Generuji vizualizaci průměrného klienta dle segmentu...")
         _pa_arg   = globals().get('parties_all')
+        # Použij POUZE aktivní pobočky z df_sorted (ohodnocené, BRANCH_CLOSED==False)
+        # a doplň REGION_NAME z dbs/dbs_all pokud df_sorted REGION_NAME nemá
         _dbs_all  = globals().get('dbs_all')
         _dbs_gl   = globals().get('dbs')
-        _br_src   = (_dbs_all if (_dbs_all is not None and not _dbs_all.empty
-                                  and 'REGION_NAME' in _dbs_all.columns)
-                     else (_dbs_gl if (_dbs_gl is not None and not _dbs_gl.empty
-                                       and 'REGION_NAME' in _dbs_gl.columns)
-                           else None))
-        _br_reg   = (_br_src[['BRANCH_CODE', 'REGION_NAME']
-                              + (['BRANCH_NAME'] if 'BRANCH_NAME' in _br_src.columns else [])
-                              ].drop_duplicates('BRANCH_CODE')
-                     if _br_src is not None
-                     else (df_sorted[['BRANCH_CODE', 'REGION_NAME', 'BRANCH_NAME']].drop_duplicates()
-                           if 'REGION_NAME' in df_sorted.columns and 'BRANCH_NAME' in df_sorted.columns
-                           else (df_sorted[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates()
-                                 if 'REGION_NAME' in df_sorted.columns else None)))
+        _active_bc = set(pd.to_numeric(df_sorted['BRANCH_CODE'], errors='coerce').dropna())
+        _br_src_full = (_dbs_all if (_dbs_all is not None and not _dbs_all.empty
+                                     and 'REGION_NAME' in _dbs_all.columns)
+                        else (_dbs_gl if (_dbs_gl is not None and not _dbs_gl.empty
+                                          and 'REGION_NAME' in _dbs_gl.columns)
+                              else None))
+        if _br_src_full is not None:
+            _br_src_filt = _br_src_full[
+                pd.to_numeric(_br_src_full['BRANCH_CODE'], errors='coerce').isin(_active_bc)
+            ]
+            _br_reg = (_br_src_filt[['BRANCH_CODE', 'REGION_NAME']
+                                     + (['BRANCH_NAME'] if 'BRANCH_NAME' in _br_src_filt.columns else [])]
+                       .drop_duplicates('BRANCH_CODE'))
+        else:
+            _br_reg = (df_sorted[['BRANCH_CODE', 'REGION_NAME', 'BRANCH_NAME']].drop_duplicates()
+                       if 'REGION_NAME' in df_sorted.columns and 'BRANCH_NAME' in df_sorted.columns
+                       else (df_sorted[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates()
+                             if 'REGION_NAME' in df_sorted.columns else None))
         _persona_html = generate_client_persona_html(_pa_arg, _br_reg)
         print("  ✅ Bloky připraveny, sestavuji HTML...")
 
@@ -12645,6 +12662,18 @@ if _nb24_key and 'NEW_BUSINESS_2024_-_OBJEM_VYNOSU' in old_ir.columns:
     df['NEW_BUSINESS_2024_-_OBJEM_VYNOSU'] = (
         pd.to_numeric(df['BRANCH_CODE'], errors='coerce').map(_nb24_map))
 
+# Rating 24 skóre: old_ir → HODNOTY_CELKOVE_BODY_ZA_PORADI_DLE_VAH_[C/I_PERCENTILY]
+_ir24_src_col = 'HODNOTY_CELKOVE_BODY_ZA_PORADI_DLE_VAH_[C/I_PERCENTILY]'
+_ir24_key = next((c for c in old_ir.columns if c in ('BRANCH_ID', 'BRANCH_CODE')), None)
+df['IR24_SCORE'] = np.nan
+if _ir24_key and _ir24_src_col in old_ir.columns:
+    _ir24_map = (old_ir
+                 .dropna(subset=[_ir24_key])
+                 .assign(**{_ir24_key: lambda x: pd.to_numeric(x[_ir24_key], errors='coerce')})
+                 .dropna(subset=[_ir24_key])
+                 .set_index(_ir24_key)[_ir24_src_col])
+    df['IR24_SCORE'] = pd.to_numeric(df['BRANCH_CODE'], errors='coerce').map(_ir24_map)
+
 # Nové výnosy 2025: revenues → OBJEM_VYNOSU_CZK
 if 'OBJEM_VYNOSU_CZK' in revenues.columns and 'BRANCH_CODE' in revenues.columns:
     _rev25_map = (revenues
@@ -12692,6 +12721,10 @@ _PZ_BINS   = [float('-inf'), 50.0, 100.0, 150.0, 200.0, 250.0, float('inf')]
 _PZ_LABELS = ['Zone 1', 'Zone 2', 'Zone 3', 'Zone 4', 'Zone 5', 'Zone 6']
 df['PERFORMANCE_ZONE_25'] = pd.cut(
     pd.to_numeric(df['IR_SCORE_CI_RATIO_PERC'], errors='coerce'),
+    bins=_PZ_BINS, labels=_PZ_LABELS, right=True
+).astype(object)
+df['PERFORMANCE_ZONE_24'] = pd.cut(
+    pd.to_numeric(df['IR24_SCORE'], errors='coerce'),
     bins=_PZ_BINS, labels=_PZ_LABELS, right=True
 ).astype(object)
 
