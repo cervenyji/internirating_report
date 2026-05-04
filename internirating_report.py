@@ -7749,24 +7749,32 @@ def _apply_common_formatting(d, cols_to_show):
                 lambda x: str(x) if pd.notna(x) and str(x).strip() not in ('', 'nan') else '—'
             )
 
-    # Performance zone 25 — barevný badge (Zone 1=nejlepší, Zone 6=nejhorší)
+    # Performance zone badge — barvy sladěné s kvintily Q1–Q5, Zone 6 tmavě červená
     _PZ_STYLE = {
-        'Zone 1': ('background:#e6f9ed;color:#1b8c4e;border:1px solid #95d5a8;', '⚡'),
-        'Zone 2': ('background:#eafaf1;color:#55b87a;border:1px solid #a8e6bc;', '✅'),
-        'Zone 3': ('background:#fff8e1;color:#c8a600;border:1px solid #ffe082;', '➡️'),
-        'Zone 4': ('background:#fff3e0;color:#e07a2a;border:1px solid #ffcc80;', '⚠️'),
-        'Zone 5': ('background:#fce4ec;color:#c0392b;border:1px solid #f48fb1;', '🔴'),
-        'Zone 6': ('background:#4a0000;color:#ffcdd2;border:1px solid #b71c1c;', '🚨'),
+        'Zone 1': ('#1b8c4e', '#e6f9ed', '#a5d6b0'),
+        'Zone 2': ('#55b87a', '#eafaf1', '#b2dfc0'),
+        'Zone 3': ('#c8a600', '#fff8e1', '#ffe082'),
+        'Zone 4': ('#e07a2a', '#fff3e0', '#ffcc80'),
+        'Zone 5': ('#c0392b', '#fce4ec', '#f48fb1'),
+        'Zone 6': ('#7b1a1a', '#fdecea', '#e57373'),
     }
     def _fmt_pzone(x):
         s = str(x).strip()
         if s in ('nan', 'None', '', '<NA>'):
             return '—'
-        st, ic = _PZ_STYLE.get(s, ('', ''))
-        if not st:
+        if s not in _PZ_STYLE:
             return s
-        return (f'<span style="font-size:0.75rem;font-weight:700;padding:2px 8px;'
-                f'border-radius:10px;white-space:nowrap;{st}">{ic} {s}</span>')
+        col, bg, border = _PZ_STYLE[s]
+        num = s.replace('Zone ', '')
+        return (f'<span style="display:inline-flex;align-items:center;gap:4px;'
+                f'font-size:0.75rem;font-weight:700;padding:2px 8px;'
+                f'border-radius:10px;white-space:nowrap;'
+                f'background:{bg};color:{col};border:1px solid {border};">'
+                f'<span style="background:{col};color:white;border-radius:50%;'
+                f'width:14px;height:14px;display:inline-flex;align-items:center;'
+                f'justify-content:center;font-size:0.65rem;font-weight:800;flex-shrink:0;">'
+                f'{num}</span>'
+                f'Z{num}</span>')
     for _pz_col in ('PERFORMANCE_ZONE_24', 'PERFORMANCE_ZONE_25'):
         if _pz_col in cols_to_show and _pz_col in d.columns:
             d[_pz_col] = d[_pz_col].apply(_fmt_pzone)
@@ -8130,10 +8138,11 @@ COL_GROUPS = [
     ("🏢 Budova",              ["Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
     ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
     # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
-    ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 24 skóre", "Performance zone 24",
-                               "Rating 25", "Rating 25 skóre", "Performance zone 25",
+    ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25",
                                "Trend ratingu 23–25", "Rating 25 kvintil",
                                "Změna ratingu 25/24", "Změna ratingu perc 25/24", "⚠️ Nebezpečná zóna"], "#fff8e1"),
+    ("🎯 Performance zóny",   ["Rating 24 skóre", "Performance zone 24",
+                               "Rating 25 skóre", "Performance zone 25"], "#f0faf4"),
     ("🕰️ Interní rating (metodika 2022)", ["Rating 22", "Rating 22 kvintil", "Rating 22 skóre"], "#fef9e7"),
     ("📈 Business rating",     [
         "Výnos/bankéř", "Výnos/bankéř kvintil",
@@ -8230,6 +8239,7 @@ COL_GROUP_META = {
     "🏢 Budova":              {"accent": "#546e7a", "subgroup": "🗄️ Databáze síť"},
     "🕐 Otevírací doba":      {"accent": "#455a64", "subgroup": "🗄️ Databáze síť"},
     "⭐ Interní rating":      {"accent": "#f9a825", "subgroup": "⭐ Ratingy"},
+    "🎯 Performance zóny":   {"accent": "#1b8c4e", "subgroup": "⭐ Ratingy"},
     "🕰️ Interní rating (metodika 2022)": {"accent": "#c8a600", "subgroup": "⭐ Ratingy"},
     "📈 Business rating":     {"accent": "#f57f17", "subgroup": "⭐ Ratingy"},
     "🏦 Hotovostní rating":   {"accent": "#ef6c00", "subgroup": "⭐ Ratingy"},
