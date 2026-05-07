@@ -438,7 +438,9 @@ MERGE_COLS = {
                  "INVESTICE_FHC_(ROK)", "INV_FHC_DESC", "INV_FHC_STATUS",
                  "INVESTICE_NF_OR_FHC_(ROK)",
                  "BACK_OFFICE_ONLINE",
-                 "PLAN_NEW_CASHIERLESS_(ROK)", "CASHLESS_DESC"],
+                 "REMOTE_ROOM",
+                 "PLAN_NEW_CASHIERLESS_(ROK)", "CASHLESS_DESC",
+                 "ADHOC_YEAR", "ADHOC_DESCRIPTION"],
         "left_on": "BRANCH_CODE",
         "right_on": "BRANCH_ID",
         "how": "left",
@@ -451,10 +453,11 @@ MERGE_COLS = {
 # Pořadí odpovídá pořadí skupin v COL_GROUPS
 NOVE_NAZVY = {
     # ── Identita ──────────────────────────────────────────────────
-    "BRANCH_CODE": "ID Pobočky",
-    "BRANCH_NAME": "Název pobočky",
-    "REGION_NAME": "Region",
-    "OBLAST":      "Oblast",
+    "BRANCH_CODE":   "ID Pobočky",
+    "BRANCH_NAME":   "Název pobočky",
+    "REGION_NAME":   "Region",
+    "REGION_FIXED":  "Region fixed",
+    "OBLAST":        "Oblast",
 
     # ── 📍 Adresa ─────────────────────────────────────────────────
     "CITY":              "Město",
@@ -5312,20 +5315,20 @@ def render_strategy_columns(df, uid=None):
         return result
 
     # ── Karta ─────────────────────────────────────────────────────────
-    def _card(row, bg_col, txt_col, yr, extra_html='', desc=''):
+    def _card(row, bg_col, txt_col, yr, extra_html='', desc='', info_html=None):
         bcode  = int(row.get('BRANCH_CODE', 0))
         bname  = str(row.get('BRANCH_NAME', str(bcode)))
         region = str(row.get('REGION_NAME', ''))
         ir_val = row.get('IR', '')
         try:    ir_disp = int(float(ir_val))
         except: ir_disp = '—'
-        rev = row.get('OBJEM_VYNOSU_CZK')
-        rev_s = format_money(float(rev)) if pd.notna(rev) and float(rev) > 0 else '—'
         q_html = _q_badge(row)
         _desc_clean = str(desc or '').strip()
         desc_line = (f"<div style='font-size:0.72rem;color:#555;margin-top:3px;font-style:italic;'>{_desc_clean}</div>"
                      if _desc_clean and _desc_clean not in ('nan', 'None') else '')
         _reg_attr = region.replace('"', '&quot;')
+        info_line = (f"<div style='margin-top:4px;display:flex;align-items:center;flex-wrap:wrap;gap:5px;'>{info_html}</div>"
+                     if info_html else '')
 
         return f"""
 <div class="strat-card-{_uid}" data-region="{_reg_attr}" style="display:flex;align-items:stretch;gap:0;border-radius:8px;overflow:hidden;
@@ -5341,11 +5344,11 @@ def render_strategy_columns(df, uid=None):
       <span style="font-size:0.7rem;color:#aaa;margin-left:auto;">{region}</span>
     </div>
     <div style="margin-top:4px;display:flex;align-items:center;flex-wrap:wrap;gap:6px;">
-      <span style="font-size:0.77rem;color:#6b7280;font-weight:600;">{rev_s}</span>
       <span style="font-size:0.7rem;color:#aaa;">R {ir_disp}</span>
       {q_html}
       {extra_html}
     </div>
+    {info_line}
     {desc_line}
   </div>
 </div>"""
@@ -5366,7 +5369,20 @@ def render_strategy_columns(df, uid=None):
             bg, tc = yr_cols.get(yr, ('#fce4ec', '#eb4d79'))
             desc = str(row.get('CLOSE_DESC', '') or '').strip()
             desc = '' if desc in ('nan', 'None') else desc
-            cards += _card(row, bg, tc, yr, desc=desc)
+            _info_parts = []
+            for _hcol in ['REV_CHANGE_HTML', 'IR_CHANGE_HTML']:
+                _hv = str(row.get(_hcol, '') or '').strip()
+                if _hv and _hv not in ('nan', 'None', ''):
+                    _info_parts.append(_hv)
+            for _fc in ['BNS_IR_FLAG', 'SIM_250_FLAG']:
+                _fv = str(row.get(_fc, '') or '').strip()
+                if _fv and _fv not in ('nan', 'None', ''):
+                    _info_parts.append(color_strategy_html(_fv))
+            _dz = str(row.get('DZ_STITKY', '') or '').strip()
+            if _dz and _dz not in ('nan', 'None', '', '—'):
+                _info_parts.append(_dz)
+            info_html = ' '.join(_info_parts) if _info_parts else None
+            cards += _card(row, bg, tc, yr, desc=desc, info_html=info_html)
         return cards, len(sub)
 
     # ── Stavový badge s podporou "přepad z předchozích let" ─────────
@@ -5411,16 +5427,36 @@ def render_strategy_columns(df, uid=None):
                                  f"border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:700;'>NF</span>")
                     desc   = str(row.get('INV_NF_DESC',  '') or '').strip()
                     status = str(row.get('INV_NF_STATUS','') or '').strip()
+                    _NF_FORMAT_FACTORS = {
+                        'flagship': 1_600_000, 'medium': 1_680_000,
+                        'medium economy': 2_167_000, 'small': 2_167_000,
+                    }
+                    try:
+                        _fte_nf = float(row.get('_total_spec', 0) or 0)
+                        _fmt_key = str(row.get('BRANCH_FORMAT', '') or '').lower().strip()
+                        _factor = _NF_FORMAT_FACTORS.get(_fmt_key)
+                        if _fte_nf > 0 and _factor:
+                            _inv_est = round(_fte_nf * 0.7) * _factor
+                            _inv_m = _inv_est / 1_000_000
+                            _inv_lbl = f"~{_inv_m:.1f}M Kč".replace('.', ',')
+                            _inv_info = (f"<span style='font-size:0.72rem;font-weight:700;color:#2770f0;"
+                                         f"background:#eef4ff;border:1px solid #c7d9fb;border-radius:4px;"
+                                         f"padding:1px 7px;'>💰 {_inv_lbl}</span>")
+                        else:
+                            _inv_info = None
+                    except Exception:
+                        _inv_info = None
                 else:
                     bg, tc = yr_cols_fhc.get(yr, ('#ede9fe', '#7c3aed'))
                     typ_badge = (f"<span style='background:#f5f3ff;color:#7c3aed;border:1px solid #ddd6fe;"
                                  f"border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:700;'>FHC</span>")
                     desc   = str(row.get('INV_FHC_DESC',  '') or '').strip()
                     status = str(row.get('INV_FHC_STATUS','') or '').strip()
+                    _inv_info = None
                 status_html = _status_badge(status, tc)
                 extra = typ_badge + ((' ' + status_html) if status_html else '')
                 _desc_val = desc if desc not in ('nan', 'None', '') else ''
-                cards += _card(row, bg, tc, yr, extra, desc=_desc_val)
+                cards += _card(row, bg, tc, yr, extra, desc=_desc_val, info_html=_inv_info)
                 n += 1
         # BO Online — oddělovač a sekce pod investicemi
         bo_cards = ""
@@ -5442,6 +5478,46 @@ def render_strategy_columns(df, uid=None):
                       f"text-transform:uppercase;letter-spacing:.4px;'>📋 BO Online</div>"
                       + bo_cards)
             n += bo_n
+        # Remote Room — oddělovač a sekce pod BO Online
+        rr_cards = ""
+        rr_n = 0
+        if 'REMOTE_ROOM' in d.columns:
+            for _, row in d.iterrows():
+                rr = str(row.get('REMOTE_ROOM', '') or '').strip()
+                if rr and rr not in ('nan','None','0',''):
+                    try: rr_yr = int(float(rr))
+                    except: rr_yr = None
+                    yr_lbl = str(rr_yr) if rr_yr else 'RR'
+                    extra_rr = ("<span style='background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;"
+                                "border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:700;'>Remote Room</span>")
+                    rr_cards += _card(row, '#16a34a', '#16a34a', yr_lbl, extra_rr)
+                    rr_n += 1
+        if rr_cards:
+            cards += ("<hr style='border:none;border-top:1px solid #e8edf5;margin:10px 0 8px;'>"
+                      f"<div style='font-size:0.72rem;color:#888;font-weight:600;margin-bottom:6px;"
+                      f"text-transform:uppercase;letter-spacing:.4px;'>🖥️ Remote Room</div>"
+                      + rr_cards)
+            n += rr_n
+        # Adhoc akce — oddělovač a sekce úplně dole
+        adhoc_cards = ""
+        adhoc_n = 0
+        if 'ADHOC_YEAR' in d.columns:
+            for _, row in d.iterrows():
+                ay = str(row.get('ADHOC_YEAR', '') or '').strip()
+                if ay and ay not in ('nan','None','0',''):
+                    try: adhoc_yr = int(float(ay))
+                    except: adhoc_yr = None
+                    yr_lbl = str(adhoc_yr) if adhoc_yr else '?'
+                    adhoc_desc = str(row.get('ADHOC_DESCRIPTION', '') or '').strip()
+                    adhoc_desc = '' if adhoc_desc in ('nan', 'None') else adhoc_desc
+                    adhoc_cards += _card(row, '#78716c', '#78716c', yr_lbl, desc=adhoc_desc)
+                    adhoc_n += 1
+        if adhoc_cards:
+            cards += ("<hr style='border:none;border-top:1px solid #e8edf5;margin:10px 0 8px;'>"
+                      f"<div style='font-size:0.72rem;color:#888;font-weight:600;margin-bottom:6px;"
+                      f"text-transform:uppercase;letter-spacing:.4px;'>📌 Adhoc akce</div>"
+                      + adhoc_cards)
+            n += adhoc_n
         return cards, n
 
     # ── Sloupec 3: Cashless ──────────────────────────────────────────
@@ -7437,21 +7513,31 @@ def _apply_common_formatting(d, cols_to_show):
             return "<span style='color:#aaa;'>Ne</span>"
         return '—' if s in ('','NAN','NONE','NAT') else str(x)
 
-    # Sloupce kde True/Y = pozitivní (zelená)
-    _bool_cols_positive = ['ONLY_D5_FLAG', 'CASHLESS', 'BNS_FLAG', 'IR_FLAG',
-                            'CALC_MIGRATION_FLAG']
+    # Sloupce kde True/Y = pozitivní (zelená) — ale CASHLESS samostatně (modrý badge)
+    _bool_cols_positive = ['ONLY_D5_FLAG', 'BNS_FLAG', 'IR_FLAG', 'CALC_MIGRATION_FLAG']
     for _bc in _bool_cols_positive:
         if _bc in cols_to_show and _bc in d.columns:
             d[_bc] = d[_bc].apply(_fmt_bool)
 
-    # Otevírací doba — Ano výrazně, Ne šedě
+    # Bezhotovostní — Ano modrý badge jako Pool, Ne šedě
+    _BLUE_BADGE_ANO = ("<span style='background:#2770f0;color:white;border-radius:10px;"
+                       "padding:2px 8px;font-size:0.75rem;font-weight:700;'>Ano</span>")
+    _GREY_NE        = "<span style='color:#d1d5db;'>Ne</span>"
+    if 'CASHLESS' in cols_to_show and 'CASHLESS' in d.columns:
+        def _fmt_cashless(x):
+            s = str(x).strip().upper()
+            if s in ('Y', 'YES', 'ANO', '1', 'TRUE'):  return _BLUE_BADGE_ANO
+            if s in ('N', 'NO', 'NE', '0', 'FALSE'):   return _GREY_NE
+            return '—' if s in ('', 'NAN', 'NONE', 'NAT') else str(x)
+        d['CASHLESS'] = d['CASHLESS'].apply(_fmt_cashless)
+
+    # Otevírací doba (OD_VIKEND, OD_OBED_PAUZA) — Ano modrý badge, prázdné proškrtnutá pomlčka
+    _STRIKE_DASH = "<span style='color:#d1d5db;text-decoration:line-through;'>—</span>"
     def _fmt_bool_od(x):
         s = str(x).strip().upper()
         if s in ('Y', 'YES', 'ANO', '1', 'TRUE'):
-            return "<span style='color:#d97706;font-weight:700;'>Ano</span>"
-        if s in ('N', 'NO', 'NE', '0', 'FALSE'):
-            return "<span style='color:#d1d5db;'>Ne</span>"
-        return '—' if s in ('', 'NAN', 'NONE', 'NAT') else str(x)
+            return _BLUE_BADGE_ANO
+        return _STRIKE_DASH
     for _odc in ['OD_VIKEND', 'OD_OBED_PAUZA']:
         if _odc in cols_to_show and _odc in d.columns:
             d[_odc] = d[_odc].apply(_fmt_bool_od)
@@ -7659,41 +7745,29 @@ def _apply_common_formatting(d, cols_to_show):
                     f'font-weight:600;white-space:nowrap;">{lbl}</span>')
         d['FORMAT_2024_(FIX_FS)'] = d['FORMAT_2024_(FIX_FS)'].apply(_fmt2024_badge)
 
-    # Typologie pobočky (BRANCH_TYPE_NAME) — barevné badges
+    # Typologie pobočky (BRANCH_TYPE_NAME) — šedé badges
     if 'BRANCH_TYPE_NAME' in cols_to_show and 'BRANCH_TYPE_NAME' in d.columns:
-        _typ_palette = ['#2770f0', '#0bb440', '#f59e0b', '#eb4d79', '#7c3aed',
-                        '#0891b2', '#dc2626', '#059669', '#d97706', '#6366f1']
-        _typ_color_cache = {}
         def _typ_badge(v):
             s = str(v or '').strip()
             if not s or s in ('nan', 'None', '—'):
                 return '—'
-            if s not in _typ_color_cache:
-                idx = len(_typ_color_cache) % len(_typ_palette)
-                _typ_color_cache[s] = _typ_palette[idx]
-            c = _typ_color_cache[s]
-            return (f'<span style="background:{c}18;color:{c};border:1px solid {c}44;'
+            return (f'<span style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;'
                     f'border-radius:5px;padding:1px 7px;font-size:0.72rem;'
                     f'font-weight:600;white-space:nowrap;">{s}</span>')
         d['BRANCH_TYPE_NAME'] = d['BRANCH_TYPE_NAME'].apply(_typ_badge)
 
-    # Formát NF/SF (BRANCH_BUILDING_NF_SF) — barevné badges
+    # Formát NF/SF (BRANCH_BUILDING_NF_SF) — NF modrý, ostatní šedé
     if 'BRANCH_BUILDING_NF_SF' in cols_to_show and 'BRANCH_BUILDING_NF_SF' in d.columns:
-        _nfsf_colors = {
-            'nf':    '#0bb440',
-            'sf':    '#2770f0',
-            'nf/sf': '#7c3aed',
-            'klasika': '#f59e0b',
-        }
         def _nfsf_badge(v):
             s = str(v or '').strip()
             if not s or s in ('nan', 'None', '—'):
                 return '—'
             key = s.lower().strip()
-            c = _nfsf_colors.get(key, '#888')
-            return (f'<span style="background:{c}18;color:{c};border:1px solid {c}44;'
-                    f'border-radius:5px;padding:1px 7px;font-size:0.72rem;'
-                    f'font-weight:600;white-space:nowrap;">{s}</span>')
+            if 'nf' in key and 'sf' not in key:
+                return (f'<span style="background:#2770f0;color:white;border-radius:10px;'
+                        f'padding:2px 8px;font-size:0.75rem;font-weight:700;">{s}</span>')
+            return (f'<span style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;'
+                    f'border-radius:10px;padding:2px 8px;font-size:0.75rem;font-weight:700;">{s}</span>')
         d['BRANCH_BUILDING_NF_SF'] = d['BRANCH_BUILDING_NF_SF'].apply(_nfsf_badge)
 
     if 'ATM_VOLNA_KAPACITA' in cols_to_show and 'ATM_VOLNA_KAPACITA' in d.columns:
@@ -8134,7 +8208,7 @@ def write_excel_sheet(ws, df_excel, freeze="D2"):
 # Skupiny sloupců pro přepínání v hlavní tabulce regionu
 COL_GROUPS = [
     # ── 🗄️ Databáze síť ───────────────────────────────────────────────────────
-    ("📍 Adresa",              ["Oblast", "Město", "Obvod / část", "Ulice", "Č. popisné", "Č. orientační", "RUIAN ID", "ORP", "ORP kód"], "#f0f4f8"),
+    ("📍 Adresa",              ["Oblast", "Region fixed", "Město", "Obvod / část", "Ulice", "Č. popisné", "Č. orientační", "RUIAN ID", "ORP", "ORP kód"], "#f0f4f8"),
     ("🏢 Budova",              ["Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
     ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
     # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
@@ -11221,6 +11295,13 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
                        if 'REGION_NAME' in df_sorted.columns and 'BRANCH_NAME' in df_sorted.columns
                        else (df_sorted[['BRANCH_CODE', 'REGION_NAME']].drop_duplicates()
                              if 'REGION_NAME' in df_sorted.columns else None))
+        # Přepsání REGION_NAME hodnotami z REGION_FIXED (902/904/909 → Praha)
+        if _br_reg is not None and 'REGION_FIXED' in df_sorted.columns:
+            _rf_cols = ['BRANCH_CODE', 'REGION_FIXED']
+            _rf_map = df_sorted[_rf_cols].drop_duplicates('BRANCH_CODE')
+            _br_reg = _br_reg.merge(_rf_map, on='BRANCH_CODE', how='left')
+            _br_reg['REGION_NAME'] = _br_reg['REGION_FIXED'].fillna(_br_reg['REGION_NAME'])
+            _br_reg = _br_reg.drop(columns=['REGION_FIXED'])
         _persona_html = generate_client_persona_html(_pa_arg, _br_reg)
         print("  ✅ Bloky připraveny, sestavuji HTML...")
 
@@ -16168,6 +16249,16 @@ try:
 except Exception as _dz_col_err:
     print(f"  ⚠️  DZ_STITKY výpočet selhal: {_dz_col_err}")
     rating_status['DZ_STITKY'] = ''
+
+# ── Region fixed: 902/904/909 → Praha ───────────────────────────────────────
+_REGION_FIXED_MAP = {902: 'Praha', 904: 'Praha', 909: 'Praha'}
+if 'REGION_NAME' in rating_status.columns:
+    _bc_num = pd.to_numeric(rating_status['BRANCH_CODE'], errors='coerce')
+    rating_status['REGION_FIXED'] = rating_status['REGION_NAME'].copy()
+    for _bc_val, _reg_val in _REGION_FIXED_MAP.items():
+        rating_status.loc[_bc_num == _bc_val, 'REGION_FIXED'] = _reg_val
+else:
+    rating_status['REGION_FIXED'] = ''
 
 # Statický report (celkový přehled)
 generate_report(rating_status, mode='static', output_prefix="report_rating_2026")
