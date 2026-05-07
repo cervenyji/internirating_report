@@ -168,6 +168,20 @@ _SEG_FTE_MAP = [
 # seznam ID → generují se pouze reporty pro vybrané pobočky, např. [101, 205, 310]
 POBOCKY_FILTR: list | None = None
 
+# ── Řazení hlavní tabulky ─────────────────────────────────────────────────────
+# Technické názvy sloupců pro primární řazení — seznam priorit.
+# Příklady:
+#   ["IR"]                              → defaultní řazení dle Ratingu 25
+#   ["REGION_NAME", "IR"]              → nejdříve region, pak rating
+#   ["PERFORMANCE_ZONE_25", "IR"]      → zóna, pak rating
+TABLE_SORT_COLUMNS: list = ["IR"]
+
+# ── Výběr sloupců hlavní tabulky ──────────────────────────────────────────────
+# Prázdný seznam [] = zobrazí se všechny sloupce dle COL_GROUPS (defaultní chování).
+# Jinak uveď seznam ZOBRAZOVACÍCH názvů přesně jak jsou v COL_GROUPS, např.:
+#   ["Oblast", "Rating 25", "Rating 25 kvintil", "Performance zone 25", "Výnosy 25"]
+TABLE_DISPLAY_COLUMNS: list = []
+
 # ── Sekce v reportu jednotlivé pobočky ───────────────────────────────────────
 # True = sekce bude v reportu zahrnuta, False = sekce bude vynechána
 SEKCE_POBOCKA = {
@@ -5274,8 +5288,8 @@ def render_strategy_columns(df, uid=None):
     import hashlib as _hl
     _uid = uid or _hl.md5(str(id(df)).encode()).hexdigest()[:8]
     # ── Kvintil ratingu → emoji + barva ──────────────────────────────
-    _Q_DOT = {1:'🟢', 2:'🔵', 3:'🟡', 4:'🟠', 5:'🔴'}
-    _Q_COL = {1:'#0bb440', 2:'#2770f0', 3:'#f59e0b', 4:'#fb923c', 5:'#eb4d79'}
+    _Q_DOT = {1:'●', 2:'●', 3:'●', 4:'●', 5:'●'}
+    _Q_COL = {1:'#1b8c4e', 2:'#55b87a', 3:'#c8a600', 4:'#e07a2a', 5:'#c0392b'}
 
     def _q_badge(row):
         qv = row.get('IR_Q', '')
@@ -5314,6 +5328,8 @@ def render_strategy_columns(df, uid=None):
             )
         return result
 
+    _FMT_BADGE_COLORS = {'small': '#f59e0b', 'medium economy': '#fb923c', 'medium': '#2770f0', 'flagship': '#0bb440'}
+
     # ── Karta ─────────────────────────────────────────────────────────
     def _card(row, bg_col, txt_col, yr, extra_html='', desc='', info_html=None):
         bcode  = int(row.get('BRANCH_CODE', 0))
@@ -5323,6 +5339,12 @@ def render_strategy_columns(df, uid=None):
         try:    ir_disp = int(float(ir_val))
         except: ir_disp = '—'
         q_html = _q_badge(row)
+        # BRANCH_FORMAT badge
+        _fmt_s = str(row.get('BRANCH_FORMAT', '') or '').lower().strip()
+        _fmt_c = _FMT_BADGE_COLORS.get(_fmt_s, '#aaa')
+        _fmt_html = (f"<span style='background:{_fmt_c}18;color:{_fmt_c};border:1px solid {_fmt_c}44;"
+                     f"border-radius:4px;padding:1px 6px;font-size:0.68rem;font-weight:600;white-space:nowrap;'>"
+                     f"{_fmt_s.title()}</span>") if _fmt_s else ''
         _desc_clean = str(desc or '').strip()
         desc_line = (f"<div style='font-size:0.72rem;color:#555;margin-top:3px;font-style:italic;'>{_desc_clean}</div>"
                      if _desc_clean and _desc_clean not in ('nan', 'None') else '')
@@ -5346,6 +5368,7 @@ def render_strategy_columns(df, uid=None):
     <div style="margin-top:4px;display:flex;align-items:center;flex-wrap:wrap;gap:6px;">
       <span style="font-size:0.7rem;color:#aaa;">R {ir_disp}</span>
       {q_html}
+      {_fmt_html}
       {extra_html}
     </div>
     {info_line}
@@ -5370,14 +5393,32 @@ def render_strategy_columns(df, uid=None):
             desc = str(row.get('CLOSE_DESC', '') or '').strip()
             desc = '' if desc in ('nan', 'None') else desc
             _info_parts = []
-            for _hcol in ['REV_CHANGE_HTML', 'IR_CHANGE_HTML']:
-                _hv = str(row.get(_hcol, '') or '').strip()
-                if _hv and _hv not in ('nan', 'None', ''):
-                    _info_parts.append(_hv)
-            for _fc in ['BNS_IR_FLAG', 'SIM_250_FLAG']:
-                _fv = str(row.get(_fc, '') or '').strip()
-                if _fv and _fv not in ('nan', 'None', ''):
-                    _info_parts.append(color_strategy_html(_fv))
+            # Změna výnosů
+            _rv = str(row.get('REV_CHANGE_HTML', '') or '').strip()
+            if _rv and _rv not in ('nan', 'None', ''):
+                _info_parts.append(_rv)
+            # Změna ratingu — šipka
+            try:
+                _ir_now = int(float(row.get('IR', 0) or 0))
+                _ir_old = int(float(row.get('INTERNI_RATING_2024', 0) or 0))
+                if _ir_now and _ir_old:
+                    _ir_diff = _ir_now - _ir_old
+                    _arr_col = '#0ab33f' if _ir_diff < 0 else ('#e64343' if _ir_diff > 0 else '#aaa')
+                    _arr_sym = '↑' if _ir_diff < 0 else ('↓' if _ir_diff > 0 else '→')
+                    _info_parts.append(
+                        f"<span style='color:{_arr_col};font-weight:700;font-size:0.78rem;'>"
+                        f"{_arr_sym} {abs(_ir_diff) if _ir_diff != 0 else ''}</span>")
+            except Exception:
+                pass
+            # Simulace 250 label (ne BNS_IR_FLAG)
+            _sim = str(row.get('SIM_250_FLAG', '') or '').strip()
+            if _sim and _sim not in ('nan', 'None', ''):
+                _info_parts.append(
+                    f"<span style='font-size:0.68rem;font-weight:700;padding:1px 6px;border-radius:4px;"
+                    f"background:{'#d4edda' if _sim=='keep' else '#f8d7da'};"
+                    f"color:{'#155724' if _sim=='keep' else '#721c24'};'>"
+                    f"Sim250: {_sim}</span>")
+            # Nebezpečná zóna
             _dz = str(row.get('DZ_STITKY', '') or '').strip()
             if _dz and _dz not in ('nan', 'None', '', '—'):
                 _info_parts.append(_dz)
@@ -5436,7 +5477,7 @@ def render_strategy_columns(df, uid=None):
                         _fmt_key = str(row.get('BRANCH_FORMAT', '') or '').lower().strip()
                         _factor = _NF_FORMAT_FACTORS.get(_fmt_key)
                         if _fte_nf > 0 and _factor:
-                            _inv_est = round(_fte_nf * 0.7) * _factor
+                            _inv_est = round(_fte_nf * 0.9) * _factor
                             _inv_m = _inv_est / 1_000_000
                             _inv_lbl = f"~{_inv_m:.1f}M Kč".replace('.', ',')
                             _inv_info = (f"<span style='font-size:0.72rem;font-weight:700;color:#2770f0;"
@@ -7519,10 +7560,11 @@ def _apply_common_formatting(d, cols_to_show):
         if _bc in cols_to_show and _bc in d.columns:
             d[_bc] = d[_bc].apply(_fmt_bool)
 
-    # Bezhotovostní — Ano modrý badge jako Pool, Ne šedě
+    # Bezhotovostní — Ano modrý badge jako NF, Ne šedý badge jako SF
     _BLUE_BADGE_ANO = ("<span style='background:#2770f0;color:white;border-radius:10px;"
                        "padding:2px 8px;font-size:0.75rem;font-weight:700;'>Ano</span>")
-    _GREY_NE        = "<span style='color:#d1d5db;'>Ne</span>"
+    _GREY_NE        = ("<span style='background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;"
+                       "border-radius:10px;padding:2px 8px;font-size:0.75rem;font-weight:700;'>Ne</span>")
     if 'CASHLESS' in cols_to_show and 'CASHLESS' in d.columns:
         def _fmt_cashless(x):
             s = str(x).strip().upper()
@@ -7913,6 +7955,14 @@ def prepare_table(target_df, excluded_cols=None):
             if _tech and _tech in d.columns and _tech not in _excl and _tech not in _added:
                 cols_to_show.append(_tech)
                 _added.add(_tech)
+    # TABLE_DISPLAY_COLUMNS: pokud je neprázdný, filtruj jen vybrané sloupce
+    if TABLE_DISPLAY_COLUMNS:
+        _disp_techs = [_rev_nove[_dn] for _dn in TABLE_DISPLAY_COLUMNS if _dn in _rev_nove]
+        # Zachovej identifikační sloupce vždy (BRANCH_CODE, BRANCH_NAME)
+        _id_cols = [c for c in ['BRANCH_CODE', 'BRANCH_NAME'] if c in cols_to_show]
+        _sel = _id_cols + [c for c in _disp_techs if c in cols_to_show and c not in _id_cols]
+        if _sel:
+            cols_to_show = _sel
 
     d = _apply_common_formatting(d, cols_to_show)
     d = _apply_special_dashes(d, cols_to_show)
@@ -8216,7 +8266,7 @@ COL_GROUPS = [
                                "Trend ratingu 23–25", "Rating 25 kvintil",
                                "Změna ratingu 25/24", "Změna ratingu perc 25/24", "⚠️ Nebezpečná zóna"], "#fff8e1"),
     ("🎯 Performance zóny",   ["Rating 24 skóre", "Performance zone 24",
-                               "Rating 25 skóre", "Performance zone 25"], "#f0faf4"),
+                               "Rating 25 skóre", "Performance zone 25"], "#fff6e0"),
     ("🕰️ Interní rating (metodika 2022)", ["Rating 22", "Rating 22 kvintil", "Rating 22 skóre"], "#fef9e7"),
     ("📈 Business rating",     [
         "Výnos/bankéř", "Výnos/bankéř kvintil",
@@ -10775,12 +10825,58 @@ def generate_region_rating_overview(df):
                     f'border-radius:8px;overflow:hidden;">'
                     f'<thead>{pz_thead}</thead><tbody>{pz_tbody}</tbody></table></div></div>')
 
+    # ── 3) Vlastnictví budovy — Vlastní / Pronajatá ──────────────────────────
+    vlast_html = ''
+    if 'VLASTNICTVI' in df.columns:
+        _vd = df[df['VLASTNICTVI'].notna() & (df['VLASTNICTVI'].astype(str).str.upper().isin(['O','L']))].copy()
+        if not _vd.empty:
+            _vd['_V'] = _vd['VLASTNICTVI'].astype(str).str.upper().str.strip()
+            _v_regions = sorted(_vd['REGION_NAME'].dropna().unique())
+            _V_CATS = ['O', 'L']
+            _V_LABELS = {'O': 'Vlastní', 'L': 'Pronajatá'}
+            _V_COLORS = {'O': ('#1565c0', '#e3f0ff'), 'L': ('#e65100', '#fff3e0')}
+
+            v_thead = f'<tr><th style="{_th}background:#374151;text-align:left;">Region</th>'
+            for v in _V_CATS:
+                col, _ = _V_COLORS[v]
+                v_thead += f'<th style="{_th}background:{col};">{_V_LABELS[v]}</th>'
+            v_thead += f'<th style="{_th}background:#374151;">Celkem</th></tr>'
+
+            v_tbody = ''
+            for reg in list(_v_regions) + ['CELKEM']:
+                _tot = (reg == 'CELKEM')
+                reg_sub = _vd if _tot else _vd[_vd['REGION_NAME'] == reg]
+                rl = '<b>Celá síť</b>' if _tot else reg
+                row_total = len(reg_sub)
+                counts = {v: int((reg_sub['_V'] == v).sum()) for v in _V_CATS}
+                v_tbody += f'<tr style="{"background:#f8faff;" if _tot else ""}">'
+                v_tbody += f'<td style="{_tdr}{"border-top:2px solid #ccc;" if _tot else ""}">{rl}</td>'
+                for v in _V_CATS:
+                    cnt = counts[v]
+                    pct = cnt / row_total * 100 if row_total else 0
+                    col, bg = _V_COLORS[v]
+                    cb = bg if cnt > 0 else '#fafbff'
+                    cc = col if cnt > 0 else '#bbb'
+                    v_tbody += f'<td style="{_td}background:{cb};color:{cc};">{cnt}'
+                    if cnt > 0 and not _tot:
+                        v_tbody += f'<span style="font-size:0.67rem;opacity:0.7;"> ({pct:.0f} %)</span>'
+                    v_tbody += '</td>'
+                v_tbody += f'<td style="{_td}background:#f0f4ff;color:#374151;">{row_total}</td></tr>'
+
+            vlast_html = (f'<div style="margin-top:22px;">'
+                          f'<div style="font-size:0.85rem;font-weight:700;color:#374151;margin-bottom:6px;">'
+                          f'Vlastnictví budovy</div>'
+                          f'<div style="overflow-x:auto;">'
+                          f'<table style="border-collapse:collapse;width:100%;border:1px solid #e0e6f3;'
+                          f'border-radius:8px;overflow:hidden;">'
+                          f'<thead>{v_thead}</thead><tbody>{v_tbody}</tbody></table></div></div>')
+
     rated_count = len(_d)
     total_count = len(df)
     summary = (f'<div style="font-size:0.8rem;color:#666;margin-bottom:10px;">'
                f'Zobrazeno <strong>{rated_count}</strong> poboček s ratingem z celkových '
                f'<strong>{total_count}</strong> v síti.</div>')
-    return summary + q_table + pz_html
+    return summary + q_table + pz_html + vlast_html
 
 
 def generate_report(rating_status, mode='static', output_prefix="report"):
@@ -11037,7 +11133,8 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
 </div>'''
 
     if mode == 'static':
-        df_sorted    = rating_status.sort_values(by="IR")
+        _sort_cols = [c for c in TABLE_SORT_COLUMNS if c in rating_status.columns] or ["IR"]
+        df_sorted    = rating_status.sort_values(by=_sort_cols)
         df_by_branch = rating_status.sort_values(by="BRANCH_CODE")
 
         # --- věková tabulka a graf ---
@@ -11085,11 +11182,47 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
 })();
 </script>"""
 
-        # --- síťový benchmark (celá síť — bez srovnání s "ostatními") ---
+        # --- síťový benchmark (celá síť + per region) ---
+        _bench_regions = sorted(
+            [r for r in rating_status['REGION_NAME'].dropna().unique() if str(r) not in ('','nan','None')]
+        ) if 'REGION_NAME' in rating_status.columns else []
+        _bench_reg_dfs = {r: rating_status[rating_status['REGION_NAME'] == r] for r in _bench_regions}
+
+        def _bv(df, col, mode='avg'):
+            if col not in df.columns: return '—'
+            s = pd.to_numeric(df[col], errors='coerce').dropna()
+            if s.empty: return '—'
+            v = s.mean() if mode == 'avg' else s.sum()
+            return v
+
+        def _bfmt(v, fmt='num'):
+            if v == '—': return '—'
+            if fmt == 'money': return format_money(v)
+            if fmt == 'pct':   return format_pct(v)
+            if fmt == 'exp':   return f"{v:.3f}"
+            return format_num_round(v)
+
         def net_bench_row(label, value_html, note=""):
             return (f"<tr><td style='text-align:left;'>{label}</td>"
                     f"<td class='benchmark-val' style='text-align:right;'>{value_html}</td>"
                     f"<td style='text-align:right;color:#888;font-size:0.8rem;'>{note}</td></tr>")
+
+        def _multi_bench_row(label, col, fmt='num', mode_reg='avg', mode_cz='avg'):
+            cz_v = _bv(rating_status, col, mode_cz)
+            reg_cells = "".join(
+                f"<td style='text-align:right;font-size:0.78rem;'>{_bfmt(_bv(_bench_reg_dfs[r], col, mode_reg), fmt)}</td>"
+                for r in _bench_regions
+            )
+            sum_v = _bv(rating_status, col, 'sum')
+            return (f"<tr><td style='text-align:left;white-space:nowrap;'>{label}</td>"
+                    f"{reg_cells}"
+                    f"<td class='benchmark-val' style='text-align:right;background:#f0f4ff;'>{_bfmt(cz_v, fmt)}</td>"
+                    f"<td style='text-align:right;color:#888;font-size:0.78rem;background:#f0f4ff;'>{_bfmt(sum_v, fmt) if mode_cz == 'avg' else chr(8212)}</td>"
+                    f"</tr>")
+
+        def _bench_section(label, bg, color):
+            return (f"<tr><td colspan='{len(_bench_regions)+3}' style='background:{bg};font-weight:600;"
+                    f"font-size:0.78rem;color:{color};padding:4px 8px;text-align:left;'>{label}</td></tr>")
 
         html_benchmark_static = f'''
 <style>
@@ -11190,9 +11323,87 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
               <td style='text-align:right;color:#888;font-size:0.8rem;'>∑ {(rating_status['PLOCHA_NAD_OPTIMALNI_POBOCKU'].sum() if 'PLOCHA_NAD_OPTIMALNI_POBOCKU' in rating_status.columns else 0):.0f} m²</td></tr>
           """}
 
+          <tr><td colspan="3" style="background:#e8f5e9;font-weight:600;font-size:0.78rem;color:#1a7a4a;padding:4px 8px;text-align:left;">🛒 Prodeje celkem 2025</td></tr>
+          {net_bench_row("Prodeje celkem 2025",
+              format_num_round(rating_status["POCET_PRODEJU_CELKEM_2025"].mean()) if "POCET_PRODEJU_CELKEM_2025" in rating_status.columns else "—",
+              f"∑ " + (format_num_round(rating_status['POCET_PRODEJU_CELKEM_2025'].sum()) if 'POCET_PRODEJU_CELKEM_2025' in rating_status.columns else '—'))}
+
+          <tr><td colspan="3" style="background:#e8f4fd;font-weight:600;font-size:0.78rem;color:#004d5f;padding:4px 8px;text-align:left;">👷 FTE</td></tr>
+          {"".join(
+            f"<tr><td style='text-align:left;padding-left:16px;'>{lbl}</td>"
+            f"<td class='benchmark-val' style='text-align:right;'>{format_num_round(rating_status[col].mean()) if col in rating_status.columns else chr(8212)}</td>"
+            f"<td style='text-align:right;color:#888;font-size:0.8rem;'>∑ {format_num_round(rating_status[col].sum()) if col in rating_status.columns else chr(8212)}</td>"
+            f"</tr>"
+            for col, lbl in [
+              ('FTE','Celková FTE controlling'),('_total_spec','Celková FTE redim'),
+              ('BANKERS_COUNT','Počet bankéřů redim'),('OBCHODNI_FTE','FTE všechny obchodní pozice'),
+              ('FTE_MMMA','FTE MMMA'),('FTE_SBC','FTE SBC'),('FTE_HC','FTE HC'),
+              ('FTE_EPC','FTE EPC'),('FTE_EPB','FTE EPB'),('FTE_PROVOZ','FTE PROVOZ'),('FTE_RKC','FTE RKC'),
+            ]
+            if col in rating_status.columns
+          )}
+
+          <tr><td colspan="3" style="background:#fff8e130;font-weight:600;font-size:0.78rem;color:#8b6914;padding:4px 8px;text-align:left;">📡 Index expozice</td></tr>
+          {net_bench_row("Index expozice (průměr)",
+              f"{rating_status['HODNOTA_INDEXU_EXPOZICE'].mean():.3f}" if "HODNOTA_INDEXU_EXPOZICE" in rating_status.columns else "—", "")}
+
+          <tr><td colspan="3" style="background:#fff3c430;font-weight:600;font-size:0.78rem;color:#7a5c00;padding:4px 8px;text-align:left;">📈 Business rating</td></tr>
+          {"".join(
+            f"<tr><td style='text-align:left;padding-left:16px;'>{lbl}</td>"
+            f"<td class='benchmark-val' style='text-align:right;'>{(format_money(rating_status[col].mean()) if col=='CAP_REV_FTE' else format_num_round(rating_status[col].mean())) if col in rating_status.columns else chr(8212)}</td>"
+            f"<td></td></tr>"
+            for col, lbl in [
+              ('CAP_REV_FTE','Výnos/bankéř'),('CAP_NEWCLI_FTE','Noví klienti/bankéř'),
+              ('CAP_PRIMCLI_FTE','Primární klienti/bankéř'),('CAP_SCHUZKY_FTE','Schůzky/bankéř'),
+              ('CAP_PEREX','PEREX'),
+            ]
+            if col in rating_status.columns
+          )}
+
         </tbody>
       </table>
     </div>
+  </div>
+</div>'''
+
+        # ── Per-region wide table pro statický benchmark ─────────────────────
+        if _bench_regions:
+            _reg_ths = "".join(f"<th style='text-align:right;color:#7ec8f7;white-space:nowrap;padding:4px 6px;font-size:0.76rem;'>{r}</th>" for r in _bench_regions)
+            _bench_multi_rows = [
+                _bench_section("💰 Finanční ukazatele", "#f0f4ff", "#2770f0"),
+                _multi_bench_row("Výnosy 25", "VYNOSY", "money"),
+                _multi_bench_row("Nové výnosy 25", "OBJEM_VYNOSU_CZK", "money"),
+                _multi_bench_row("C/I Ratio 25", "PRIME_NAKLADY/VYNOSY", "pct", "avg", "avg"),
+                _bench_section("🛒 Prodeje celkem 2025", "#e8f5e9", "#1a7a4a"),
+                _multi_bench_row("Prodeje celkem", "POCET_PRODEJU_CELKEM_2025", "num", "avg", "avg"),
+                _bench_section("🚶 Návštěvnost", "#f0f4ff", "#2770f0"),
+                _multi_bench_row("Návštěvy celkem", "POCET_NAVSTEV_CELKEM", "num"),
+                _bench_section("👷 FTE", "#e8f4fd", "#004d5f"),
+                _multi_bench_row("Celková FTE controlling", "FTE", "num"),
+                _multi_bench_row("Celková FTE redim", "_total_spec", "num"),
+                _multi_bench_row("Počet bankéřů redim", "BANKERS_COUNT", "num"),
+                _bench_section("📡 Index expozice", "#fff8e130", "#8b6914"),
+                _multi_bench_row("Index expozice", "HODNOTA_INDEXU_EXPOZICE", "exp"),
+                _bench_section("📈 Business rating", "#fff3c430", "#7a5c00"),
+                _multi_bench_row("Výnos/bankéř", "CAP_REV_FTE", "money"),
+                _multi_bench_row("Noví klienti/bankéř", "CAP_NEWCLI_FTE", "num"),
+                _multi_bench_row("PEREX", "CAP_PEREX", "num"),
+            ]
+            html_benchmark_static += f'''
+<div class="age-section-card mb-4" style="margin-top:16px;">
+  <div style="font-size:0.9rem;font-weight:700;color:#374151;margin-bottom:8px;">📊 Hodnoty dle regionů</div>
+  <div style="overflow-x:auto;">
+    <table class="table table-sm mb-0 benchmark-hover-tbl" style="font-size:0.78rem;min-width:600px;">
+      <thead class="table-dark">
+        <tr>
+          <th style="text-align:left;white-space:nowrap;">Ukazatel</th>
+          {_reg_ths}
+          <th style="text-align:right;color:#7ec8f7;white-space:nowrap;padding:4px 6px;">CZ průměr</th>
+          <th style="text-align:right;color:#aaa;white-space:nowrap;padding:4px 6px;font-size:0.75rem;">CZ součet</th>
+        </tr>
+      </thead>
+      <tbody>{"".join(_bench_multi_rows)}</tbody>
+    </table>
   </div>
 </div>'''
 
@@ -11908,6 +12119,53 @@ function obSet_{_fn_slug}(btn, ob){{
 
           {cash_bench_rows(df_r, df_o)}
 
+          <tr><td colspan="4" style="background:#e8f5e9;font-weight:600;font-size:0.78rem;color:#1a7a4a;padding:4px 8px;text-align:left;">🛒 Prodeje celkem 2025</td></tr>
+          {"".join(
+            f"<tr><td style='text-align:left;padding-left:16px;'>{lbl}</td>"
+            f"<td class='benchmark-val' style='text-align:right;'>{format_num_round(df_r[col].mean()) if col in df_r.columns else chr(8212)}</td>"
+            f"<td style='text-align:right;'>{format_num_round(df_o[col].mean()) if col in df_o.columns else chr(8212)}</td>"
+            f"<td style='text-align:right;'>{bench_diff(df_r[col].mean(), df_o[col].mean()) if col in df_r.columns and col in df_o.columns else chr(8212)}</td></tr>"
+            for col, lbl in [('POCET_PRODEJU_CELKEM_2025','Prodeje celkem')]
+            if col in df_r.columns
+          )}
+
+          <tr><td colspan="4" style="background:#e8f4fd;font-weight:600;font-size:0.78rem;color:#004d5f;padding:4px 8px;text-align:left;">👷 FTE</td></tr>
+          {"".join(
+            f"<tr><td style='text-align:left;padding-left:16px;'>{lbl}</td>"
+            f"<td class='benchmark-val' style='text-align:right;'>{format_num_round(df_r[col].mean()) if col in df_r.columns else chr(8212)}</td>"
+            f"<td style='text-align:right;'>{format_num_round(df_o[col].mean()) if col in df_o.columns else chr(8212)}</td>"
+            f"<td style='text-align:right;'>{bench_diff(df_r[col].mean(), df_o[col].mean()) if col in df_r.columns and col in df_o.columns else chr(8212)}</td></tr>"
+            for col, lbl in [
+              ('FTE','Celková FTE controlling'),('_total_spec','Celková FTE redim'),
+              ('BANKERS_COUNT','Počet bankéřů redim'),('OBCHODNI_FTE','FTE obchodní pozice'),
+            ]
+            if col in df_r.columns
+          )}
+
+          <tr><td colspan="4" style="background:#fff8e130;font-weight:600;font-size:0.78rem;color:#8b6914;padding:4px 8px;text-align:left;">📡 Index expozice</td></tr>
+          {"".join(
+            f"<tr><td style='text-align:left;padding-left:16px;'>{lbl}</td>"
+            f"<td class='benchmark-val' style='text-align:right;'>{f'{df_r[col].mean():.3f}' if col in df_r.columns else chr(8212)}</td>"
+            f"<td style='text-align:right;'>{f'{df_o[col].mean():.3f}' if col in df_o.columns else chr(8212)}</td>"
+            f"<td style='text-align:right;'>{bench_diff(df_r[col].mean(), df_o[col].mean()) if col in df_r.columns and col in df_o.columns else chr(8212)}</td></tr>"
+            for col, lbl in [('HODNOTA_INDEXU_EXPOZICE','Index expozice')]
+            if col in df_r.columns
+          )}
+
+          <tr><td colspan="4" style="background:#fff3c430;font-weight:600;font-size:0.78rem;color:#7a5c00;padding:4px 8px;text-align:left;">📈 Business rating</td></tr>
+          {"".join(
+            f"<tr><td style='text-align:left;padding-left:16px;'>{lbl}</td>"
+            f"<td class='benchmark-val' style='text-align:right;'>{(format_money(df_r[col].mean()) if col=='CAP_REV_FTE' else format_num_round(df_r[col].mean())) if col in df_r.columns else chr(8212)}</td>"
+            f"<td style='text-align:right;'>{(format_money(df_o[col].mean()) if col=='CAP_REV_FTE' else format_num_round(df_o[col].mean())) if col in df_o.columns else chr(8212)}</td>"
+            f"<td style='text-align:right;'>{bench_diff(df_r[col].mean(), df_o[col].mean(), mode='money' if col=='CAP_REV_FTE' else 'num') if col in df_r.columns and col in df_o.columns else chr(8212)}</td></tr>"
+            for col, lbl in [
+              ('CAP_REV_FTE','Výnos/bankéř'),('CAP_NEWCLI_FTE','Noví klienti/bankéř'),
+              ('CAP_PRIMCLI_FTE','Primární klienti/bankéř'),('CAP_SCHUZKY_FTE','Schůzky/bankéř'),
+              ('CAP_PEREX','PEREX'),
+            ]
+            if col in df_r.columns
+          )}
+
           {"" if "PLOCHA_POUZE_D5" in df_r.columns else f"""
           <tr><td colspan='4' style='background:#fce4ec;font-weight:600;font-size:0.78rem;color:#c2185b;padding:4px 8px;text-align:left;'>📐 Alokační report</td></tr>
           <tr style='background:#fff5f8;'>
@@ -11935,7 +12193,35 @@ function obSet_{_fn_slug}(btn, ob){{
   </div>
 </div>'''
             # Celý region (vs ostatní regiony) + Oblast varianty (Oblast vs zbytek regionu)
-            html_benchmark = _make_bench_html(df_reg, df_others, f"Region {region}", "Ostatní regiony")
+            # Najdi nejpodobnější region (Euclidean na klíčových metrikách)
+            _sim_cols = [c for c in ['VYNOSY','OBJEM_VYNOSU_CZK','PRIME_NAKLADY/VYNOSY',
+                                      'POCET_NAVSTEV_CELKEM','FTE','_total_spec',
+                                      'POCET_PRODEJU_CELKEM_2025','HODNOTA_INDEXU_EXPOZICE']
+                         if c in rating_status.columns]
+            _similar_region = None
+            _df_similar = None
+            try:
+                _all_regs = [r for r in rating_status['REGION_NAME'].dropna().unique()
+                             if r != region and str(r) not in ('','nan','None')]
+                if _sim_cols and _all_regs:
+                    _reg_avgs = {r: rating_status[rating_status['REGION_NAME'] == r][_sim_cols].mean()
+                                 for r in _all_regs}
+                    _cur_avg = df_reg[_sim_cols].mean()
+                    _stds = rating_status[_sim_cols].std().replace(0, 1)
+                    def _dist(row):
+                        return (((row - _cur_avg) / _stds) ** 2).sum() ** 0.5
+                    _similar_region = min(_all_regs, key=lambda r: _dist(_reg_avgs[r]))
+                    _df_similar = rating_status[rating_status['REGION_NAME'] == _similar_region]
+            except Exception:
+                pass
+
+            if _similar_region and _df_similar is not None and not _df_similar.empty:
+                html_benchmark = (
+                    _make_bench_html(df_reg, _df_similar, f"Region {region}", f"Nejpod. region: {_similar_region}")
+                    + _make_bench_html(df_reg, rating_status, f"Region {region}", "CZ průměr")
+                )
+            else:
+                html_benchmark = _make_bench_html(df_reg, df_others, f"Region {region}", "Ostatní regiony")
             if _has_oblasti:
                 _ob_bench_parts = [
                     f'<div class="ob-pre-{_fn_slug}" data-ob="__all__">{html_benchmark}</div>'
@@ -11979,7 +12265,7 @@ function obSet_{_fn_slug}(btn, ob){{
       Kompletní tabulka poboček regionu <strong>{region}</strong> s ratingy, výnosy, C/I a dalšími metrikami.
       Seřazeno vzestupně dle <strong>Ratingu 25</strong> — nejlepší rating nahoře.
     </p>
-    {generate_filterable_table(df_reg.sort_values(by="IR"), f"main-table-{region_slug}",
+    {generate_filterable_table(df_reg.sort_values(by=[c for c in TABLE_SORT_COLUMNS if c in df_reg.columns] or ["IR"]), f"main-table-{region_slug}",
         excluded_cols=['ROCNI_SPLATKY_S_DPH_CZK'])}
     <div style="margin-bottom:20px;"></div>""")}
 
