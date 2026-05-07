@@ -8970,6 +8970,29 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
     background:#f0f0f0; font-size:0.75rem; cursor:pointer; font-weight:600;
     color:#333; white-space:nowrap; flex-shrink:0;
   }}
+  /* ── Sort panel ── */
+  #sort-panel-{table_id} select {{
+    padding:4px 7px; border:1px solid #ccc; border-radius:6px;
+    font-size:0.82rem; background:#fff; cursor:pointer; min-width:160px;
+  }}
+  #sort-panel-{table_id} button {{
+    padding:4px 10px; border:1px solid #ccc; border-radius:6px;
+    background:#f5f5f5; font-size:0.82rem; cursor:pointer;
+  }}
+  /* ── Column picker ── */
+  #col-picker-panel-{table_id} input[type=checkbox] {{
+    cursor:pointer; accent-color:#2770f0;
+  }}
+  #col-picker-panel-{table_id} .cp-group-hdr {{
+    font-size:0.72rem; font-weight:700; color:#8899bb; text-transform:uppercase;
+    letter-spacing:0.5px; padding:6px 0 2px 0; border-top:1px solid #e8ecf5;
+    margin-top:4px;
+  }}
+  #col-picker-panel-{table_id} label.cp-col-lbl {{
+    display:flex; align-items:center; gap:6px; padding:2px 4px;
+    font-size:0.82rem; cursor:pointer; border-radius:4px;
+  }}
+  #col-picker-panel-{table_id} label.cp-col-lbl:hover {{ background:#eef4ff; }}
   /* ── Expanded (fullscreen) mode ── */
   #wrapper-{table_id}.tbl-expanded {{
     position: fixed;
@@ -9000,6 +9023,58 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
   <div class="col-toggle-bar" id="col-toggles-{table_id}">
     <button class="col-toggle-all" id="col-all-{table_id}">✔ Vše</button>
     <button class="col-toggle-all" id="col-none-{table_id}">✕ Nic</button>
+  </div>
+
+  <!-- Sort panel -->
+  <div style="margin-bottom:8px;">
+    <button id="sort-toggle-{table_id}" class="ft-btn"
+            style="background:#f0f4ff;border-color:#2770f0;color:#2770f0;font-weight:600;">
+      📊 Seřadit
+    </button>
+  </div>
+  <div id="sort-panel-{table_id}" style="display:none;background:#f8faff;border:1px solid #dde4f5;border-radius:8px;padding:12px 14px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <span style="font-size:0.8rem;color:#555;min-width:60px;">1. pořadí</span>
+      <select id="sort-col1-{table_id}"><option value="">—</option></select>
+      <button id="sort-dir1-{table_id}" data-asc="1">▲</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <span style="font-size:0.8rem;color:#555;min-width:60px;">2. pořadí</span>
+      <select id="sort-col2-{table_id}"><option value="">—</option></select>
+      <button id="sort-dir2-{table_id}" data-asc="1">▲</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <span style="font-size:0.8rem;color:#555;min-width:60px;">3. pořadí</span>
+      <select id="sort-col3-{table_id}"><option value="">—</option></select>
+      <button id="sort-dir3-{table_id}" data-asc="1">▲</button>
+    </div>
+    <div style="margin-top:8px;display:flex;gap:8px;">
+      <button id="sort-apply-{table_id}" style="background:#2770f0;color:white;border-color:#1e5bc9;">▶ Seřadit</button>
+      <button id="sort-reset-{table_id}">↺ Reset</button>
+    </div>
+  </div>
+
+  <!-- Column picker -->
+  <div style="margin-bottom:8px;">
+    <button id="col-picker-toggle-{table_id}" class="ft-btn"
+            style="background:#f0f4ff;border-color:#2770f0;color:#2770f0;font-weight:600;">
+      👁 Výběr sloupců
+    </button>
+    <span id="col-picker-mode-badge-{table_id}"
+          style="display:none;font-size:0.78rem;color:#2770f0;font-weight:600;margin-left:6px;">● Vlastní výběr</span>
+  </div>
+  <div id="col-picker-panel-{table_id}"
+       style="display:none;background:#f8faff;border:1px solid #dde4f5;border-radius:8px;
+              padding:12px 14px;margin-bottom:10px;max-height:360px;overflow-y:auto;">
+    <div style="display:flex;gap:6px;margin-bottom:8px;align-items:center;flex-wrap:wrap;">
+      <input id="col-picker-search-{table_id}" placeholder="🔍 Hledat sloupec..."
+             style="padding:5px 9px;border:1px solid #ccc;border-radius:6px;font-size:0.82rem;
+                    width:180px;outline:none;">
+      <button id="col-picker-all-{table_id}" class="ft-btn">✔ Vše</button>
+      <button id="col-picker-none-{table_id}" class="ft-btn">✕ Nic</button>
+      <button id="col-picker-reset-{table_id}" class="ft-btn">↺ Reset skupin</button>
+    </div>
+    <div id="col-picker-list-{table_id}"></div>
   </div>
 
   <!-- Filtr a porovnání -->
@@ -9164,16 +9239,26 @@ setTimeout(function() {{
     }});
   }}
 
+  var colPickerMode = false;
+  var pickerChecked = {{}};
+
   function applyColVisibility() {{
     var visible = new Set();
     headerCells.forEach(function(th) {{
-      if (alwaysVisible.indexOf(th.textContent.trim().replace(/[↕↑↓]/g,"").trim().toLowerCase()) >= 0) {{
+      var lbl = th.textContent.trim().replace(/[↕↑↓]/g,"").trim().toLowerCase();
+      if (alwaysVisible.indexOf(lbl) >= 0) {{
         visible.add(parseInt(th.getAttribute("data-col-idx")));
       }}
     }});
-    groupColIdxs.forEach(function(g) {{
-      if (groupActive[g.label]) g.idxs.forEach(function(idx) {{ visible.add(idx); }});
-    }});
+    if (colPickerMode) {{
+      Object.keys(pickerChecked).forEach(function(idx) {{
+        if (pickerChecked[idx]) visible.add(parseInt(idx));
+      }});
+    }} else {{
+      groupColIdxs.forEach(function(g) {{
+        if (groupActive[g.label]) g.idxs.forEach(function(idx) {{ visible.add(idx); }});
+      }});
+    }}
     headerCells.forEach(function(th) {{
       var idx = parseInt(th.getAttribute("data-col-idx"));
       th.style.display = visible.has(idx) ? "" : "none";
@@ -9825,6 +9910,235 @@ setTimeout(function() {{
   }}
   updateSummary();
   // ─────────────────────────────────────────────────────────────────────────
+
+  // ─── Sort panel ─────────────────────────────────────────────────────────────
+  var sortToggleBtn = document.getElementById("sort-toggle-{table_id}");
+  var sortPanel     = document.getElementById("sort-panel-{table_id}");
+  var sortOpen = false;
+  if (sortToggleBtn && sortPanel) {{
+    sortToggleBtn.addEventListener("click", function() {{
+      sortOpen = !sortOpen;
+      sortPanel.style.display = sortOpen ? "" : "none";
+      sortToggleBtn.style.background = sortOpen ? "#dbeafe" : "";
+    }});
+
+    var sortSels = [
+      document.getElementById("sort-col1-{table_id}"),
+      document.getElementById("sort-col2-{table_id}"),
+      document.getElementById("sort-col3-{table_id}"),
+    ];
+    var sortDirs = [
+      document.getElementById("sort-dir1-{table_id}"),
+      document.getElementById("sort-dir2-{table_id}"),
+      document.getElementById("sort-dir3-{table_id}"),
+    ];
+
+    sortDirs.forEach(function(btn) {{
+      if (!btn) return;
+      btn.addEventListener("click", function() {{
+        var asc = btn.getAttribute("data-asc") === "1";
+        btn.setAttribute("data-asc", asc ? "0" : "1");
+        btn.textContent = asc ? "▼" : "▲";
+      }});
+    }});
+
+    headerCells.forEach(function(th, i) {{
+      var lbl = th.textContent.trim().replace(/[↕↑↓]/g,"").trim();
+      if (!lbl) return;
+      sortSels.forEach(function(sel) {{
+        if (!sel) return;
+        var opt = document.createElement("option");
+        opt.value = i + 1;
+        opt.textContent = lbl;
+        sel.appendChild(opt);
+      }});
+    }});
+
+    var _origRows = rows.slice();
+
+    function parseNumericCell(text) {{
+      var clean = text.replace(/<[^>]*>/g,"").replace(/ /g," ").trim();
+      var n = parseFloat(clean.replace(/[^\d.,\-+]/g,"").replace(",","."));
+      return isNaN(n) ? clean.toLowerCase() : n;
+    }}
+
+    var sortApplyBtn = document.getElementById("sort-apply-{table_id}");
+    var sortResetBtn = document.getElementById("sort-reset-{table_id}");
+
+    if (sortApplyBtn) {{
+      sortApplyBtn.addEventListener("click", function() {{
+        var keys = [];
+        for (var i = 0; i < sortSels.length; i++) {{
+          if (!sortSels[i]) continue;
+          var cidx = parseInt(sortSels[i].value);
+          if (!isNaN(cidx) && cidx > 0) {{
+            keys.push({{ cidx: cidx, asc: sortDirs[i] ? sortDirs[i].getAttribute("data-asc") === "1" : true }});
+          }}
+        }}
+        if (!keys.length) return;
+        var tbody = tbl.querySelector("tbody");
+        var sortable = rows.slice();
+        sortable.sort(function(a, b) {{
+          for (var k = 0; k < keys.length; k++) {{
+            var ak = keys[k];
+            var atds = a.querySelectorAll("td");
+            var btds = b.querySelectorAll("td");
+            var av = parseNumericCell(atds[ak.cidx] ? atds[ak.cidx].textContent : "");
+            var bv = parseNumericCell(btds[ak.cidx] ? btds[ak.cidx].textContent : "");
+            var cmp;
+            if (typeof av === "number" && typeof bv === "number") cmp = av - bv;
+            else if (typeof av === "string" && typeof bv === "string") cmp = av < bv ? -1 : av > bv ? 1 : 0;
+            else cmp = 0;
+            if (cmp !== 0) return ak.asc ? cmp : -cmp;
+          }}
+          return 0;
+        }});
+        sortable.forEach(function(r) {{ tbody.appendChild(r); }});
+        applyGroupColors();
+      }});
+    }}
+
+    if (sortResetBtn) {{
+      sortResetBtn.addEventListener("click", function() {{
+        var tbody = tbl.querySelector("tbody");
+        _origRows.forEach(function(r) {{ tbody.appendChild(r); }});
+        applyGroupColors();
+      }});
+    }}
+  }}
+  // ─── End Sort panel ──────────────────────────────────────────────────────────
+
+  // ─── Column picker ───────────────────────────────────────────────────────────
+  var colPickerToggle = document.getElementById("col-picker-toggle-{table_id}");
+  var colPickerPanel  = document.getElementById("col-picker-panel-{table_id}");
+  var colPickerBadge  = document.getElementById("col-picker-mode-badge-{table_id}");
+  var colPickerList   = document.getElementById("col-picker-list-{table_id}");
+  var colPickerSearch = document.getElementById("col-picker-search-{table_id}");
+  var colPickerOpen   = false;
+
+  // Initialize pickerChecked from current group visibility
+  headerCells.forEach(function(th) {{
+    var idx = parseInt(th.getAttribute("data-col-idx"));
+    pickerChecked[idx] = (th.style.display !== "none");
+  }});
+
+  // Build picker list from groupColIdxs
+  if (colPickerList) {{
+    groupColIdxs.forEach(function(g) {{
+      var hdr = document.createElement("div");
+      hdr.className = "cp-group-hdr";
+      hdr.textContent = g.label;
+      colPickerList.appendChild(hdr);
+      g.idxs.forEach(function(idx) {{
+        var th = headerCells[idx - 1];
+        if (!th) return;
+        var colName = th.textContent.trim().replace(/[↕↑↓]/g,"").trim();
+        var lbl = document.createElement("label");
+        lbl.className = "cp-col-lbl";
+        lbl.setAttribute("data-col-name", colName.toLowerCase());
+        var cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = pickerChecked[idx] !== false;
+        cb.setAttribute("data-cp-idx", idx);
+        cb.addEventListener("change", function() {{
+          pickerChecked[idx] = cb.checked;
+          colPickerMode = true;
+          if (colPickerBadge) colPickerBadge.style.display = "inline";
+          applyColVisibility();
+          // sync group toggle checkboxes appearance
+        }});
+        lbl.appendChild(cb);
+        lbl.appendChild(document.createTextNode(" " + colName));
+        colPickerList.appendChild(lbl);
+      }});
+    }});
+  }}
+
+  if (colPickerToggle && colPickerPanel) {{
+    colPickerToggle.addEventListener("click", function() {{
+      colPickerOpen = !colPickerOpen;
+      colPickerPanel.style.display = colPickerOpen ? "" : "none";
+      colPickerToggle.style.background = colPickerOpen ? "#dbeafe" : "";
+    }});
+  }}
+
+  if (colPickerSearch) {{
+    colPickerSearch.addEventListener("input", function() {{
+      var q = colPickerSearch.value.toLowerCase().trim();
+      Array.from(colPickerList.querySelectorAll("label.cp-col-lbl")).forEach(function(lbl) {{
+        var name = lbl.getAttribute("data-col-name") || "";
+        lbl.style.display = (!q || name.includes(q)) ? "" : "none";
+      }});
+      // Show/hide group headers based on whether any child is visible
+      Array.from(colPickerList.querySelectorAll(".cp-group-hdr")).forEach(function(hdr) {{
+        var next = hdr.nextElementSibling;
+        var hasVisible = false;
+        while (next && !next.classList.contains("cp-group-hdr")) {{
+          if (next.style.display !== "none") hasVisible = true;
+          next = next.nextElementSibling;
+        }}
+        hdr.style.display = hasVisible ? "" : "none";
+      }});
+    }});
+  }}
+
+  var colPickerAllBtn  = document.getElementById("col-picker-all-{table_id}");
+  var colPickerNoneBtn = document.getElementById("col-picker-none-{table_id}");
+  var colPickerResetBtn= document.getElementById("col-picker-reset-{table_id}");
+
+  if (colPickerAllBtn) {{
+    colPickerAllBtn.addEventListener("click", function() {{
+      colPickerMode = true;
+      if (colPickerBadge) colPickerBadge.style.display = "inline";
+      Array.from(colPickerList.querySelectorAll("input[data-cp-idx]")).forEach(function(cb) {{
+        var idx = parseInt(cb.getAttribute("data-cp-idx"));
+        cb.checked = true;
+        pickerChecked[idx] = true;
+      }});
+      applyColVisibility();
+    }});
+  }}
+
+  if (colPickerNoneBtn) {{
+    colPickerNoneBtn.addEventListener("click", function() {{
+      colPickerMode = true;
+      if (colPickerBadge) colPickerBadge.style.display = "inline";
+      Array.from(colPickerList.querySelectorAll("input[data-cp-idx]")).forEach(function(cb) {{
+        var idx = parseInt(cb.getAttribute("data-cp-idx"));
+        cb.checked = false;
+        pickerChecked[idx] = false;
+      }});
+      applyColVisibility();
+    }});
+  }}
+
+  if (colPickerResetBtn) {{
+    colPickerResetBtn.addEventListener("click", function() {{
+      colPickerMode = false;
+      if (colPickerBadge) colPickerBadge.style.display = "none";
+      // Re-init pickerChecked from current group states
+      headerCells.forEach(function(th) {{
+        var idx = parseInt(th.getAttribute("data-col-idx"));
+        var lbl = th.textContent.trim().replace(/[↕↑↓]/g,"").trim().toLowerCase();
+        if (alwaysVisible.indexOf(lbl) >= 0) {{
+          pickerChecked[idx] = true;
+        }} else {{
+          // check if in an active group
+          var inActive = false;
+          groupColIdxs.forEach(function(g) {{
+            if (groupActive[g.label] && g.idxs.indexOf(idx) >= 0) inActive = true;
+          }});
+          pickerChecked[idx] = inActive;
+        }}
+      }});
+      // Update checkboxes in picker
+      Array.from(colPickerList.querySelectorAll("input[data-cp-idx]")).forEach(function(cb) {{
+        cb.checked = pickerChecked[parseInt(cb.getAttribute("data-cp-idx"))] !== false;
+      }});
+      applyColVisibility();
+    }});
+  }}
+  // ─── End Column picker ───────────────────────────────────────────────────────
 
 }}, 0);
 </script>
@@ -12215,13 +12529,186 @@ function obSet_{_fn_slug}(btn, ob){{
             except Exception:
                 pass
 
+            # ── Benchmark tab switcher (Feature 3) ───────────────────────────
+            import json as _json_bench
+            _bench_cz  = _make_bench_html(df_reg, rating_status, f"Region {region}", "CZ průměr")
             if _similar_region and _df_similar is not None and not _df_similar.empty:
-                html_benchmark = (
-                    _make_bench_html(df_reg, _df_similar, f"Region {region}", f"Nejpod. region: {_similar_region}")
-                    + _make_bench_html(df_reg, rating_status, f"Region {region}", "CZ průměr")
-                )
+                _bench_sim      = _make_bench_html(df_reg, _df_similar, f"Region {region}", f"Podobný: {_similar_region}")
+                _bench_tab2_lbl = f"Podobný: {_similar_region}"
             else:
-                html_benchmark = _make_bench_html(df_reg, df_others, f"Region {region}", "Ostatní regiony")
+                _bench_sim      = _make_bench_html(df_reg, df_others, f"Region {region}", "Ostatní regiony")
+                _bench_tab2_lbl = "Ostatní regiony"
+
+            # Key metrics for custom region comparison
+            _KEY_BENCH_COLS = [c for c in [
+                'VYNOSY','OBJEM_VYNOSU_CZK','PRIME_NAKLADY/VYNOSY',
+                'POCET_NAVSTEV_CELKEM','POCET_PRODEJU_CELKEM_2025','FTE','_total_spec',
+                'BANKERS_COUNT','HODNOTA_INDEXU_EXPOZICE','CAP_REV_FTE','CAP_NEWCLI_FTE',
+                'CAP_SCHUZKY_FTE','CAP_PEREX',
+            ] if c in rating_status.columns]
+            _KEY_BENCH_LABELS = {
+                'VYNOSY':                   ('Výnosy 25',            'money'),
+                'OBJEM_VYNOSU_CZK':         ('Nové výnosy 25',       'money'),
+                'PRIME_NAKLADY/VYNOSY':     ('C/I Ratio 25',         'pct'),
+                'POCET_NAVSTEV_CELKEM':     ('Návštěvy celkem',      'num'),
+                'POCET_PRODEJU_CELKEM_2025':('Prodeje celkem',       'num'),
+                'FTE':                      ('Celková FTE',          'num'),
+                '_total_spec':              ('FTE redim',            'num'),
+                'BANKERS_COUNT':            ('Bankéři redim',        'num'),
+                'HODNOTA_INDEXU_EXPOZICE':  ('Index expozice',       'exp'),
+                'CAP_REV_FTE':              ('Výnos/bankéř',         'money'),
+                'CAP_NEWCLI_FTE':           ('Noví klienti/bankéř',  'num'),
+                'CAP_SCHUZKY_FTE':          ('Schůzky/bankéř',       'num'),
+                'CAP_PEREX':                ('PEREX',                'num'),
+            }
+            _cur_avgs_py = {
+                col: (float(df_reg[col].mean()) if col in df_reg.columns else None)
+                for col in _KEY_BENCH_COLS
+            }
+            _all_reg_avgs_py = {}
+            for _rn in (_bench_regions if '_bench_regions' in dir() else []):
+                _rdf = rating_status[rating_status['REGION_NAME'] == _rn]
+                _all_reg_avgs_py[_rn] = {
+                    col: (float(_rdf[col].mean()) if col in _rdf.columns else None)
+                    for col in _KEY_BENCH_COLS
+                }
+            _bench_avgs_js    = _json_bench.dumps(_all_reg_avgs_py)
+            _cur_avgs_js      = _json_bench.dumps(_cur_avgs_py)
+            _bench_meta_js    = _json_bench.dumps({
+                col: list(_KEY_BENCH_LABELS.get(col, (col, 'num')))
+                for col in _KEY_BENCH_COLS
+            })
+            _other_regions_js = _json_bench.dumps(
+                [r for r in (_bench_regions if '_bench_regions' in dir() else []) if r != region]
+            )
+            _bench_uid = region_slug
+
+            html_benchmark = f"""
+<style>
+  .bench-tab-bar-{_bench_uid} {{
+    display:flex; gap:0; margin-bottom:0; border-bottom:2px solid #2770f0;
+  }}
+  .bench-tab-btn-{_bench_uid} {{
+    padding:7px 16px; border:1px solid #c7d9fb; border-bottom:none;
+    background:#f0f6ff; color:#2770f0; font-size:0.83rem; font-weight:600;
+    cursor:pointer; border-radius:6px 6px 0 0; margin-right:3px;
+    transition:background .15s;
+  }}
+  .bench-tab-btn-{_bench_uid}.active {{
+    background:#2770f0; color:#fff; border-color:#2770f0;
+  }}
+  .bench-tab-pane-{_bench_uid} {{ display:none; }}
+  .bench-tab-pane-{_bench_uid}.active {{ display:block; }}
+</style>
+<div class="bench-tab-bar-{_bench_uid}">
+  <button class="bench-tab-btn-{_bench_uid} active" data-tab="cz">CZ průměr</button>
+  <button class="bench-tab-btn-{_bench_uid}" data-tab="sim">{_bench_tab2_lbl}</button>
+  <button class="bench-tab-btn-{_bench_uid}" data-tab="custom">Vlastní region ▾</button>
+</div>
+<div class="bench-tab-pane-{_bench_uid} active" data-pane="cz">
+  {_bench_cz}
+</div>
+<div class="bench-tab-pane-{_bench_uid}" data-pane="sim">
+  {_bench_sim}
+</div>
+<div class="bench-tab-pane-{_bench_uid}" data-pane="custom">
+  <div style="padding:12px 0 8px 0;">
+    <label style="font-size:0.85rem;color:#374151;font-weight:600;margin-right:8px;">Porovnat s regionem:</label>
+    <select id="bench-custom-sel-{_bench_uid}"
+            style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;
+                   font-size:0.84rem;background:#fff;cursor:pointer;min-width:180px;">
+      <option value="">— Vyberte region —</option>
+    </select>
+  </div>
+  <div id="bench-custom-table-{_bench_uid}">
+    <div style="color:#aaa;font-size:0.85rem;font-style:italic;padding:16px 0;">
+      Vyberte region pro porovnání.
+    </div>
+  </div>
+</div>
+<script>
+(function() {{
+  var tabs = document.querySelectorAll(".bench-tab-btn-{_bench_uid}");
+  var panes = document.querySelectorAll(".bench-tab-pane-{_bench_uid}");
+  tabs.forEach(function(btn) {{
+    btn.addEventListener("click", function() {{
+      var t = btn.getAttribute("data-tab");
+      tabs.forEach(function(b) {{ b.classList.toggle("active", b.getAttribute("data-tab") === t); }});
+      panes.forEach(function(p) {{ p.classList.toggle("active", p.getAttribute("data-pane") === t); }});
+    }});
+  }});
+
+  var _allRegAvgs = {_bench_avgs_js};
+  var _curAvgs    = {_cur_avgs_js};
+  var _benchMeta  = {_bench_meta_js};
+  var _otherRegs  = {_other_regions_js};
+
+  var sel = document.getElementById("bench-custom-sel-{_bench_uid}");
+  var out = document.getElementById("bench-custom-table-{_bench_uid}");
+  if (sel) {{
+    _otherRegs.forEach(function(rn) {{
+      var opt = document.createElement("option");
+      opt.value = rn; opt.textContent = rn;
+      sel.appendChild(opt);
+    }});
+
+    function fmtVal(v, fmt) {{
+      if (v === null || v === undefined || isNaN(v)) return "—";
+      if (fmt === "money") {{
+        var m = v / 1000;
+        return m.toLocaleString("cs-CZ", {{maximumFractionDigits:0}}) + " tis. Kč";
+      }}
+      if (fmt === "pct") return (v * 100).toFixed(1).replace(".", ",") + " %";
+      if (fmt === "exp") return v.toFixed(3);
+      return v.toLocaleString("cs-CZ", {{maximumFractionDigits:1}});
+    }}
+
+    function diffHtml(cur, other, fmt) {{
+      if (cur === null || other === null || cur === undefined || other === undefined) return "—";
+      var d = cur - other;
+      if (isNaN(d)) return "—";
+      var pos = d >= 0;
+      var col = pos ? "#1a7a4a" : "#c0392b";
+      var sign = pos ? "+" : "";
+      return "<span style=\\"color:" + col + ";font-weight:600;\\">" + sign + fmtVal(d, fmt) + "</span>";
+    }}
+
+    sel.addEventListener("change", function() {{
+      var rn = sel.value;
+      if (!rn || !_allRegAvgs[rn]) {{
+        out.innerHTML = "<div style=\\"color:#aaa;font-size:0.85rem;font-style:italic;padding:16px 0;\\">Vyberte region pro porovnání.</div>";
+        return;
+      }}
+      var regAvg = _allRegAvgs[rn];
+      var rows = "";
+      Object.keys(_benchMeta).forEach(function(col) {{
+        var meta = _benchMeta[col];
+        var lbl = meta[0], fmt = meta[1];
+        var cv = _curAvgs[col], rv = regAvg[col];
+        rows += "<tr>" +
+          "<td style=\\"text-align:left;\\">" + lbl + "</td>" +
+          "<td class=\\"benchmark-val\\" style=\\"text-align:right;\\">" + fmtVal(cv, fmt) + "</td>" +
+          "<td style=\\"text-align:right;\\">" + fmtVal(rv, fmt) + "</td>" +
+          "<td style=\\"text-align:right;\\">" + diffHtml(cv, rv, fmt) + "</td>" +
+          "</tr>";
+      }});
+      out.innerHTML = "<style>.benchmark-hover-tbl tbody tr:hover td {{ background-color: #d1fae5 !important; }}</style>" +
+        "<div class=\\"age-section-card mb-4\\">" +
+        "<div class=\\"row align-items-start\\">" +
+        "<div class=\\"col-md-8\\">" +
+        "<table class=\\"table table-sm mb-0 benchmark-hover-tbl\\" style=\\"font-size:0.83rem;\\">" +
+        "<thead class=\\"table-dark\\"><tr>" +
+        "<th style=\\"text-align:left;\\">Ukazatel</th>" +
+        "<th style=\\"color:#7ec8f7;text-align:right;\\">Region {region}</th>" +
+        "<th style=\\"text-align:right;\\">" + rn + "</th>" +
+        "<th style=\\"text-align:right;\\">Rozdíl</th>" +
+        "</tr></thead>" +
+        "<tbody>" + rows + "</tbody>" +
+        "</table></div></div></div>";
+    }});
+  }}
+}})();
+</script>"""
             if _has_oblasti:
                 _ob_bench_parts = [
                     f'<div class="ob-pre-{_fn_slug}" data-ob="__all__">{html_benchmark}</div>'
