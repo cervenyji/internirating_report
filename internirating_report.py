@@ -12669,7 +12669,7 @@ function obSet_{_fn_slug}(btn, ob){{
 </div>
 <script>
 (function() {{
-  var tabs = document.querySelectorAll(".bench-tab-btn-{_bench_uid}");
+  var tabs  = document.querySelectorAll(".bench-tab-btn-{_bench_uid}");
   var panes = document.querySelectorAll(".bench-tab-pane-{_bench_uid}");
   tabs.forEach(function(btn) {{
     btn.addEventListener("click", function() {{
@@ -12699,22 +12699,22 @@ function obSet_{_fn_slug}(btn, ob){{
     }});
 
     function fmtVal(v, fmt) {{
-      if (v === null || v === undefined || isNaN(Number(v))) return "\u2014";
+      if (v === null || v === undefined || isNaN(Number(v))) return '—';
       var n = Number(v);
-      if (fmt === "money") return (n / 1000).toLocaleString("cs-CZ", {{maximumFractionDigits:0}}) + " tis. K\u010d";
-      if (fmt === "pct")   return (n * 100).toFixed(1).replace(".", ",") + " %";
-      if (fmt === "exp")   return n.toFixed(3);
-      return n.toLocaleString("cs-CZ", {{maximumFractionDigits:1}});
+      if (fmt === 'money') return (n / 1000).toLocaleString('cs-CZ', {{maximumFractionDigits:0}}) + ' tis. Kč';
+      if (fmt === 'pct')   return (n * 100).toFixed(1).replace('.', ',') + ' %';
+      if (fmt === 'exp')   return n.toFixed(3);
+      return n.toLocaleString('cs-CZ', {{maximumFractionDigits:1}});
     }}
 
     sel.addEventListener("change", function() {{
       var rn = sel.value;
       if (!rn || !_allRegAvgs[rn]) {{
-        out.innerHTML = "<div style=\"color:#aaa;font-size:0.85rem;font-style:italic;padding:16px 0;\">Vyberte region pro porovn\u00e1n\u00ed.</div>";
-        if (leg) leg.style.display = "none";
+        out.innerHTML = '<div style="color:#aaa;font-size:0.85rem;font-style:italic;padding:16px 0;">Vyberte region pro porovnání.</div>';
+        if (leg) leg.style.display = 'none';
         return;
       }}
-      if (leg) {{ leg.style.display = "flex"; }}
+      if (leg) {{ leg.style.display = 'flex'; }}
       if (legn) legn.textContent = rn;
       var regAvg = _allRegAvgs[rn];
 
@@ -12726,56 +12726,57 @@ function obSet_{_fn_slug}(btn, ob){{
         secCols[sec].push(col);
       }});
 
-      var html = "<div style=\"font-size:0.82rem;\">";
+      var html = '<div style="font-size:0.82rem;">';
       sections.forEach(function(sec) {{
-        var sty = _secStyles[sec] || ["#f4f4f4","#444"];
-        html += "<div style=\"background:" + sty[0] + ";color:" + sty[1] + ";" +
-          "font-size:0.74rem;font-weight:700;padding:5px 10px;margin:10px 0 0;" +
-          "border-radius:4px 4px 0 0;text-transform:uppercase;letter-spacing:.3px;\">" + sec + "</div>";
+        var sty = _secStyles[sec] || ['#f4f4f4', '#444'];
+        html += '<div style="background:' + sty[0] + ';color:' + sty[1] + ';' +
+          'font-size:0.74rem;font-weight:700;padding:5px 10px;margin:10px 0 0;' +
+          'border-radius:4px 4px 0 0;text-transform:uppercase;letter-spacing:.3px;">' + sec + '</div>';
+
         secCols[sec].forEach(function(col) {{
           var m = _benchMeta[col];
           var lbl = m[0], fmt = m[1];
-          var cv = _curAvgs[col], rv = regAvg[col];
-          var lowerBetter = (fmt === "pct");
+          var cv  = _curAvgs[col], rv = regAvg[col];
+          var lowerBetter = (fmt === 'pct');
           var cvN = (cv !== null && cv !== undefined && !isNaN(Number(cv))) ? Number(cv) : null;
           var rvN = (rv !== null && rv !== undefined && !isNaN(Number(rv))) ? Number(rv) : null;
           var maxV = Math.max(Math.abs(cvN !== null ? cvN : 0), Math.abs(rvN !== null ? rvN : 0)) || 1;
           var bwC = cvN !== null ? Math.min(100, Math.round(Math.abs(cvN) / maxV * 100)) : 0;
           var bwR = rvN !== null ? Math.min(100, Math.round(Math.abs(rvN) / maxV * 100)) : 0;
-          var diffStr = "";
+          var diffStr = '';
           if (cvN !== null && rvN !== null) {{
             var d = cvN - rvN;
             var better = lowerBetter ? (d < 0) : (d > 0);
-            var dc = (Math.abs(d) < 1e-9) ? "#aaa" : (better ? "#1a7a4a" : "#c0392b");
-            diffStr = "<span style=\"color:" + dc + ";font-weight:700;font-size:0.74rem;\">" +
-              (d >= 0 ? "+" : "") + fmtVal(d, fmt) + "</span>";
+            var dc = (Math.abs(d) < 1e-9) ? '#aaa' : (better ? '#1a7a4a' : '#c0392b');
+            diffStr = '<span style="color:' + dc + ';font-weight:700;font-size:0.74rem;">' +
+              (d >= 0 ? '+' : '') + fmtVal(d, fmt) + '</span>';
           }}
           html +=
-            "<div style=\"padding:5px 10px;background:#fff;border-bottom:1px solid #f0f4f8;\">" +
-              "<div style=\"display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;\">" +
-                "<span style=\"font-size:0.76rem;font-weight:600;color:#1e293b;\">" + lbl + "</span>" +
+            '<div style="padding:5px 10px;background:#fff;border-bottom:1px solid #f0f4f8;">' +
+              '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;">' +
+                '<span style="font-size:0.76rem;font-weight:600;color:#1e293b;">' + lbl + '</span>' +
                 diffStr +
-              "</div>" +
-              "<div style=\"display:flex;align-items:center;gap:5px;margin-bottom:2px;\">" +
-                "<div style=\"width:9px;height:9px;background:#2770f0;border-radius:2px;flex-shrink:0;\"></div>" +
-                "<div style=\"flex:1;background:#e3eeff;border-radius:3px;height:8px;\">" +
-                  "<div style=\"width:" + bwC + "%;background:#2770f0;height:100%;border-radius:3px;\"></div>" +
-                "</div>" +
-                "<div style=\"min-width:115px;text-align:right;font-weight:700;color:#2770f0;font-size:0.77rem;\">" +
-                  fmtVal(cvN, fmt) + "</div>" +
-              "</div>" +
-              "<div style=\"display:flex;align-items:center;gap:5px;\">" +
-                "<div style=\"width:9px;height:9px;background:#f97316;border-radius:2px;flex-shrink:0;\"></div>" +
-                "<div style=\"flex:1;background:#fff3e0;border-radius:3px;height:8px;\">" +
-                  "<div style=\"width:" + bwR + "%;background:#f97316;height:100%;border-radius:3px;\"></div>" +
-                "</div>" +
-                "<div style=\"min-width:115px;text-align:right;font-weight:700;color:#f97316;font-size:0.77rem;\">" +
-                  fmtVal(rvN, fmt) + "</div>" +
-              "</div>" +
-            "</div>";
+              '</div>' +
+              '<div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;">' +
+                '<div style="width:9px;height:9px;background:#2770f0;border-radius:2px;flex-shrink:0;"></div>' +
+                '<div style="flex:1;background:#e3eeff;border-radius:3px;height:8px;">' +
+                  '<div style="width:' + bwC + '%;background:#2770f0;height:100%;border-radius:3px;"></div>' +
+                '</div>' +
+                '<div style="min-width:115px;text-align:right;font-weight:700;color:#2770f0;font-size:0.77rem;">' +
+                  fmtVal(cvN, fmt) + '</div>' +
+              '</div>' +
+              '<div style="display:flex;align-items:center;gap:5px;">' +
+                '<div style="width:9px;height:9px;background:#f97316;border-radius:2px;flex-shrink:0;"></div>' +
+                '<div style="flex:1;background:#fff3e0;border-radius:3px;height:8px;">' +
+                  '<div style="width:' + bwR + '%;background:#f97316;height:100%;border-radius:3px;"></div>' +
+                '</div>' +
+                '<div style="min-width:115px;text-align:right;font-weight:700;color:#f97316;font-size:0.77rem;">' +
+                  fmtVal(rvN, fmt) + '</div>' +
+              '</div>' +
+            '</div>';
         }});
       }});
-      html += "</div>";
+      html += '</div>';
       out.innerHTML = html;
     }});
   }}
