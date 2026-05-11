@@ -11446,6 +11446,11 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
   </div>
 </div>'''
 
+    # ── Regiony — sdílené pro static i regional ───────────────────────────────
+    _bench_regions = sorted(
+        [r for r in rating_status['REGION_NAME'].dropna().unique() if str(r) not in ('', 'nan', 'None')]
+    ) if 'REGION_NAME' in rating_status.columns else []
+
     if mode == 'static':
         _sort_cols = [c for c in TABLE_SORT_COLUMNS if c in rating_status.columns] or ["IR"]
         df_sorted    = rating_status.sort_values(by=_sort_cols)
@@ -11497,9 +11502,6 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
 </script>"""
 
         # --- síťový benchmark (celá síť + per region) ---
-        _bench_regions = sorted(
-            [r for r in rating_status['REGION_NAME'].dropna().unique() if str(r) not in ('','nan','None')]
-        ) if 'REGION_NAME' in rating_status.columns else []
         _bench_reg_dfs = {r: rating_status[rating_status['REGION_NAME'] == r] for r in _bench_regions}
 
         def _bv(df, col, mode='avg'):
@@ -12539,47 +12541,78 @@ function obSet_{_fn_slug}(btn, ob){{
                 _bench_sim      = _make_bench_html(df_reg, df_others, f"Region {region}", "Ostatní regiony")
                 _bench_tab2_lbl = "Ostatní regiony"
 
-            # Key metrics for custom region comparison
-            _KEY_BENCH_COLS = [c for c in [
-                'VYNOSY','OBJEM_VYNOSU_CZK','PRIME_NAKLADY/VYNOSY',
-                'POCET_NAVSTEV_CELKEM','POCET_PRODEJU_CELKEM_2025','FTE','_total_spec',
-                'BANKERS_COUNT','HODNOTA_INDEXU_EXPOZICE','CAP_REV_FTE','CAP_NEWCLI_FTE',
-                'CAP_SCHUZKY_FTE','CAP_PEREX',
-            ] if c in rating_status.columns]
-            _KEY_BENCH_LABELS = {
-                'VYNOSY':                   ('Výnosy 25',            'money'),
-                'OBJEM_VYNOSU_CZK':         ('Nové výnosy 25',       'money'),
-                'PRIME_NAKLADY/VYNOSY':     ('C/I Ratio 25',         'pct'),
-                'POCET_NAVSTEV_CELKEM':     ('Návštěvy celkem',      'num'),
-                'POCET_PRODEJU_CELKEM_2025':('Prodeje celkem',       'num'),
-                'FTE':                      ('Celková FTE',          'num'),
-                '_total_spec':              ('FTE redim',            'num'),
-                'BANKERS_COUNT':            ('Bankéři redim',        'num'),
-                'HODNOTA_INDEXU_EXPOZICE':  ('Index expozice',       'exp'),
-                'CAP_REV_FTE':              ('Výnos/bankéř',         'money'),
-                'CAP_NEWCLI_FTE':           ('Noví klienti/bankéř',  'num'),
-                'CAP_SCHUZKY_FTE':          ('Schůzky/bankéř',       'num'),
-                'CAP_PEREX':                ('PEREX',                'num'),
-            }
+            # ── Metriky pro vlastní výběr regionu (s rozšířeným pokrytím) ──────────
+            _pg_meta = []
+            for _pgk, _pgl in PRODUCT_GROUPS:
+                _vc = f'OBJEM_VYNOSU_CZK_{_pgk}_2025'
+                _pc = f'POCET_PRODEJU_{_pgk}_2025'
+                if _vc in rating_status.columns:
+                    _pg_meta.append((_vc, f'{_pgl} — výnosy', 'money', '🛒 Produkty'))
+                if _pc in rating_status.columns:
+                    _pg_meta.append((_pc, f'{_pgl} — počet', 'num', '🛒 Produkty'))
+            _age_meta = []
+            for _ag in AGE_GROUPS:
+                if f'{_ag}_POCET_KLIENTU' in rating_status.columns:
+                    _age_meta.append((f'{_ag}_POCET_KLIENTU', f'{_ag} — počet klientů', 'num', '👥 Věk'))
+                if f'{_ag}_PRUMERNY_VYNOS' in rating_status.columns:
+                    _age_meta.append((f'{_ag}_PRUMERNY_VYNOS', f'{_ag} — prům. výnos', 'money', '👥 Věk'))
+            _KEY_BENCH_META = [
+                m for m in [
+                    ('VYNOSY',                    'Výnosy 25',               'money', '💰 Finanční'),
+                    ('OBJEM_VYNOSU_CZK',          'Nové výnosy 25',          'money', '💰 Finanční'),
+                    ('PRIME_NAKLADY/VYNOSY',      'C/I Ratio 25',            'pct',   '💰 Finanční'),
+                    ('POCET_PRODEJU_CELKEM_2025', 'Prodeje celkem',          'num',   '🛒 Obchody'),
+                    *_pg_meta,
+                    ('POCET_NAVSTEV_CELKEM',      'Návštěvy celkem',         'num',   '🚶 Návštěvy'),
+                    ('POCET_HOT_WALK_IN',         'Hotov. walk-in',          'num',   '🚶 Návštěvy'),
+                    ('POCET_BEZHOT_WALK_IN',      'Bezhotov. walk-in',       'num',   '🚶 Návštěvy'),
+                    *_age_meta,
+                    ('FTE',                       'Celková FTE',             'num',   '👷 FTE'),
+                    ('_total_spec',               'FTE redim',               'num',   '👷 FTE'),
+                    ('BANKERS_COUNT',             'Bankéři redim',           'num',   '👷 FTE'),
+                    ('OBCHODNI_FTE',              'FTE obchodní',            'num',   '👷 FTE'),
+                    ('CIZINCI',                   'Cizinci celkem',          'num',   '🌍 Cizinci'),
+                    ('CIZINCI_SLOVENSKO',         'Cizinci SK',              'num',   '🌍 Cizinci'),
+                    ('CIZINCI_UKRAJINA',          'Cizinci UA',              'num',   '🌍 Cizinci'),
+                    ('HODNOTA_INDEXU_EXPOZICE',   'Index expozice',          'exp',   '📡 Expozice'),
+                    ('CAP_REV_FTE',               'Výnos/bankéř',            'money', '📈 Business'),
+                    ('CAP_NEWCLI_FTE',            'Noví klienti/bankéř',     'num',   '📈 Business'),
+                    ('CAP_PRIMCLI_FTE',           'Primární klienti/bankéř', 'num',   '📈 Business'),
+                    ('CAP_SCHUZKY_FTE',           'Schůzky/bankéř',          'num',   '📈 Business'),
+                    ('CAP_PEREX',                 'PEREX',                   'num',   '📈 Business'),
+                ]
+                if m[0] in rating_status.columns
+            ]
             _cur_avgs_py = {
                 col: (float(df_reg[col].mean()) if col in df_reg.columns else None)
-                for col in _KEY_BENCH_COLS
+                for col, _, _, _ in _KEY_BENCH_META
             }
             _all_reg_avgs_py = {}
-            for _rn in (_bench_regions if '_bench_regions' in dir() else []):
+            for _rn in _bench_regions:
                 _rdf = rating_status[rating_status['REGION_NAME'] == _rn]
                 _all_reg_avgs_py[_rn] = {
                     col: (float(_rdf[col].mean()) if col in _rdf.columns else None)
-                    for col in _KEY_BENCH_COLS
+                    for col, _, _, _ in _KEY_BENCH_META
                 }
-            _bench_avgs_js    = _json_bench.dumps(_all_reg_avgs_py)
-            _cur_avgs_js      = _json_bench.dumps(_cur_avgs_py)
-            _bench_meta_js    = _json_bench.dumps({
-                col: list(_KEY_BENCH_LABELS.get(col, (col, 'num')))
-                for col in _KEY_BENCH_COLS
+            _bench_avgs_js       = _json_bench.dumps(_all_reg_avgs_py)
+            _cur_avgs_js         = _json_bench.dumps(_cur_avgs_py)
+            _bench_meta_js       = _json_bench.dumps({
+                col: [lbl, fmt, sec] for col, lbl, fmt, sec in _KEY_BENCH_META
+            })
+            _bench_cols_order_js = _json_bench.dumps([col for col, _, _, _ in _KEY_BENCH_META])
+            _sec_styles_js       = _json_bench.dumps({
+                '💰 Finanční': ['#f0f4ff', '#2770f0'],
+                '🛒 Obchody':  ['#e8f5e9', '#1a7a4a'],
+                '🛒 Produkty': ['#e8f5e9', '#1a7a4a'],
+                '🚶 Návštěvy': ['#f0f4ff', '#2770f0'],
+                '👥 Věk':      ['#fce4ec', '#c2185b'],
+                '👷 FTE':      ['#e8f4fd', '#004d5f'],
+                '🌍 Cizinci':  ['#f0e6ff', '#6c3483'],
+                '📡 Expozice': ['#fff8e1', '#8b6914'],
+                '📈 Business': ['#fff3c4', '#7a5c00'],
             })
             _other_regions_js = _json_bench.dumps(
-                [r for r in (_bench_regions if '_bench_regions' in dir() else []) if r != region]
+                [r for r in _bench_regions if r != region]
             )
             _bench_uid = region_slug
 
@@ -12612,18 +12645,26 @@ function obSet_{_fn_slug}(btn, ob){{
   {_bench_sim}
 </div>
 <div class="bench-tab-pane-{_bench_uid}" data-pane="custom">
-  <div style="padding:12px 0 8px 0;">
-    <label style="font-size:0.85rem;color:#374151;font-weight:600;margin-right:8px;">Porovnat s regionem:</label>
+  <div style="padding:12px 0 10px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+    <label style="font-size:0.85rem;color:#374151;font-weight:600;">Porovnat s regionem:</label>
     <select id="bench-custom-sel-{_bench_uid}"
             style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;
-                   font-size:0.84rem;background:#fff;cursor:pointer;min-width:180px;">
+                   font-size:0.84rem;background:#fff;cursor:pointer;min-width:210px;">
       <option value="">— Vyberte region —</option>
     </select>
   </div>
-  <div id="bench-custom-table-{_bench_uid}">
-    <div style="color:#aaa;font-size:0.85rem;font-style:italic;padding:16px 0;">
-      Vyberte region pro porovnání.
+  <div id="bench-custom-legend-{_bench_uid}" style="display:none;padding:4px 0 10px;align-items:center;gap:18px;">
+    <div style="display:flex;align-items:center;gap:5px;">
+      <div style="width:14px;height:10px;background:#2770f0;border-radius:2px;"></div>
+      <span style="font-size:0.76rem;color:#374151;font-weight:600;">Region {region}</span>
     </div>
+    <div style="display:flex;align-items:center;gap:5px;">
+      <div style="width:14px;height:10px;background:#f97316;border-radius:2px;"></div>
+      <span id="bench-custom-legname-{_bench_uid}" style="font-size:0.76rem;color:#374151;font-weight:600;"></span>
+    </div>
+  </div>
+  <div id="bench-custom-out-{_bench_uid}">
+    <div style="color:#aaa;font-size:0.85rem;font-style:italic;padding:16px 0;">Vyberte region pro porovnání.</div>
   </div>
 </div>
 <script>
@@ -12641,10 +12682,15 @@ function obSet_{_fn_slug}(btn, ob){{
   var _allRegAvgs = {_bench_avgs_js};
   var _curAvgs    = {_cur_avgs_js};
   var _benchMeta  = {_bench_meta_js};
+  var _colsOrder  = {_bench_cols_order_js};
+  var _secStyles  = {_sec_styles_js};
   var _otherRegs  = {_other_regions_js};
 
-  var sel = document.getElementById("bench-custom-sel-{_bench_uid}");
-  var out = document.getElementById("bench-custom-table-{_bench_uid}");
+  var sel  = document.getElementById("bench-custom-sel-{_bench_uid}");
+  var out  = document.getElementById("bench-custom-out-{_bench_uid}");
+  var leg  = document.getElementById("bench-custom-legend-{_bench_uid}");
+  var legn = document.getElementById("bench-custom-legname-{_bench_uid}");
+
   if (sel) {{
     _otherRegs.forEach(function(rn) {{
       var opt = document.createElement("option");
@@ -12653,58 +12699,84 @@ function obSet_{_fn_slug}(btn, ob){{
     }});
 
     function fmtVal(v, fmt) {{
-      if (v === null || v === undefined || isNaN(v)) return "—";
-      if (fmt === "money") {{
-        var m = v / 1000;
-        return m.toLocaleString("cs-CZ", {{maximumFractionDigits:0}}) + " tis. Kč";
-      }}
-      if (fmt === "pct") return (v * 100).toFixed(1).replace(".", ",") + " %";
-      if (fmt === "exp") return v.toFixed(3);
-      return v.toLocaleString("cs-CZ", {{maximumFractionDigits:1}});
-    }}
-
-    function diffHtml(cur, other, fmt) {{
-      if (cur === null || other === null || cur === undefined || other === undefined) return "—";
-      var d = cur - other;
-      if (isNaN(d)) return "—";
-      var pos = d >= 0;
-      var col = pos ? "#1a7a4a" : "#c0392b";
-      var sign = pos ? "+" : "";
-      return "<span style=\\"color:" + col + ";font-weight:600;\\">" + sign + fmtVal(d, fmt) + "</span>";
+      if (v === null || v === undefined || isNaN(Number(v))) return "\u2014";
+      var n = Number(v);
+      if (fmt === "money") return (n / 1000).toLocaleString("cs-CZ", {{maximumFractionDigits:0}}) + " tis. K\u010d";
+      if (fmt === "pct")   return (n * 100).toFixed(1).replace(".", ",") + " %";
+      if (fmt === "exp")   return n.toFixed(3);
+      return n.toLocaleString("cs-CZ", {{maximumFractionDigits:1}});
     }}
 
     sel.addEventListener("change", function() {{
       var rn = sel.value;
       if (!rn || !_allRegAvgs[rn]) {{
-        out.innerHTML = "<div style=\\"color:#aaa;font-size:0.85rem;font-style:italic;padding:16px 0;\\">Vyberte region pro porovnání.</div>";
+        out.innerHTML = "<div style=\"color:#aaa;font-size:0.85rem;font-style:italic;padding:16px 0;\">Vyberte region pro porovn\u00e1n\u00ed.</div>";
+        if (leg) leg.style.display = "none";
         return;
       }}
+      if (leg) {{ leg.style.display = "flex"; }}
+      if (legn) legn.textContent = rn;
       var regAvg = _allRegAvgs[rn];
-      var rows = "";
-      Object.keys(_benchMeta).forEach(function(col) {{
-        var meta = _benchMeta[col];
-        var lbl = meta[0], fmt = meta[1];
-        var cv = _curAvgs[col], rv = regAvg[col];
-        rows += "<tr>" +
-          "<td style=\\"text-align:left;\\">" + lbl + "</td>" +
-          "<td class=\\"benchmark-val\\" style=\\"text-align:right;\\">" + fmtVal(cv, fmt) + "</td>" +
-          "<td style=\\"text-align:right;\\">" + fmtVal(rv, fmt) + "</td>" +
-          "<td style=\\"text-align:right;\\">" + diffHtml(cv, rv, fmt) + "</td>" +
-          "</tr>";
+
+      var sections = [], secCols = {{}};
+      _colsOrder.forEach(function(col) {{
+        if (!_benchMeta[col]) return;
+        var sec = _benchMeta[col][2];
+        if (!secCols[sec]) {{ secCols[sec] = []; sections.push(sec); }}
+        secCols[sec].push(col);
       }});
-      out.innerHTML = "<style>.benchmark-hover-tbl tbody tr:hover td {{ background-color: #d1fae5 !important; }}</style>" +
-        "<div class=\\"age-section-card mb-4\\">" +
-        "<div class=\\"row align-items-start\\">" +
-        "<div class=\\"col-md-8\\">" +
-        "<table class=\\"table table-sm mb-0 benchmark-hover-tbl\\" style=\\"font-size:0.83rem;\\">" +
-        "<thead class=\\"table-dark\\"><tr>" +
-        "<th style=\\"text-align:left;\\">Ukazatel</th>" +
-        "<th style=\\"color:#7ec8f7;text-align:right;\\">Region {region}</th>" +
-        "<th style=\\"text-align:right;\\">" + rn + "</th>" +
-        "<th style=\\"text-align:right;\\">Rozdíl</th>" +
-        "</tr></thead>" +
-        "<tbody>" + rows + "</tbody>" +
-        "</table></div></div></div>";
+
+      var html = "<div style=\"font-size:0.82rem;\">";
+      sections.forEach(function(sec) {{
+        var sty = _secStyles[sec] || ["#f4f4f4","#444"];
+        html += "<div style=\"background:" + sty[0] + ";color:" + sty[1] + ";" +
+          "font-size:0.74rem;font-weight:700;padding:5px 10px;margin:10px 0 0;" +
+          "border-radius:4px 4px 0 0;text-transform:uppercase;letter-spacing:.3px;\">" + sec + "</div>";
+        secCols[sec].forEach(function(col) {{
+          var m = _benchMeta[col];
+          var lbl = m[0], fmt = m[1];
+          var cv = _curAvgs[col], rv = regAvg[col];
+          var lowerBetter = (fmt === "pct");
+          var cvN = (cv !== null && cv !== undefined && !isNaN(Number(cv))) ? Number(cv) : null;
+          var rvN = (rv !== null && rv !== undefined && !isNaN(Number(rv))) ? Number(rv) : null;
+          var maxV = Math.max(Math.abs(cvN !== null ? cvN : 0), Math.abs(rvN !== null ? rvN : 0)) || 1;
+          var bwC = cvN !== null ? Math.min(100, Math.round(Math.abs(cvN) / maxV * 100)) : 0;
+          var bwR = rvN !== null ? Math.min(100, Math.round(Math.abs(rvN) / maxV * 100)) : 0;
+          var diffStr = "";
+          if (cvN !== null && rvN !== null) {{
+            var d = cvN - rvN;
+            var better = lowerBetter ? (d < 0) : (d > 0);
+            var dc = (Math.abs(d) < 1e-9) ? "#aaa" : (better ? "#1a7a4a" : "#c0392b");
+            diffStr = "<span style=\"color:" + dc + ";font-weight:700;font-size:0.74rem;\">" +
+              (d >= 0 ? "+" : "") + fmtVal(d, fmt) + "</span>";
+          }}
+          html +=
+            "<div style=\"padding:5px 10px;background:#fff;border-bottom:1px solid #f0f4f8;\">" +
+              "<div style=\"display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;\">" +
+                "<span style=\"font-size:0.76rem;font-weight:600;color:#1e293b;\">" + lbl + "</span>" +
+                diffStr +
+              "</div>" +
+              "<div style=\"display:flex;align-items:center;gap:5px;margin-bottom:2px;\">" +
+                "<div style=\"width:9px;height:9px;background:#2770f0;border-radius:2px;flex-shrink:0;\"></div>" +
+                "<div style=\"flex:1;background:#e3eeff;border-radius:3px;height:8px;\">" +
+                  "<div style=\"width:" + bwC + "%;background:#2770f0;height:100%;border-radius:3px;\"></div>" +
+                "</div>" +
+                "<div style=\"min-width:115px;text-align:right;font-weight:700;color:#2770f0;font-size:0.77rem;\">" +
+                  fmtVal(cvN, fmt) + "</div>" +
+              "</div>" +
+              "<div style=\"display:flex;align-items:center;gap:5px;\">" +
+                "<div style=\"width:9px;height:9px;background:#f97316;border-radius:2px;flex-shrink:0;\"></div>" +
+                "<div style=\"flex:1;background:#fff3e0;border-radius:3px;height:8px;\">" +
+                  "<div style=\"width:" + bwR + "%;background:#f97316;height:100%;border-radius:3px;\"></div>" +
+                "</div>" +
+                "<div style=\"min-width:115px;text-align:right;font-weight:700;color:#f97316;font-size:0.77rem;\">" +
+                  fmtVal(rvN, fmt) + "</div>" +
+              "</div>" +
+            "</div>";
+        }});
+      }});
+      html += "</div>";
+      out.innerHTML = html;
     }});
   }}
 }})();
