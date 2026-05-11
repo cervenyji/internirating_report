@@ -13007,11 +13007,45 @@ function obSet_{_fn_slug}(btn, ob){{
                 _avg_ir     = float(df_cmp['IR'].mean()) if 'IR' in df_cmp.columns else None
                 _avg_ci     = float(df_cmp['PRIME_NAKLADY/VYNOSY'].mean()) if 'PRIME_NAKLADY/VYNOSY' in df_cmp.columns else None
 
-                # ── Revenue rank for color coding ──────────────────────────────
-                if 'VYNOSY_SUM' in _reg_agg.columns:
-                    _reg_agg_ranked = _reg_agg.sort_values('VYNOSY_SUM', ascending=False).reset_index(drop=True)
+                # ── Nové výnosy / pobočka ──────────────────────────────────────
+                if 'NOV_VYNOSY_SUM' in _reg_agg.columns and 'POCET_PB' in _reg_agg.columns:
+                    _reg_agg['NOV_VYNOSY_PER_PB'] = (
+                        _reg_agg['NOV_VYNOSY_SUM'] / _reg_agg['POCET_PB'].replace(0, float('nan'))
+                    )
                 else:
-                    _reg_agg_ranked = _reg_agg.copy()
+                    _reg_agg['NOV_VYNOSY_PER_PB'] = float('nan')
+
+                # ── Normalisační helper ────────────────────────────────────────
+                def _norm_01(series, lower_better=False):
+                    s = pd.to_numeric(series, errors='coerce')
+                    mn, mx = s.min(), s.max()
+                    if pd.isna(mn) or pd.isna(mx) or mx == mn:
+                        return pd.Series(0.5, index=series.index)
+                    n = (s - mn) / (mx - mn)
+                    return (1.0 - n) if lower_better else n
+
+                # ── Kvintilová normalisace (1=nejlepší … 5=nejhorší) ──────────
+                def _quintile_score(series, lower_better=False):
+                    n01 = _norm_01(series, lower_better=lower_better)
+                    return (n01 * 4.0 + 1.0).clip(1.0, 5.0).round(2)
+
+                # ── Vážené kompozitní skóre ────────────────────────────────────
+                # Výnosy 15 %, C/I 20 %, Nové výnosy 50 %, Nové výnosy/pb 15 %
+                _score = pd.Series(0.0, index=_reg_agg.index)
+                _wt = 0.0
+                for _sc, _sw, _slb in [
+                    ('VYNOSY_SUM',       0.15, False),
+                    ('CI_MEAN',          0.20, True),
+                    ('NOV_VYNOSY_SUM',   0.50, False),
+                    ('NOV_VYNOSY_PER_PB',0.15, False),
+                ]:
+                    if _sc in _reg_agg.columns and _reg_agg[_sc].notna().any():
+                        _score += _sw * _norm_01(_reg_agg[_sc], _slb)
+                        _wt    += _sw
+                _reg_agg['_SCORE'] = (_score / _wt).round(4) if _wt > 0 else 0.5
+
+                # ── Rank by composite score ────────────────────────────────────
+                _reg_agg_ranked = _reg_agg.sort_values('_SCORE', ascending=False).reset_index(drop=True)
                 _top3_regions = list(_reg_agg_ranked.iloc[:3]['REGION_NAME']) if len(_reg_agg_ranked) >= 3 else list(_reg_agg_ranked['REGION_NAME'])
                 _bot3_regions = list(_reg_agg_ranked.iloc[-3:]['REGION_NAME']) if len(_reg_agg_ranked) >= 6 else []
 
@@ -13052,16 +13086,19 @@ function obSet_{_fn_slug}(btn, ob){{
                     )
 
                 # ── Section 2: Rankings ────────────────────────────────────────
+                _BLUE  = '#2770f0'
+                _GREEN = '#0bb440'
+                _AMBER = '#e07a2a'
                 _rank_items = [
-                    _rank_block('💰 Celkové výnosy',          'VYNOSY_SUM',       format_money,      '#0bb440'),
-                    _rank_block('💰 Průměrné výnosy na pb.',  'VYNOSY_MEAN',      format_money,      '#1b8c4e'),
-                    _rank_block('📈 Nové výnosy',             'NOV_VYNOSY_SUM',   format_money,      '#2770f0'),
-                    _rank_block('🛒 Prodeje celkem',          'PRODEJE_SUM',      format_num_round,  '#7c3aed'),
-                    _rank_block('🚶 Návštěvnost',             'NAVSTEVY_SUM',     format_num_round,  '#0891b2'),
-                    _rank_block('👷 FTE celkem',              'FTE_SUM',          format_num_round,  '#b45309'),
-                    _rank_block('📡 Index expozice',          'EXP_MEAN',         format_pct,        '#64748b'),
-                    _rank_block('⭐ Průměrný rating IR',      'IR_MEAN',          format_num_round,  '#f59e0b'),
-                    _rank_block('📊 C/I Ratio (nižší = lepší)', 'CI_MEAN',        format_pct,        '#e11d48', lower_better=True),
+                    _rank_block('🏆 Kompozitní skóre',        '_SCORE',           lambda v: f'{float(v):.3f}', _GREEN),
+                    _rank_block('💰 Celkové výnosy',          'VYNOSY_SUM',       format_money,      _GREEN),
+                    _rank_block('📈 Nové výnosy (sum)',        'NOV_VYNOSY_SUM',   format_money,      _BLUE),
+                    _rank_block('📈 Nové výnosy / pb.',       'NOV_VYNOSY_PER_PB',format_money,      _BLUE),
+                    _rank_block('💰 Průměrné výnosy na pb.',  'VYNOSY_MEAN',      format_money,      _GREEN),
+                    _rank_block('📊 C/I Ratio (nižší = lepší)', 'CI_MEAN',        format_pct,        _AMBER, lower_better=True),
+                    _rank_block('🛒 Prodeje celkem',          'PRODEJE_SUM',      format_num_round,  _BLUE),
+                    _rank_block('🚶 Návštěvnost',             'NAVSTEVY_SUM',     format_num_round,  _BLUE),
+                    _rank_block('⭐ Průměrný rating IR',      'IR_MEAN',          format_num_round,  _AMBER),
                 ]
                 _rank_items = [r for r in _rank_items if r]
                 _rank_grid = ''
@@ -13080,20 +13117,107 @@ function obSet_{_fn_slug}(btn, ob){{
                     default_open=True,
                 )
 
+
+                # ── Section 2b: Radar chart ───────────────────────────────────
+                _radar_spec = [
+                    ('VYNOSY_MEAN',      'Výnosy/pb',     False),
+                    ('NOV_VYNOSY_SUM',   'Nové výnosy',   False),
+                    ('NOV_VYNOSY_PER_PB','Nov.výnosy/pb', False),
+                    ('CI_MEAN',          'C/I (inv.)',     True),
+                    ('PRODEJE_SUM',      'Prodeje',        False),
+                    ('NAVSTEVY_SUM',     'Návštěvy',       False),
+                    ('EXP_MEAN',         'Expozice',       False),
+                    ('CAP_REV_FTE_MEAN', 'Výnos/bankéř',  False),
+                    ('IR_MEAN',          'Rating (inv.)',  True),
+                ]
+                _radar_spec = [(c, lbl, lb) for c, lbl, lb in _radar_spec if c in _reg_agg.columns]
+                _radar_categories_json = _json_cmp.dumps([lbl for _, lbl, _ in _radar_spec])
+
+                # Build per-region quintile scores for each vertex
+                _radar_series = []
+                _radar_colors = ['#2770f0','#0bb440','#e07a2a','#c0392b','#7c3aed',
+                                  '#0891b2','#b45309','#64748b','#f59e0b','#1b8c4e']
+                for _ri_r, _rr in _reg_agg_ranked.iterrows():
+                    _rname = str(_rr['REGION_NAME'])
+                    _vals = []
+                    for _col, _lbl, _lb in _radar_spec:
+                        _qs = _quintile_score(_reg_agg[_col], lower_better=_lb)
+                        _qv = float(_qs.iloc[_ri_r]) if _ri_r < len(_qs) else 3.0
+                        _vals.append(round(_qv, 2))
+                    _radar_series.append({'name': _rname, 'data': _vals})
+                _radar_series_json = _json_cmp.dumps(_radar_series)
+                _radar_colors_json = _json_cmp.dumps(_radar_colors[:len(_radar_series)])
+
+                _radar_div_id = 'radar-cmp-' + str(id(_reg_agg))[:8]
+                _radar_html = (
+                    '<div style="display:flex;gap:0;align-items:flex-start;flex-wrap:wrap;">'
+                    '<div id="' + _radar_div_id + '" style="flex:1;min-width:320px;min-height:420px;"></div>'
+                    '<div style="min-width:160px;max-width:200px;padding:12px;font-size:0.75rem;">'
+                    '<div style="font-weight:700;color:#0f172a;margin-bottom:8px;">Regiony</div>'
+                )
+                for _ri_r2, _rr2 in _reg_agg_ranked.iterrows():
+                    _rn2 = str(_rr2['REGION_NAME'])
+                    _clr2 = _radar_colors[_ri_r2 % len(_radar_colors)]
+                    _sc2  = float(_rr2['_SCORE']) if '_SCORE' in _rr2 else 0.0
+                    _radar_html += (
+                        '<div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;">'
+                        '<div style="width:12px;height:12px;background:' + _clr2 + ';border-radius:2px;flex-shrink:0;"></div>'
+                        '<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;color:#0f172a;">' + _rn2 + '</div>'
+                        '<div style="font-weight:700;color:' + _clr2 + ';white-space:nowrap;">' + f'{_sc2:.3f}' + '</div>'
+                        '</div>'
+                    )
+                _radar_html += (
+                    '</div></div>'
+                    '<div style="font-size:0.7rem;color:#888;margin-top:4px;">'
+                    'Vrcholy = kvintilové skóre 1 (nejhorší) … 5 (nejlepší). '
+                    'C/I a Rating jsou invertovány (nižší = lepší = vyšší skóre).'
+                    '</div>'
+                    '<script>'
+                    'document.addEventListener("DOMContentLoaded",function(){'
+                    '  var opts={'
+                    '    chart:{type:"radar",height:420,toolbar:{show:false},'
+                    '      dropShadow:{enabled:true,blur:3,left:1,top:1,opacity:0.05}},'
+                    '    series:' + _radar_series_json + ','
+                    '    xaxis:{categories:' + _radar_categories_json + '},'
+                    '    yaxis:{min:1,max:5,tickAmount:4,'
+                    '      labels:{formatter:function(v){return ["","Q5","Q4","Q3","Q2","Q1"][Math.round(v)]||v;}}},'
+                    '    colors:' + _radar_colors_json + ','
+                    '    fill:{opacity:0.09},'
+                    '    stroke:{width:2},'
+                    '    markers:{size:4},'
+                    '    legend:{show:false},'
+                    '    dataLabels:{enabled:false},'
+                    '    plotOptions:{radar:{polygons:{strokeColors:"#e2e8f0",connectorColors:"#e2e8f0"}}},'
+                    '    tooltip:{y:{formatter:function(v){return "Q-skóre: "+v.toFixed(2);}}}'
+                    '  };'
+                    '  var el=document.getElementById("' + _radar_div_id + '");'
+                    '  if(el&&typeof ApexCharts!=="undefined"){new ApexCharts(el,opts).render();}'
+                    '});'
+                    '</script>'
+                )
+                _sec_radar = make_collapsible(
+                    'cmp-radar',
+                    '🕸 Radar — kvintilové skóre regionů',
+                    _radar_html,
+                    default_open=True,
+                )
+
                 # ── Section 3: Summary table ───────────────────────────────────
                 _tbl_cols = [
-                    ('REGION_NAME',     'Region',           lambda v: str(v)),
-                    ('POCET_PB',        'Počet pb.',         lambda v: str(int(v)) if pd.notna(v) else '—'),
-                    ('VYNOSY_SUM',      'Výnosy (sum)',      lambda v: format_money(v) if pd.notna(v) else '—'),
-                    ('VYNOSY_MEAN',     'Výnosy/pb',         lambda v: format_money(v) if pd.notna(v) else '—'),
-                    ('NOV_VYNOSY_SUM',  'Nové výnosy (sum)', lambda v: format_money(v) if pd.notna(v) else '—'),
-                    ('CI_MEAN',         'C/I Ratio',         lambda v: format_pct(v) if pd.notna(v) else '—'),
-                    ('PRODEJE_SUM',     'Prodeje',           lambda v: format_num_round(v) if pd.notna(v) else '—'),
-                    ('NAVSTEVY_SUM',    'Návštěvy',          lambda v: format_num_round(v) if pd.notna(v) else '—'),
-                    ('FTE_SUM',         'FTE',               lambda v: format_num_round(v) if pd.notna(v) else '—'),
-                    ('IR_MEAN',         'IR prům.',          lambda v: f'{float(v):.1f}' if pd.notna(v) else '—'),
-                    ('EXP_MEAN',        'Index expozice',    lambda v: format_pct(v) if pd.notna(v) else '—'),
-                    ('CAP_REV_FTE_MEAN','Výnos/bankéř',      lambda v: format_money(v) if pd.notna(v) else '—'),
+                    ('REGION_NAME',      'Region',             lambda v: str(v)),
+                    ('POCET_PB',         'Počet pb.',           lambda v: str(int(v)) if pd.notna(v) else '—'),
+                    ('_SCORE',           'Skóre',               lambda v: f'{float(v):.3f}' if pd.notna(v) else '—'),
+                    ('VYNOSY_SUM',       'Výnosy (sum)',        lambda v: format_money(v) if pd.notna(v) else '—'),
+                    ('VYNOSY_MEAN',      'Výnosy/pb',           lambda v: format_money(v) if pd.notna(v) else '—'),
+                    ('NOV_VYNOSY_SUM',   'Nové výnosy (sum)',   lambda v: format_money(v) if pd.notna(v) else '—'),
+                    ('NOV_VYNOSY_PER_PB','Nové výnosy/pb',      lambda v: format_money(v) if pd.notna(v) else '—'),
+                    ('CI_MEAN',          'C/I Ratio',           lambda v: format_pct(v) if pd.notna(v) else '—'),
+                    ('PRODEJE_SUM',      'Prodeje',             lambda v: format_num_round(v) if pd.notna(v) else '—'),
+                    ('NAVSTEVY_SUM',     'Návštěvy',            lambda v: format_num_round(v) if pd.notna(v) else '—'),
+                    ('FTE_SUM',          'FTE',                 lambda v: format_num_round(v) if pd.notna(v) else '—'),
+                    ('IR_MEAN',          'IR prům.',            lambda v: f'{float(v):.1f}' if pd.notna(v) else '—'),
+                    ('EXP_MEAN',         'Index expozice',      lambda v: format_pct(v) if pd.notna(v) else '—'),
+                    ('CAP_REV_FTE_MEAN', 'Výnos/bankéř',        lambda v: format_money(v) if pd.notna(v) else '—'),
                 ]
                 _avail_tbl = [(c, lbl, fn) for c, lbl, fn in _tbl_cols if c in _reg_agg_ranked.columns or c == 'REGION_NAME']
 
@@ -13393,6 +13517,8 @@ function obSet_{_fn_slug}(btn, ob){{
     {_summary_strip}
 
     {_sec_rankings}
+
+    {_sec_radar}
 
     {_sec_table}
 
