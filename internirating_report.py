@@ -13008,6 +13008,14 @@ function obSet_{_fn_slug}(btn, ob){{
                     **({'CAP_NEWCLI_MEAN':     ('CAP_NEWCLI_FTE', 'mean')} if 'CAP_NEWCLI_FTE' in df_cmp.columns else {}),
                     **{f'PG_{k}_SUM': (f'POCET_PRODEJU_{k}_2025', 'sum') for k, _ in PRODUCT_GROUPS
                        if f'POCET_PRODEJU_{k}_2025' in df_cmp.columns},
+                    **{f'PG_{k}_OBJ': (f'OBJEM_VYNOSU_CZK_{k}_2025', 'sum') for k, _ in PRODUCT_GROUPS
+                       if f'OBJEM_VYNOSU_CZK_{k}_2025' in df_cmp.columns},
+                    **({'POCET_KLIENTU_SUM': ('POCET_KLIENTU', 'sum')} if 'POCET_KLIENTU' in df_cmp.columns else {}),
+                    **({'AKTIVNI_KLIENTI_SUM': ('AKTIVNI_KLIENTI', 'sum')} if 'AKTIVNI_KLIENTI' in df_cmp.columns else {}),
+                    **{f'AGE_{g.replace("-","_")}_SUM': (f'{g}_POCET_KLIENTU', 'sum')
+                       for g in AGE_GROUPS if f'{g}_POCET_KLIENTU' in df_cmp.columns},
+                    **{f'AGE_{g.replace("-","_")}_REV': (f'{g}_PRUMERNY_VYNOS', 'mean')
+                       for g in AGE_GROUPS if f'{g}_PRUMERNY_VYNOS' in df_cmp.columns},
                 ).reset_index()
 
                 _n_regions  = len(_reg_agg)
@@ -13218,68 +13226,98 @@ function obSet_{_fn_slug}(btn, ob){{
                 _radar_spec = [(c, lbl, lb) for c, lbl, lb in _radar_spec if c in _reg_agg.columns]
                 _radar_categories_json = _json_cmp.dumps([lbl for _, lbl, _ in _radar_spec])
 
-                # Build per-region quintile scores for each vertex
-                _radar_series = []
+                # Pre-compute quintile scores indexed by REGION_NAME (fixes region-order bug)
                 _radar_colors = ['#2770f0','#0bb440','#e07a2a','#c0392b','#7c3aed',
                                   '#0891b2','#b45309','#64748b','#f59e0b','#1b8c4e']
-                for _ri_r, _rr in _reg_agg_ranked.iterrows():
+                _radar_quint = {}
+                _reg_agg_idx = _reg_agg.set_index('REGION_NAME')
+                for _col, _lbl, _lb in _radar_spec:
+                    _qs = _quintile_score(_reg_agg_idx[_col], lower_better=_lb)
+                    _radar_quint[_col] = _qs
+
+                _radar_series = []
+                for _, _rr in _reg_agg_ranked.iterrows():
                     _rname = str(_rr['REGION_NAME'])
                     _vals = []
                     for _col, _lbl, _lb in _radar_spec:
-                        _qs = _quintile_score(_reg_agg[_col], lower_better=_lb)
-                        _qv = float(_qs.iloc[_ri_r]) if _ri_r < len(_qs) else 3.0
-                        _vals.append(round(_qv, 2))
+                        _qs_s = _radar_quint.get(_col, pd.Series(dtype=float))
+                        _qv = float(_qs_s.loc[_rname]) if _rname in _qs_s.index else 3.0
+                        _vals.append(round(max(1.0, min(5.0, _qv)), 2))
                     _radar_series.append({'name': _rname, 'data': _vals})
                 _radar_series_json = _json_cmp.dumps(_radar_series)
                 _radar_colors_json = _json_cmp.dumps(_radar_colors[:len(_radar_series)])
 
                 _radar_div_id = 'radar-cmp-' + str(id(_reg_agg))[:8]
-                _radar_html = (
-                    '<div style="display:flex;gap:0;align-items:flex-start;flex-wrap:wrap;">'
-                    '<div id="' + _radar_div_id + '" style="flex:1;min-width:320px;min-height:420px;"></div>'
-                    '<div style="min-width:160px;max-width:200px;padding:12px;font-size:0.75rem;">'
-                    '<div style="font-weight:700;color:#0f172a;margin-bottom:8px;">Regiony</div>'
-                )
+                _radar_legend = ''
                 for _ri_r2, _rr2 in _reg_agg_ranked.iterrows():
-                    _rn2 = str(_rr2['REGION_NAME'])
+                    _rn2  = str(_rr2['REGION_NAME'])
                     _clr2 = _radar_colors[_ri_r2 % len(_radar_colors)]
-                    _sc2  = float(_rr2['_SCORE']) if '_SCORE' in _rr2 else 0.0
-                    _radar_html += (
-                        '<div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;">'
-                        '<div style="width:12px;height:12px;background:' + _clr2 + ';border-radius:2px;flex-shrink:0;"></div>'
-                        '<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;color:#0f172a;">' + _rn2 + '</div>'
-                        '<div style="font-weight:700;color:' + _clr2 + ';white-space:nowrap;">' + f'{_sc2:.3f}' + '</div>'
-                        '</div>'
+                    _sc2  = float(_rr2['_SCORE']) if '_SCORE' in _rr2.index else 0.0
+                    _medal2 = ['🥇','🥈','🥉'][_ri_r2] if _ri_r2 < 3 else f'#{_ri_r2+1}'
+                    _radar_legend += (
+                        f'<div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;">'
+                        f'<div style="width:12px;height:12px;background:{_clr2};border-radius:2px;flex-shrink:0;"></div>'
+                        f'<div style="flex:1;font-size:0.73rem;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+                        f'{_medal2} {_rn2}</div>'
+                        f'<div style="font-weight:700;color:{_clr2};font-size:0.72rem;white-space:nowrap;">{_sc2:.3f}</div>'
+                        f'</div>'
                     )
-                _radar_html += (
-                    '</div></div>'
-                    '<div style="font-size:0.7rem;color:#888;margin-top:4px;">'
-                    'Vrcholy = kvintilové skóre 1 (nejhorší) … 5 (nejlepší). '
-                    'C/I a Rating jsou invertovány (nižší = lepší = vyšší skóre).'
-                    '</div>'
-                    '<script>'
-                    '(function(){function _rdr(){'
-                    '  var el=document.getElementById("' + _radar_div_id + '");'
-                    '  if(!el||typeof ApexCharts==="undefined"){setTimeout(_rdr,150);return;}'
-                    '  var opts={'
-                    '    chart:{type:"radar",height:420,toolbar:{show:false},'
-                    '      dropShadow:{enabled:true,blur:3,left:1,top:1,opacity:0.05}},'
-                    '    series:' + _radar_series_json + ','
-                    '    xaxis:{categories:' + _radar_categories_json + '},'
-                    '    yaxis:{min:1,max:5,tickAmount:4,'
-                    '      labels:{formatter:function(v){return ["","Q5","Q4","Q3","Q2","Q1"][Math.round(v)]||v;}}},'
-                    '    colors:' + _radar_colors_json + ','
-                    '    fill:{opacity:0.09},'
-                    '    stroke:{width:2},'
-                    '    markers:{size:4},'
-                    '    legend:{show:false},'
-                    '    dataLabels:{enabled:false},'
-                    '    plotOptions:{radar:{polygons:{strokeColors:"#e2e8f0",connectorColors:"#e2e8f0"}}},'
-                    '    tooltip:{y:{formatter:function(v){return "Q-skóre: "+v.toFixed(2);}}}'
-                    '  };'
-                    '  new ApexCharts(el,opts).render();'
-                    '}setTimeout(_rdr,0);})();'
-                    '</script>'
+
+                # JS: robust IIFE + details-open listener + error display
+                _radar_js = (
+                    f'<script>'
+                    f'(function(){{'
+                    f'var _rdid="{_radar_div_id}";'
+                    f'var _rdseries={_radar_series_json};'
+                    f'var _rdcats={_radar_categories_json};'
+                    f'var _rdcols={_radar_colors_json};'
+                    f'var _rdok=false;'
+                    f'function _rdR(){{'
+                    f'if(_rdok)return;'
+                    f'var el=document.getElementById(_rdid);'
+                    f'if(!el||typeof ApexCharts==="undefined"){{setTimeout(_rdR,200);return;}}'
+                    f'var r=el.getBoundingClientRect();'
+                    f'if(r.width<10){{setTimeout(_rdR,300);return;}}'
+                    f'_rdok=true;'
+                    f'try{{'
+                    f'var opts={{'
+                    f'chart:{{type:"radar",height:400,width:"100%",toolbar:{{show:false}}}},'
+                    f'series:_rdseries,'
+                    f'labels:_rdcats,'
+                    f'colors:_rdcols,'
+                    f'fill:{{opacity:0.12}},'
+                    f'stroke:{{width:1.5}},'
+                    f'markers:{{size:3}},'
+                    f'legend:{{show:false}},'
+                    f'dataLabels:{{enabled:false}},'
+                    f'plotOptions:{{radar:{{size:150,'
+                    f'polygons:{{strokeColors:"#e2e8f0",fill:{{colors:["#f8faff","#fff"]}}}}}}}},'
+                    f'yaxis:{{show:false,min:0,max:5}},'
+                    f'tooltip:{{y:{{formatter:function(v){{return v.toFixed(1)+"/5";}}}}}}'
+                    f'}};'
+                    f'new ApexCharts(el,opts).render();'
+                    f'}}catch(e){{el.textContent="Chyba: "+e.message;}}'
+                    f'}}'
+                    f'setTimeout(_rdR,150);'
+                    f'document.addEventListener("toggle",function(ev){{'
+                    f'if(ev.target&&ev.target.open){{setTimeout(_rdR,100);}}}},true);'
+                    f'}})();'
+                    f'</script>'
+                )
+
+                _radar_html = (
+                    f'<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">'
+                    f'<div style="flex:1;min-width:300px;">'
+                    f'<div id="{_radar_div_id}" style="height:420px;width:100%;"></div>'
+                    f'</div>'
+                    f'<div style="min-width:180px;max-width:220px;padding:10px;'
+                    f'background:#f8faff;border-radius:8px;border:1px solid #e2e8f0;">'
+                    f'<div style="font-size:0.75rem;font-weight:700;color:#0f172a;margin-bottom:8px;">Regiony (skóre)</div>'
+                    f'{_radar_legend}'
+                    f'</div></div>'
+                    f'<div style="font-size:0.7rem;color:#888;margin-top:8px;">'
+                    f'Osa 1–5 (vyšší = lepší). C/I a Rating IR jsou invertovány.</div>'
+                    + _radar_js
                 )
                 _sec_radar = make_collapsible(
                     'cmp-radar',
@@ -13294,12 +13332,13 @@ function obSet_{_fn_slug}(btn, ob){{
                 if _pg_cols_avail:
                     _Q_COLORS = {1:'#1b8c4e',2:'#55b87a',3:'#c8a600',4:'#e07a2a',5:'#c0392b'}
                     # Compute per-product quintile rank for each region
+                    # lower_better=True → highest sales gets Q1 (green) = best
                     _mtx_quint = {}
                     for _pk, _pl, _pcol in _pg_cols_avail:
                         if _pcol not in _reg_agg_ranked.columns:
                             continue
                         _s = pd.to_numeric(_reg_agg_ranked[_pcol], errors='coerce')
-                        _q = _quintile_score(_s, lower_better=False)
+                        _q = _quintile_score(_s, lower_better=True)
                         _mtx_quint[_pcol] = list(_q)
 
                     _avail_pg = [(pk, pl, pc) for pk, pl, pc in _pg_cols_avail if pc in _mtx_quint]
@@ -13458,6 +13497,188 @@ function obSet_{_fn_slug}(btn, ob){{
                     'cmp-fte-perex',
                     '👷 Personalistika a náklady',
                     _fte_grid or '<p style="color:#aaa;font-style:italic;">Žádná data.</p>',
+                    default_open=False,
+                )
+
+
+                # ── Section 3d: Revenue per sale per product ──────────────────
+                _rev_per_sale_html = ''
+                _rps_pg_avail = [(k, lbl) for k, lbl in PRODUCT_GROUPS
+                                 if f'PG_{k}_SUM' in _reg_agg_ranked.columns
+                                 and f'PG_{k}_OBJ' in _reg_agg_ranked.columns]
+                if _rps_pg_avail:
+                    # Column headers
+                    _rps_th = (
+                        '<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.72rem;text-align:left;min-width:130px;position:sticky;left:0;">Region</th>'
+                        '<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.72rem;text-align:right;min-width:90px;">Celkem/prodej</th>'
+                    )
+                    for _rk, _rl in _rps_pg_avail:
+                        _rps_th += (
+                            f'<th style="padding:6px 6px;background:#1e293b;color:white;'
+                            f'font-size:0.7rem;text-align:right;white-space:nowrap;">{_rl}</th>'
+                        )
+
+                    # Compute national averages for comparison
+                    _rps_nat_total_obj = float(_reg_agg_ranked['NOV_VYNOSY_SUM'].sum()) if 'NOV_VYNOSY_SUM' in _reg_agg_ranked.columns else 0.0
+                    _rps_nat_total_cnt = float(_reg_agg_ranked['PRODEJE_SUM'].sum()) if 'PRODEJE_SUM' in _reg_agg_ranked.columns else 1.0
+                    _rps_nat_rps = _rps_nat_total_obj / max(_rps_nat_total_cnt, 1)
+
+                    _rps_pg_nat = {}
+                    for _rk, _rl in _rps_pg_avail:
+                        _nt_obj = float(_reg_agg_ranked[f'PG_{_rk}_OBJ'].sum())
+                        _nt_cnt = float(_reg_agg_ranked[f'PG_{_rk}_SUM'].sum())
+                        _rps_pg_nat[_rk] = _nt_obj / max(_nt_cnt, 1)
+
+                    _rps_body = ''
+                    for _mi2, (_, _mrow2) in enumerate(_reg_agg_ranked.iterrows()):
+                        _mrn2 = str(_mrow2['REGION_NAME'])
+                        _mbg2 = '#f8fafc' if _mi2 % 2 == 0 else '#fff'
+                        # Total new revenue / total sales for this region
+                        _r_obj = float(_mrow2['NOV_VYNOSY_SUM']) if 'NOV_VYNOSY_SUM' in _mrow2.index and pd.notna(_mrow2.get('NOV_VYNOSY_SUM')) else 0.0
+                        _r_cnt = float(_mrow2['PRODEJE_SUM']) if 'PRODEJE_SUM' in _mrow2.index and pd.notna(_mrow2.get('PRODEJE_SUM')) else 0.0
+                        _r_rps = _r_obj / max(_r_cnt, 1)
+                        _rps_diff = _r_rps - _rps_nat_rps
+                        _rps_diff_col = '#1a7a4a' if _rps_diff > 0 else '#c0392b'
+                        _rps_diff_str = f'{"+" if _rps_diff >= 0 else ""}{format_money(_rps_diff)}'
+
+                        _cells2 = (
+                            f'<td style="padding:5px 8px;font-size:0.77rem;font-weight:600;color:#0f172a;'
+                            f'background:{_mbg2};border-right:1px solid #e2e8f0;position:sticky;left:0;">'
+                            f'{_mrn2}</td>'
+                            f'<td style="padding:5px 8px;font-size:0.77rem;font-weight:700;text-align:right;background:{_mbg2};">'
+                            f'{format_money(_r_rps)}'
+                            f'<div style="font-size:0.67rem;color:{_rps_diff_col};font-weight:700;">{_rps_diff_str}</div>'
+                            f'</td>'
+                        )
+                        for _rk2, _rl2 in _rps_pg_avail:
+                            _pg_obj = float(_mrow2[f'PG_{_rk2}_OBJ']) if f'PG_{_rk2}_OBJ' in _mrow2.index and pd.notna(_mrow2.get(f'PG_{_rk2}_OBJ')) else 0.0
+                            _pg_cnt = float(_mrow2[f'PG_{_rk2}_SUM']) if f'PG_{_rk2}_SUM' in _mrow2.index and pd.notna(_mrow2.get(f'PG_{_rk2}_SUM')) else 0.0
+                            _pg_rps = _pg_obj / max(_pg_cnt, 1) if _pg_cnt > 0 else 0.0
+                            _nat_rps2 = _rps_pg_nat.get(_rk2, 0.0)
+                            _d2 = _pg_rps - _nat_rps2
+                            _dc2 = '#1a7a4a' if _d2 > 0 else ('#c0392b' if _d2 < 0 else '#888')
+                            _cells2 += (
+                                f'<td style="padding:5px 6px;font-size:0.75rem;text-align:right;background:{_mbg2};">'
+                                f'<div style="font-weight:700;color:#0f172a;">{format_money(_pg_rps) if _pg_cnt > 0 else "—"}</div>'
+                                f'<div style="font-size:0.67rem;color:{_dc2};font-weight:700;">'
+                                f'{"+" if _d2 >= 0 else ""}{format_money(_d2) if _pg_cnt > 0 else ""}</div>'
+                                f'</td>'
+                            )
+                        _rps_body += f'<tr>{_cells2}</tr>'
+
+                    _rev_per_sale_html = (
+                        f'<div style="font-size:0.75rem;color:#555;margin-bottom:8px;">'
+                        f'Nové výnosy děleno počtem prodejů — celkem a per produktová skupina. '
+                        f'Odchylka (±) od celonárodního průměru. Regiony seřazeny dle kompozitního skóre.</div>'
+                        f'<div style="overflow-x:auto;">'
+                        f'<table style="border-collapse:collapse;font-size:0.8rem;">'
+                        f'<thead><tr>{_rps_th}</tr></thead>'
+                        f'<tbody>{_rps_body}</tbody>'
+                        f'</table></div>'
+                    )
+                _sec_rev_per_sale = make_collapsible(
+                    'cmp-rev-per-sale',
+                    '💵 Nový výnos / prodej — per produkt',
+                    _rev_per_sale_html if _rev_per_sale_html else '<p style="color:#aaa;font-style:italic;">Žádná data o výnosech produktů.</p>',
+                    default_open=False,
+                )
+
+                # ── Section 3e: Client analysis ────────────────────────────────
+                # Derived client metrics on _reg_agg
+                if 'PRIMARNI_SUM' in _reg_agg.columns and 'POCET_KLIENTU_SUM' in _reg_agg.columns:
+                    _reg_agg['PRIMARITA'] = (
+                        _reg_agg['PRIMARNI_SUM'] / _reg_agg['POCET_KLIENTU_SUM'].replace(0, float('nan'))
+                    )
+                if 'AKTIVNI_KLIENTI_SUM' in _reg_agg.columns and 'POCET_KLIENTU_SUM' in _reg_agg.columns:
+                    _reg_agg['AKTIVITA'] = (
+                        _reg_agg['AKTIVNI_KLIENTI_SUM'] / _reg_agg['POCET_KLIENTU_SUM'].replace(0, float('nan'))
+                    )
+                if 'VYNOSY_SUM' in _reg_agg.columns and 'POCET_KLIENTU_SUM' in _reg_agg.columns:
+                    _reg_agg['VYNOS_PER_KLIENT'] = (
+                        _reg_agg['VYNOSY_SUM'] / _reg_agg['POCET_KLIENTU_SUM'].replace(0, float('nan'))
+                    )
+                if 'NEW_ARRIVALS_SUM' in _reg_agg.columns and 'POCET_KLIENTU_SUM' in _reg_agg.columns:
+                    _reg_agg['NOVAKVIZICE_RATE'] = (
+                        _reg_agg['NEW_ARRIVALS_SUM'] / _reg_agg['POCET_KLIENTU_SUM'].replace(0, float('nan'))
+                    )
+                # Re-sync to _reg_agg_ranked
+                for _dc in ['PRIMARITA','AKTIVITA','VYNOS_PER_KLIENT','NOVAKVIZICE_RATE']:
+                    if _dc in _reg_agg.columns:
+                        _reg_agg_ranked[_dc] = _reg_agg.set_index('REGION_NAME').loc[
+                            _reg_agg_ranked['REGION_NAME'].values, _dc
+                        ].values
+
+                _cli_rank_items = [
+                    _rank_block('👥 Klienti celkem',       'POCET_KLIENTU_SUM',   format_num_round, '#2770f0'),
+                    _rank_block('⭐ Primární klienti',     'PRIMARNI_SUM',         format_num_round, '#0bb440'),
+                    _rank_block('✅ Aktivní klienti',      'AKTIVNI_KLIENTI_SUM',  format_num_round, '#0bb440'),
+                    _rank_block('🆕 Noví klienti',         'NEW_ARRIVALS_SUM',     format_num_round, '#7c3aed'),
+                    _rank_block('📊 Primarita',            'PRIMARITA',            format_pct,       '#0bb440'),
+                    _rank_block('📊 Aktivita klientů',     'AKTIVITA',             format_pct,       '#0bb440'),
+                    _rank_block('💰 Výnos / klient',       'VYNOS_PER_KLIENT',     format_money,     '#0bb440'),
+                    _rank_block('📈 Novakvizice rate',     'NOVAKVIZICE_RATE',     format_pct,       '#7c3aed'),
+                ]
+                _cli_rank_items = [r for r in _cli_rank_items if r]
+                _cli_grid = ''
+                for _ci2 in range(0, len(_cli_rank_items), 3):
+                    _cc = _cli_rank_items[_ci2:_ci2+3]
+                    _cc_html = ''.join(_cc) + '<div></div>' * (3 - len(_cc))
+                    _cli_grid += (
+                        f'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">'
+                        f'{_cc_html}</div>'
+                    )
+
+                # Age group breakdown per region
+                _age_groups_avail = [g for g in AGE_GROUPS if f'AGE_{g.replace("-","_")}_SUM' in _reg_agg_ranked.columns]
+                _age_html = ''
+                if _age_groups_avail:
+                    _AGE_COLORS = ['#2770f0','#0bb440','#f59e0b','#e07a2a','#c0392b']
+                    _age_rows = ''
+                    for _, _ar in _reg_agg_ranked.iterrows():
+                        _arn = str(_ar['REGION_NAME'])
+                        _age_vals = []
+                        for _ag in _age_groups_avail:
+                            _ac = f'AGE_{_ag.replace("-","_")}_SUM'
+                            _av = float(_ar[_ac]) if _ac in _ar.index and pd.notna(_ar.get(_ac)) else 0.0
+                            _age_vals.append((_ag, _av))
+                        _age_total = sum(v for _, v in _age_vals) or 1.0
+                        _segs = ''
+                        _leg = ''
+                        for _agi, (_agl, _agv) in enumerate(_age_vals):
+                            _agpct = _agv / _age_total * 100
+                            _agc = _AGE_COLORS[_agi % len(_AGE_COLORS)]
+                            _segs += (
+                                f'<div title="{_agl}: {_agpct:.1f}%" style="width:{_agpct:.1f}%;'
+                                f'height:100%;background:{_agc};display:inline-block;"></div>'
+                            )
+                            _leg += (
+                                f'<span style="display:inline-flex;align-items:center;gap:3px;'
+                                f'font-size:0.67rem;color:{_agc};font-weight:700;">'
+                                f'<span style="width:8px;height:8px;background:{_agc};border-radius:2px;'
+                                f'display:inline-block;"></span>{_agl}:{_agpct:.0f}%</span>'
+                            )
+                        _age_rows += (
+                            f'<div style="display:flex;align-items:center;gap:10px;padding:4px 0;border-bottom:1px solid #f0f4f8;">'
+                            f'<div style="min-width:130px;font-size:0.78rem;font-weight:600;color:#0f172a;'
+                            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{_arn}</div>'
+                            f'<div style="flex:1;background:#f1f5f9;border-radius:3px;height:14px;overflow:hidden;display:flex;">{_segs}</div>'
+                            f'<div style="display:flex;gap:5px;flex-wrap:wrap;min-width:220px;">{_leg}</div>'
+                            f'</div>'
+                        )
+                    _age_html = (
+                        f'<div style="font-weight:600;font-size:0.8rem;color:#0f172a;margin:16px 0 8px 0;">Věková struktura klientů</div>'
+                        f'<div style="font-size:0.73rem;color:#555;margin-bottom:8px;">Podíl věkových skupin z celkového počtu klientů pobočky</div>'
+                        f'{_age_rows}'
+                    ) if _age_rows else ''
+
+                _cli_content = (
+                    (_cli_grid or '<p style="color:#aaa;font-style:italic;">Žádná data o klientech.</p>')
+                    + _age_html
+                )
+                _sec_clients = make_collapsible(
+                    'cmp-clients',
+                    '👥 Analýza klientů',
+                    _cli_content,
                     default_open=False,
                 )
 
@@ -13829,7 +14050,11 @@ function obSet_{_fn_slug}(btn, ob){{
 
     {_sec_product_matrix}
 
+    {_sec_rev_per_sale}
+
     {_sec_sales}
+
+    {_sec_clients}
 
     {_sec_fte_perex}
 
