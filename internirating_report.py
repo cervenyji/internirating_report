@@ -12962,43 +12962,52 @@ function obSet_{_fn_slug}(btn, ob){{
                 print("⚠ Region comparison: sloupec REGION_NAME chybí nebo je prázdný.")
             else:
                 # ── Numerické konverze ─────────────────────────────────────────
-                for _col in ['VYNOSY', 'OBJEM_VYNOSU_CZK', 'IR', 'PRIME_NAKLADY/VYNOSY',
+                _num_base = ['VYNOSY', 'OBJEM_VYNOSU_CZK', 'IR', 'PRIME_NAKLADY/VYNOSY',
                              'POCET_PRODEJU_CELKEM_2025', 'POCET_NAVSTEV_CELKEM',
-                             'FTE', 'HODNOTA_INDEXU_EXPOZICE', 'CAP_REV_FTE']:
+                             'FTE', 'BANKERS_COUNT', 'OBCHODNI_FTE',
+                             'HODNOTA_INDEXU_EXPOZICE', 'CAP_REV_FTE',
+                             'CAP_PEREX', 'CAP_PRIMCLI_FTE', 'CAP_NEWCLI_FTE',
+                             'OSOBNI_NAKLADY', 'PRIMARNI_KLIENTI', 'NR_NEW_ARRIVALS',
+                             'POCET_SCHUZEK_ONLINE', 'POCET_SCHUZEK_FYZICKY']
+                _num_base += [f'POCET_PRODEJU_{_pgk}_2025' for _pgk, _ in PRODUCT_GROUPS]
+                for _col in _num_base:
                     if _col in df_cmp.columns:
                         df_cmp[_col] = pd.to_numeric(df_cmp[_col], errors='coerce')
 
                 # ── Agregace per region ────────────────────────────────────────
-                _agg_dict = {'BRANCH_CODE': 'count'}
-                for _c in ['VYNOSY', 'OBJEM_VYNOSU_CZK', 'POCET_PRODEJU_CELKEM_2025',
-                           'POCET_NAVSTEV_CELKEM', 'FTE']:
-                    if _c in df_cmp.columns:
-                        _agg_dict[_c] = 'sum'
-                for _c in ['IR', 'PRIME_NAKLADY/VYNOSY', 'HODNOTA_INDEXU_EXPOZICE', 'CAP_REV_FTE']:
-                    if _c in df_cmp.columns:
-                        _agg_dict[_c] = 'mean'
-                # mean VYNOSY per branch
-                if 'VYNOSY' in df_cmp.columns:
-                    _agg_dict['VYNOSY_MEAN'] = pd.NamedAgg(column='VYNOSY', aggfunc='mean') \
-                        if hasattr(pd, 'NamedAgg') else 'mean'
-
                 _rg = (df_cmp[df_cmp['REGION_NAME'].notna() &
                                (df_cmp['REGION_NAME'].astype(str).str.strip() != '')]
                        .groupby('REGION_NAME', observed=True))
 
-                # build aggregation manually for clarity
+                _pg_cols_avail = [(k, lbl, f'PG_{k}_SUM')
+                                  for k, lbl in PRODUCT_GROUPS
+                                  if f'POCET_PRODEJU_{k}_2025' in df_cmp.columns]
+
                 _reg_agg = _rg.agg(
                     POCET_PB=('BRANCH_CODE', 'count'),
-                    **({'VYNOSY_SUM': ('VYNOSY', 'sum')} if 'VYNOSY' in df_cmp.columns else {}),
-                    **({'VYNOSY_MEAN': ('VYNOSY', 'mean')} if 'VYNOSY' in df_cmp.columns else {}),
-                    **({'NOV_VYNOSY_SUM': ('OBJEM_VYNOSU_CZK', 'sum')} if 'OBJEM_VYNOSU_CZK' in df_cmp.columns else {}),
-                    **({'PRODEJE_SUM': ('POCET_PRODEJU_CELKEM_2025', 'sum')} if 'POCET_PRODEJU_CELKEM_2025' in df_cmp.columns else {}),
-                    **({'NAVSTEVY_SUM': ('POCET_NAVSTEV_CELKEM', 'sum')} if 'POCET_NAVSTEV_CELKEM' in df_cmp.columns else {}),
-                    **({'FTE_SUM': ('FTE', 'sum')} if 'FTE' in df_cmp.columns else {}),
-                    **({'IR_MEAN': ('IR', 'mean')} if 'IR' in df_cmp.columns else {}),
-                    **({'CI_MEAN': ('PRIME_NAKLADY/VYNOSY', 'mean')} if 'PRIME_NAKLADY/VYNOSY' in df_cmp.columns else {}),
-                    **({'EXP_MEAN': ('HODNOTA_INDEXU_EXPOZICE', 'mean')} if 'HODNOTA_INDEXU_EXPOZICE' in df_cmp.columns else {}),
-                    **({'CAP_REV_FTE_MEAN': ('CAP_REV_FTE', 'mean')} if 'CAP_REV_FTE' in df_cmp.columns else {}),
+                    **({'VYNOSY_SUM':    ('VYNOSY', 'sum')}             if 'VYNOSY' in df_cmp.columns else {}),
+                    **({'VYNOSY_MEAN':   ('VYNOSY', 'mean')}            if 'VYNOSY' in df_cmp.columns else {}),
+                    **({'NOV_VYNOSY_SUM':('OBJEM_VYNOSU_CZK', 'sum')}   if 'OBJEM_VYNOSU_CZK' in df_cmp.columns else {}),
+                    **({'PRODEJE_SUM':   ('POCET_PRODEJU_CELKEM_2025', 'sum')} if 'POCET_PRODEJU_CELKEM_2025' in df_cmp.columns else {}),
+                    **({'NAVSTEVY_SUM':  ('POCET_NAVSTEV_CELKEM', 'sum')} if 'POCET_NAVSTEV_CELKEM' in df_cmp.columns else {}),
+                    **({'FTE_SUM':       ('FTE', 'sum')}                if 'FTE' in df_cmp.columns else {}),
+                    **({'BANKERS_SUM':   ('BANKERS_COUNT', 'sum')}      if 'BANKERS_COUNT' in df_cmp.columns else {}),
+                    **({'OBCHODNI_FTE_SUM': ('OBCHODNI_FTE', 'sum')}    if 'OBCHODNI_FTE' in df_cmp.columns else {}),
+                    **({'OSOBNI_NAKLADY_SUM': ('OSOBNI_NAKLADY', 'sum')} if 'OSOBNI_NAKLADY' in df_cmp.columns else {}),
+                    **({'PRIMARNI_SUM':  ('PRIMARNI_KLIENTI', 'sum')}   if 'PRIMARNI_KLIENTI' in df_cmp.columns else {}),
+                    **({'NEW_ARRIVALS_SUM': ('NR_NEW_ARRIVALS', 'sum')} if 'NR_NEW_ARRIVALS' in df_cmp.columns else {}),
+                    **({'SCHUZKY_SUM':   ('POCET_SCHUZEK_FYZICKY', 'sum'),
+                        'SCHUZKY_ONLINE_SUM': ('POCET_SCHUZEK_ONLINE', 'sum')}
+                       if 'POCET_SCHUZEK_FYZICKY' in df_cmp.columns else {}),
+                    **({'IR_MEAN':       ('IR', 'mean')}                if 'IR' in df_cmp.columns else {}),
+                    **({'CI_MEAN':       ('PRIME_NAKLADY/VYNOSY', 'mean')} if 'PRIME_NAKLADY/VYNOSY' in df_cmp.columns else {}),
+                    **({'EXP_MEAN':      ('HODNOTA_INDEXU_EXPOZICE', 'mean')} if 'HODNOTA_INDEXU_EXPOZICE' in df_cmp.columns else {}),
+                    **({'CAP_REV_FTE_MEAN':   ('CAP_REV_FTE', 'mean')}  if 'CAP_REV_FTE' in df_cmp.columns else {}),
+                    **({'CAP_PEREX_MEAN':      ('CAP_PEREX', 'mean')}   if 'CAP_PEREX' in df_cmp.columns else {}),
+                    **({'CAP_PRIMCLI_MEAN':    ('CAP_PRIMCLI_FTE', 'mean')} if 'CAP_PRIMCLI_FTE' in df_cmp.columns else {}),
+                    **({'CAP_NEWCLI_MEAN':     ('CAP_NEWCLI_FTE', 'mean')} if 'CAP_NEWCLI_FTE' in df_cmp.columns else {}),
+                    **{f'PG_{k}_SUM': (f'POCET_PRODEJU_{k}_2025', 'sum') for k, _ in PRODUCT_GROUPS
+                       if f'POCET_PRODEJU_{k}_2025' in df_cmp.columns},
                 ).reset_index()
 
                 _n_regions  = len(_reg_agg)
@@ -13044,10 +13053,75 @@ function obSet_{_fn_slug}(btn, ob){{
                         _wt    += _sw
                 _reg_agg['_SCORE'] = (_score / _wt).round(4) if _wt > 0 else 0.5
 
+                # ── Derived per-FTE metrics ────────────────────────────────────
+                if 'OSOBNI_NAKLADY_SUM' in _reg_agg.columns and 'FTE_SUM' in _reg_agg.columns:
+                    _reg_agg['ONK_PER_FTE'] = (
+                        _reg_agg['OSOBNI_NAKLADY_SUM'].abs() /
+                        _reg_agg['FTE_SUM'].replace(0, float('nan'))
+                    )
+                if 'FTE_SUM' in _reg_agg.columns:
+                    _reg_agg['FTE_PER_PB'] = _reg_agg['FTE_SUM'] / _reg_agg['POCET_PB'].replace(0, float('nan'))
+                if 'BANKERS_SUM' in _reg_agg.columns:
+                    _reg_agg['BANKERS_PER_PB'] = _reg_agg['BANKERS_SUM'] / _reg_agg['POCET_PB'].replace(0, float('nan'))
+                if 'SCHUZKY_SUM' in _reg_agg.columns:
+                    _reg_agg['SCHUZKY_TOTAL_SUM'] = (
+                        _reg_agg['SCHUZKY_SUM'].fillna(0) +
+                        _reg_agg.get('SCHUZKY_ONLINE_SUM', pd.Series(0, index=_reg_agg.index)).fillna(0)
+                    )
+                    _reg_agg['SCHUZKY_PER_PB'] = _reg_agg['SCHUZKY_TOTAL_SUM'] / _reg_agg['POCET_PB'].replace(0, float('nan'))
+
                 # ── Rank by composite score ────────────────────────────────────
                 _reg_agg_ranked = _reg_agg.sort_values('_SCORE', ascending=False).reset_index(drop=True)
                 _top3_regions = list(_reg_agg_ranked.iloc[:3]['REGION_NAME']) if len(_reg_agg_ranked) >= 3 else list(_reg_agg_ranked['REGION_NAME'])
                 _bot3_regions = list(_reg_agg_ranked.iloc[-3:]['REGION_NAME']) if len(_reg_agg_ranked) >= 6 else []
+
+                # ── Champion strip data (best region per metric) ───────────────
+                _champ_metrics = [
+                    ('_SCORE',          '🏆 Celkové skóre',     lambda v: f'{float(v):.3f}', False, '#0bb440'),
+                    ('VYNOSY_SUM',      '💰 Výnosy celkem',     format_money,                False, '#0bb440'),
+                    ('NOV_VYNOSY_SUM',  '📈 Nové výnosy',       format_money,                False, '#2770f0'),
+                    ('NOV_VYNOSY_PER_PB','📈 Nové výnosy/pb',   format_money,                False, '#2770f0'),
+                    ('CI_MEAN',         '📊 C/I Ratio',          format_pct,                  True,  '#e07a2a'),
+                    ('PRODEJE_SUM',     '🛒 Prodeje',            format_num_round,             False, '#7c3aed'),
+                    ('NAVSTEVY_SUM',    '🚶 Návštěvy',           format_num_round,             False, '#0891b2'),
+                    ('CAP_REV_FTE_MEAN','💼 Výnos/bankéř',       format_money,                False, '#0bb440'),
+                    ('CAP_PEREX_MEAN',  '⚡ PEREX',              lambda v: f'{float(v):.3f}', True,  '#e07a2a'),
+                    ('EXP_MEAN',        '📡 Expozice',           format_pct,                   False, '#64748b'),
+                    ('FTE_PER_PB',      '👷 FTE/pb',             lambda v: f'{float(v):.2f}', False, '#b45309'),
+                    ('PRIMARNI_SUM',    '⭐ Primární klienti',   format_num_round,             False, '#f59e0b'),
+                    ('NEW_ARRIVALS_SUM','🆕 Noví klienti',       format_num_round,             False, '#f59e0b'),
+                ]
+                _champ_cards = ''
+                for _cm_col, _cm_lbl, _cm_fmt, _cm_lb, _cm_clr in _champ_metrics:
+                    if _cm_col not in _reg_agg_ranked.columns:
+                        continue
+                    _cm_s = pd.to_numeric(_reg_agg_ranked[_cm_col], errors='coerce')
+                    if _cm_s.isna().all():
+                        continue
+                    _cm_idx = int(_cm_s.idxmin() if _cm_lb else _cm_s.idxmax())
+                    _cm_row = _reg_agg_ranked.loc[_cm_idx]
+                    _cm_rname = str(_cm_row['REGION_NAME'])
+                    try:
+                        _cm_val = _cm_fmt(float(_cm_row[_cm_col]))
+                    except Exception:
+                        _cm_val = str(_cm_row[_cm_col])
+                    _champ_cards += (
+                        f'<div style="background:white;border:1px solid #e2e8f0;border-radius:8px;'
+                        f'padding:10px 14px;min-width:140px;flex:1;border-top:3px solid {_cm_clr};">'
+                        f'<div style="font-size:0.68rem;color:#888;font-weight:600;text-transform:uppercase;'
+                        f'letter-spacing:.3px;margin-bottom:4px;">{_cm_lbl}</div>'
+                        f'<div style="font-size:0.9rem;font-weight:800;color:#0f172a;white-space:nowrap;'
+                        f'overflow:hidden;text-overflow:ellipsis;">{_cm_rname}</div>'
+                        f'<div style="font-size:0.78rem;font-weight:700;color:{_cm_clr};margin-top:2px;">{_cm_val}</div>'
+                        f'</div>'
+                    )
+                _sec_champions = make_collapsible(
+                    'cmp-champions',
+                    '🥇 Nejlepší region dle metriky',
+                    f'<div style="display:flex;gap:10px;flex-wrap:wrap;">{_champ_cards}</div>'
+                    if _champ_cards else '<p style="color:#aaa;font-style:italic;">Žádná data.</p>',
+                    default_open=True,
+                )
 
                 # ── Helper: single ranking block HTML ─────────────────────────
                 def _rank_block(title, col, fmt_fn, accent, lower_better=False):
@@ -13063,25 +13137,33 @@ function obSet_{_fn_slug}(btn, ob){{
                         _val   = float(_row[col])
                         _pb    = int(_row['POCET_PB'])
                         _pct   = abs(_val) / _max_v * 100
-                        _medal = ['🥇', '🥈', '🥉'][_i] if _i < 3 else f'<span style="color:#aaa;font-size:0.72rem;min-width:18px;display:inline-block;text-align:center;">#{_i+1}</span>'
+                        _is_top = _i == 0
+                        _medal = ['🥇', '🥈', '🥉'][_i] if _i < 3 else (
+                            f'<span style="color:#94a3b8;font-size:0.7rem;min-width:18px;'
+                            f'display:inline-block;text-align:center;">#{_i+1}</span>')
+                        _bg = '#f0fdf4' if _is_top else ('#fafafa' if _i % 2 == 0 else '#fff')
                         rows_h += (
-                            f'<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;'
-                            f'background:{"#f8fff8" if _i % 2 == 0 else "#fff"};border-radius:4px;margin-bottom:2px;">'
-                            f'<span style="min-width:22px;text-align:center;">{_medal}</span>'
-                            f'<div style="min-width:130px;max-width:160px;">'
-                            f'<div style="font-weight:600;font-size:0.8rem;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{_rname}</div>'
-                            f'<div style="font-size:0.68rem;color:#aaa;">{_pb} pb.</div></div>'
-                            f'<div style="flex:1;background:#eee;border-radius:3px;height:7px;">'
-                            f'<div style="width:{_pct:.0f}%;background:{accent};height:100%;border-radius:3px;"></div></div>'
-                            f'<span style="min-width:90px;text-align:right;font-weight:700;color:{accent};font-size:0.8rem;white-space:nowrap;">{fmt_fn(_val)}</span>'
+                            f'<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;'
+                            f'background:{_bg};border-radius:4px;margin-bottom:1px;">'
+                            f'<span style="min-width:20px;text-align:center;font-size:0.85rem;">{_medal}</span>'
+                            f'<div style="flex:1;min-width:0;">'
+                            f'<div style="font-weight:{"700" if _is_top else "500"};font-size:0.78rem;'
+                            f'color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{_rname}</div>'
+                            f'<div style="position:relative;height:4px;background:#f1f5f9;border-radius:2px;margin-top:2px;">'
+                            f'<div style="position:absolute;left:0;top:0;height:100%;width:{_pct:.0f}%;'
+                            f'background:{accent};border-radius:2px;opacity:{"1" if _is_top else "0.6"};"></div></div>'
+                            f'</div>'
+                            f'<span style="min-width:80px;text-align:right;font-weight:{"700" if _is_top else "500"};'
+                            f'color:{"" + accent + "" if _is_top else "#64748b"};font-size:0.77rem;white-space:nowrap;">'
+                            f'{fmt_fn(_val)}</span>'
                             f'</div>'
                         )
                     return (
                         f'<div style="background:white;border:1px solid #e2e8f0;border-radius:8px;'
-                        f'overflow:hidden;margin-bottom:4px;">'
-                        f'<div style="background:{accent};color:white;padding:7px 12px;'
-                        f'font-size:0.78rem;font-weight:700;letter-spacing:.3px;">{title}</div>'
-                        f'<div style="padding:8px;">{rows_h}</div>'
+                        f'overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04);">'
+                        f'<div style="background:{accent};color:white;padding:6px 10px;'
+                        f'font-size:0.75rem;font-weight:700;letter-spacing:.3px;">{title}</div>'
+                        f'<div style="padding:6px;">{rows_h}</div>'
                         f'</div>'
                     )
 
@@ -13090,29 +13172,32 @@ function obSet_{_fn_slug}(btn, ob){{
                 _GREEN = '#0bb440'
                 _AMBER = '#e07a2a'
                 _rank_items = [
-                    _rank_block('🏆 Kompozitní skóre',        '_SCORE',           lambda v: f'{float(v):.3f}', _GREEN),
-                    _rank_block('💰 Celkové výnosy',          'VYNOSY_SUM',       format_money,      _GREEN),
-                    _rank_block('📈 Nové výnosy (sum)',        'NOV_VYNOSY_SUM',   format_money,      _BLUE),
-                    _rank_block('📈 Nové výnosy / pb.',       'NOV_VYNOSY_PER_PB',format_money,      _BLUE),
-                    _rank_block('💰 Průměrné výnosy na pb.',  'VYNOSY_MEAN',      format_money,      _GREEN),
-                    _rank_block('📊 C/I Ratio (nižší = lepší)', 'CI_MEAN',        format_pct,        _AMBER, lower_better=True),
-                    _rank_block('🛒 Prodeje celkem',          'PRODEJE_SUM',      format_num_round,  _BLUE),
-                    _rank_block('🚶 Návštěvnost',             'NAVSTEVY_SUM',     format_num_round,  _BLUE),
-                    _rank_block('⭐ Průměrný rating IR',      'IR_MEAN',          format_num_round,  _AMBER),
+                    _rank_block('🏆 Kompozitní skóre',          '_SCORE',            lambda v: f'{float(v):.3f}', _GREEN),
+                    _rank_block('💰 Celkové výnosy',            'VYNOSY_SUM',         format_money,     _GREEN),
+                    _rank_block('💰 Průměrné výnosy/pb',        'VYNOSY_MEAN',        format_money,     _GREEN),
+                    _rank_block('📈 Nové výnosy',               'NOV_VYNOSY_SUM',     format_money,     _BLUE),
+                    _rank_block('📈 Nové výnosy/pb',            'NOV_VYNOSY_PER_PB',  format_money,     _BLUE),
+                    _rank_block('📊 C/I Ratio (↓ lepší)',        'CI_MEAN',            format_pct,       _AMBER, lower_better=True),
+                    _rank_block('🛒 Prodeje celkem',            'PRODEJE_SUM',        format_num_round, _BLUE),
+                    _rank_block('🚶 Návštěvnost',               'NAVSTEVY_SUM',       format_num_round, _BLUE),
+                    _rank_block('💼 Výnos/bankéř',              'CAP_REV_FTE_MEAN',   format_money,     _GREEN),
+                    _rank_block('⚡ PEREX (↓ lepší)',            'CAP_PEREX_MEAN',     lambda v: f'{float(v):.3f}', _AMBER, lower_better=True),
+                    _rank_block('⭐ Průměrný rating IR',        'IR_MEAN',            format_num_round, _AMBER),
+                    _rank_block('📡 Index expozice',            'EXP_MEAN',           format_pct,       '#64748b'),
                 ]
                 _rank_items = [r for r in _rank_items if r]
                 _rank_grid = ''
-                for _ri in range(0, len(_rank_items), 2):
-                    _left  = _rank_items[_ri]
-                    _right = _rank_items[_ri + 1] if _ri + 1 < len(_rank_items) else ''
+                for _ri in range(0, len(_rank_items), 3):
+                    _cols = _rank_items[_ri:_ri+3]
+                    _cols_html = ''.join(_cols) + ('' if len(_cols) == 3 else '<div></div>' * (3 - len(_cols)))
                     _rank_grid += (
-                        f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">'
-                        f'{_left}{_right}'
+                        f'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">'
+                        f'{_cols_html}'
                         f'</div>'
                     )
                 _sec_rankings = make_collapsible(
                     'cmp-rankings',
-                    '🏆 Pořadí regionů — Rankings',
+                    '🏆 Pořadí regionů',
                     _rank_grid or '<p style="color:#aaa;font-style:italic;">Žádná data pro ranking.</p>',
                     default_open=True,
                 )
@@ -13173,7 +13258,9 @@ function obSet_{_fn_slug}(btn, ob){{
                     'C/I a Rating jsou invertovány (nižší = lepší = vyšší skóre).'
                     '</div>'
                     '<script>'
-                    'document.addEventListener("DOMContentLoaded",function(){'
+                    '(function(){function _rdr(){'
+                    '  var el=document.getElementById("' + _radar_div_id + '");'
+                    '  if(!el||typeof ApexCharts==="undefined"){setTimeout(_rdr,150);return;}'
                     '  var opts={'
                     '    chart:{type:"radar",height:420,toolbar:{show:false},'
                     '      dropShadow:{enabled:true,blur:3,left:1,top:1,opacity:0.05}},'
@@ -13190,9 +13277,8 @@ function obSet_{_fn_slug}(btn, ob){{
                     '    plotOptions:{radar:{polygons:{strokeColors:"#e2e8f0",connectorColors:"#e2e8f0"}}},'
                     '    tooltip:{y:{formatter:function(v){return "Q-skóre: "+v.toFixed(2);}}}'
                     '  };'
-                    '  var el=document.getElementById("' + _radar_div_id + '");'
-                    '  if(el&&typeof ApexCharts!=="undefined"){new ApexCharts(el,opts).render();}'
-                    '});'
+                    '  new ApexCharts(el,opts).render();'
+                    '}setTimeout(_rdr,0);})();'
                     '</script>'
                 )
                 _sec_radar = make_collapsible(
@@ -13200,6 +13286,179 @@ function obSet_{_fn_slug}(btn, ob){{
                     '🕸 Radar — kvintilové skóre regionů',
                     _radar_html,
                     default_open=True,
+                )
+
+
+                # ── Section 3a: Product group matrix ──────────────────────────
+                _mtx_html = ''
+                if _pg_cols_avail:
+                    _Q_COLORS = {1:'#1b8c4e',2:'#55b87a',3:'#c8a600',4:'#e07a2a',5:'#c0392b'}
+                    # Compute per-product quintile rank for each region
+                    _mtx_quint = {}
+                    for _pk, _pl, _pcol in _pg_cols_avail:
+                        if _pcol not in _reg_agg_ranked.columns:
+                            continue
+                        _s = pd.to_numeric(_reg_agg_ranked[_pcol], errors='coerce')
+                        _q = _quintile_score(_s, lower_better=False)
+                        _mtx_quint[_pcol] = list(_q)
+
+                    _avail_pg = [(pk, pl, pc) for pk, pl, pc in _pg_cols_avail if pc in _mtx_quint]
+
+                    # Header row
+                    _mtx_th = '<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.72rem;text-align:left;min-width:130px;">Region</th>'
+                    for _pk, _pl, _pc in _avail_pg:
+                        _mtx_th += (
+                            f'<th style="padding:6px 5px;background:#1e293b;color:white;'
+                            f'font-size:0.7rem;text-align:center;white-space:nowrap;">{_pl}</th>'
+                        )
+
+                    # Body rows
+                    _mtx_body = ''
+                    for _mi, (_, _mrow) in enumerate(_reg_agg_ranked.iterrows()):
+                        _mrn = str(_mrow['REGION_NAME'])
+                        _mbg = '#f8fafc' if _mi % 2 == 0 else '#fff'
+                        _mcells = f'<td style="padding:5px 8px;font-size:0.78rem;font-weight:600;color:#0f172a;background:{_mbg};border-right:1px solid #e2e8f0;">{_mrn}</td>'
+                        # Best product for this region
+                        _best_pg_val = -1
+                        _best_pg_lbl = ''
+                        for _pk, _pl, _pc in _avail_pg:
+                            _raw_v = float(_mrow[_pc]) if _pc in _mrow.index and pd.notna(_mrow[_pc]) else 0.0
+                            if _raw_v > _best_pg_val:
+                                _best_pg_val = _raw_v
+                                _best_pg_lbl = _pl
+                        for _pk, _pl, _pc in _avail_pg:
+                            _qi = int(round(_mtx_quint[_pc][_mi])) if _mi < len(_mtx_quint[_pc]) else 3
+                            _qi = max(1, min(5, _qi))
+                            _qclr = _Q_COLORS.get(_qi, '#aaa')
+                            _is_best = (_pl == _best_pg_lbl)
+                            _border = '2px solid #0f172a' if _is_best else '1px solid rgba(0,0,0,.06)'
+                            _mcells += (
+                                f'<td style="padding:4px 3px;text-align:center;background:{_mbg};">'
+                                f'<div style="display:inline-flex;align-items:center;justify-content:center;'
+                                f'width:28px;height:20px;border-radius:4px;'
+                                f'background:{_qclr};border:{_border};'
+                                f'font-size:0.7rem;font-weight:700;color:white;">'
+                                f'Q{_qi}{"★" if _is_best else ""}</div></td>'
+                            )
+                        _mtx_body += f'<tr>{_mcells}</tr>'
+
+                    _mtx_legend = (
+                        '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:0.7rem;">'
+                        + ''.join(
+                            f'<span style="display:inline-flex;align-items:center;gap:4px;">'
+                            f'<span style="width:14px;height:14px;background:{_Q_COLORS[q]};border-radius:3px;display:inline-block;"></span>'
+                            f'Q{q} {"nejlepší" if q==1 else "nejhorší" if q==5 else ""}</span>'
+                            for q in range(1,6)
+                        )
+                        + '<span style="color:#666;margin-left:8px;">★ = nejprodávanější produkt regionu</span>'
+                        '</div>'
+                    )
+
+                    _mtx_html = (
+                        f'<div style="font-size:0.76rem;color:#555;margin-bottom:8px;">'
+                        f'Kvintilové pořadí prodejů dle produktové skupiny. Regiony seřazeny dle kompozitního skóre.</div>'
+                        f'<div style="overflow-x:auto;">'
+                        f'<table style="border-collapse:collapse;font-size:0.8rem;">'
+                        f'<thead><tr>{_mtx_th}</tr></thead>'
+                        f'<tbody>{_mtx_body}</tbody>'
+                        f'</table></div>'
+                        f'{_mtx_legend}'
+                    )
+
+                _sec_product_matrix = make_collapsible(
+                    'cmp-prod-matrix',
+                    '🗂 Produktová matice — regiony × skupiny',
+                    _mtx_html if _mtx_html else '<p style="color:#aaa;font-style:italic;">Žádná data o produkci produktových skupin.</p>',
+                    default_open=True,
+                )
+
+                # ── Section 3b: Sales analysis — top product per region ────────
+                _sales_html = ''
+                if _pg_cols_avail:
+                    _sales_rows = ''
+                    for _, _srow in _reg_agg_ranked.iterrows():
+                        _srn = str(_srow['REGION_NAME'])
+                        # Build bar list for this region
+                        _pg_vals = []
+                        for _pk, _pl, _pc in _pg_cols_avail:
+                            if _pc in _srow.index and pd.notna(_srow[_pc]):
+                                _pg_vals.append((_pl, float(_srow[_pc])))
+                        if not _pg_vals:
+                            continue
+                        _pg_vals_sorted = sorted(_pg_vals, key=lambda x: x[1], reverse=True)
+                        _pg_max = _pg_vals_sorted[0][1] or 1.0
+                        _best_lbl, _best_v = _pg_vals_sorted[0]
+                        _total_prod = sum(v for _, v in _pg_vals) or 1.0
+
+                        _bars = ''
+                        _PG_COLORS_LIST = ['#2770f0','#0bb440','#e07a2a','#7c3aed','#0891b2',
+                                           '#c0392b','#b45309','#64748b','#f59e0b']
+                        for _pgi, (_lbl2, _val2) in enumerate(_pg_vals_sorted[:6]):
+                            _bw  = _val2 / _pg_max * 100
+                            _bpc = _val2 / _total_prod * 100
+                            _bc  = _PG_COLORS_LIST[_pgi % len(_PG_COLORS_LIST)]
+                            _bars += (
+                                f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">'
+                                f'<div style="min-width:80px;font-size:0.72rem;color:#475569;'
+                                f'text-align:right;white-space:nowrap;">{_lbl2}</div>'
+                                f'<div style="flex:1;background:#f1f5f9;border-radius:3px;height:10px;">'
+                                f'<div style="width:{_bw:.1f}%;background:{_bc};height:100%;border-radius:3px;"></div></div>'
+                                f'<div style="min-width:65px;font-size:0.72rem;color:{_bc};font-weight:700;'
+                                f'text-align:right;">{format_num_round(_val2)} ({_bpc:.0f}%)</div>'
+                                f'</div>'
+                            )
+                        _sales_rows += (
+                            f'<div style="background:white;border:1px solid #e2e8f0;border-radius:8px;'
+                            f'overflow:hidden;margin-bottom:10px;">'
+                            f'<div style="background:#1e293b;color:white;padding:6px 12px;'
+                            f'display:flex;align-items:center;justify-content:space-between;">'
+                            f'<span style="font-weight:700;font-size:0.82rem;">{_srn}</span>'
+                            f'<span style="font-size:0.72rem;opacity:.75;">Top: {_best_lbl} &nbsp;'
+                            f'({format_num_round(_best_v)} ks)</span>'
+                            f'</div>'
+                            f'<div style="padding:8px 12px;">{_bars}</div>'
+                            f'</div>'
+                        )
+                    _sales_html = _sales_rows or '<p style="color:#aaa;font-style:italic;">Žádná data.</p>'
+
+                _sec_sales = make_collapsible(
+                    'cmp-sales',
+                    '🛒 Analýza prodejů — produkty v regionech',
+                    _sales_html if _sales_html else '<p style="color:#aaa;font-style:italic;">Žádná data.</p>',
+                    default_open=False,
+                )
+
+                # ── Section 3c: FTE / PEREX / náklady ─────────────────────────
+                _fte_rank_items = [
+                    _rank_block('👷 FTE celkem',           'FTE_SUM',            format_num_round, '#b45309'),
+                    _rank_block('👷 FTE / pobočka',        'FTE_PER_PB',         lambda v: f'{float(v):.2f}', '#b45309'),
+                    _rank_block('🏦 Bankéři celkem',       'BANKERS_SUM',        format_num_round, '#0891b2'),
+                    _rank_block('🏦 Bankéři / pobočka',    'BANKERS_PER_PB',     lambda v: f'{float(v):.2f}', '#0891b2'),
+                    _rank_block('💸 Osobní náklady',       'OSOBNI_NAKLADY_SUM', format_money,     '#c0392b'),
+                    _rank_block('💸 ONK / FTE',            'ONK_PER_FTE',        format_money,     '#c0392b'),
+                    _rank_block('⚡ PEREX (↓ lepší)',       'CAP_PEREX_MEAN',     lambda v: f'{float(v):.3f}', '#e07a2a', lower_better=True),
+                    _rank_block('💼 Výnos / bankéř',       'CAP_REV_FTE_MEAN',   format_money,     '#0bb440'),
+                    _rank_block('⭐ Prim. klienti/bankéř', 'CAP_PRIMCLI_MEAN',   lambda v: f'{float(v):.1f}', '#f59e0b'),
+                    _rank_block('🆕 Noví klienti/bankéř',  'CAP_NEWCLI_MEAN',    lambda v: f'{float(v):.2f}', '#f59e0b'),
+                    _rank_block('🗓 Schůzky celkem',        'SCHUZKY_TOTAL_SUM',  format_num_round, '#7c3aed'),
+                    _rank_block('🗓 Schůzky / pobočka',     'SCHUZKY_PER_PB',     lambda v: f'{float(v):.1f}', '#7c3aed'),
+                    _rank_block('⭐ Primární klienti',      'PRIMARNI_SUM',       format_num_round, '#f59e0b'),
+                    _rank_block('🆕 Noví klienti celkem',   'NEW_ARRIVALS_SUM',   format_num_round, '#f59e0b'),
+                ]
+                _fte_rank_items = [r for r in _fte_rank_items if r]
+                _fte_grid = ''
+                for _fti in range(0, len(_fte_rank_items), 3):
+                    _fcols = _fte_rank_items[_fti:_fti+3]
+                    _fcols_html = ''.join(_fcols) + '<div></div>' * (3 - len(_fcols))
+                    _fte_grid += (
+                        f'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">'
+                        f'{_fcols_html}</div>'
+                    )
+                _sec_fte_perex = make_collapsible(
+                    'cmp-fte-perex',
+                    '👷 Personalistika a náklady',
+                    _fte_grid or '<p style="color:#aaa;font-style:italic;">Žádná data.</p>',
+                    default_open=False,
                 )
 
                 # ── Section 3: Summary table ───────────────────────────────────
@@ -13342,12 +13601,58 @@ function obSet_{_fn_slug}(btn, ob){{
                         f'</div>'
                     )
 
-                _bench_cards = ''.join(_bench_region_html(r) for r in _top3_regions)
+                # All regions benchmark — tab selector + pane per region
+                _all_bench_regions = list(_reg_agg_ranked['REGION_NAME'])
+                _bench_tab_btns = ''
+                _bench_tab_panes = ''
+                _bench_cid = 'bench-cmp-' + str(id(_reg_agg))[:8]
+                for _bti, _btr in enumerate(_all_bench_regions):
+                    _btlbl = str(_btr)[:14]
+                    _btn_bg = '#2770f0' if _bti == 0 else '#f1f5f9'
+                    _btn_col = 'white' if _bti == 0 else '#475569'
+                    _rank_badge = ['🥇', '🥈', '🥉'][_bti] if _bti < 3 else f'#{_bti+1}'
+                    # onclick calls global helper defined in <script> below
+                    _bench_tab_btns += (
+                        f'<button data-bench-btn="{_bti}"'
+                        f' onclick="_benchSwitch(this,\'{_bench_cid}\',{_bti})"'
+                        f' style="padding:4px 10px;border:1px solid #e2e8f0;border-radius:16px;'
+                        f'cursor:pointer;font-size:0.72rem;font-weight:600;'
+                        f'background:{_btn_bg};color:{_btn_col};margin:2px;">'
+                        f'{_rank_badge} {_btlbl}</button>'
+                    )
+                    _bhtml = _bench_region_html(_btr)
+                    _pane_display = 'block' if _bti == 0 else 'none'
+                    _bench_tab_panes += (
+                        f'<div data-bench-pane="{_bti}" style="display:{_pane_display};">'
+                        f'<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;">'
+                        f'{_bhtml}</div></div>'
+                    )
+
+                _bench_script = (
+                    '<script>'
+                    'function _benchSwitch(btn,cid,idx){'
+                    'var c=document.getElementById(cid);'
+                    'c.querySelectorAll("[data-bench-pane]").forEach(function(p){p.style.display="none";});'
+                    'c.querySelectorAll("[data-bench-btn]").forEach(function(x)'
+                    '{x.style.background="#f1f5f9";x.style.color="#475569";});'
+                    'var pane=c.querySelector("[data-bench-pane=\\""+idx+"\\"]");'
+                    'if(pane)pane.style.display="block";'
+                    'btn.style.background="#2770f0";btn.style.color="white";}'
+                    '</script>'
+                )
+                _bench_full_html = (
+                    _bench_script
+                    + f'<div id="{_bench_cid}">'
+                    + f'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:14px;'
+                    + f'padding-bottom:10px;border-bottom:1px solid #e2e8f0;">'
+                    + _bench_tab_btns + '</div>'
+                    + _bench_tab_panes
+                    + '</div>'
+                )
                 _sec_bench = make_collapsible(
                     'cmp-bench',
-                    '🔎 Benchmark: Top 3 regiony vs CZ průměr',
-                    f'<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;">{_bench_cards}</div>'
-                    if _bench_cards else '<p style="color:#aaa;font-style:italic;">Žádná data.</p>',
+                    '🔎 Benchmark: všechny regiony vs CZ průměr',
+                    _bench_full_html if _bench_tab_panes else '<p style="color:#aaa;font-style:italic;">Žádná data.</p>',
                     default_open=False,
                 )
 
@@ -13516,13 +13821,21 @@ function obSet_{_fn_slug}(btn, ob){{
 
     {_summary_strip}
 
+    {_sec_champions}
+
     {_sec_rankings}
 
     {_sec_radar}
 
-    {_sec_table}
+    {_sec_product_matrix}
+
+    {_sec_sales}
+
+    {_sec_fte_perex}
 
     {_sec_bench}
+
+    {_sec_table}
 
     {_sec_ir_dist}
 
