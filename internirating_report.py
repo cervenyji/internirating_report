@@ -13106,106 +13106,213 @@ function obSet_{_fn_slug}(btn, ob){{
                 default_open=True,
             )
 
-            # ── Regional strategy breakdown ──────────────────────────────────
+            # ── Regional strategy breakdown — 3-column table ─────────────────
             _bns_regions = sorted(
                 [r for r in _df_bns['REGION_NAME'].dropna().unique()
                  if str(r) not in ('', 'nan', 'None')]
             ) if 'REGION_NAME' in _df_bns.columns else []
 
-            _reg_strat_rows = ''
-            _reg_chart_series_close   = []
-            _reg_chart_series_invest  = []
-            _reg_chart_series_cashless= []
-            _reg_chart_series_keep    = []
-            _reg_chart_labels = []
+            _name_col = ('BRANCH_NAME' if 'BRANCH_NAME' in _df_bns.columns else
+                         ('NAZEV' if 'NAZEV' in _df_bns.columns else 'BRANCH_CODE'))
 
+            def _blabel(row):
+                nm = str(row.get(_name_col, '')) if _name_col in row.index else ''
+                bc = str(row.get('BRANCH_CODE', ''))
+                return nm if nm and nm not in ('nan', '—', '') else bc
+
+            def _yr_branches(sub):
+                res = {}
+                for _yy in _BNS_YEARS:
+                    _ysub = sub[sub['_BNS_YEAR'] == _yy]
+                    if not _ysub.empty:
+                        res[_yy] = [_blabel(r) for _, r in _ysub.iterrows()]
+                _noyr = sub[sub['_BNS_YEAR'].isna()]
+                if not _noyr.empty:
+                    res[None] = [_blabel(r) for _, r in _noyr.iterrows()]
+                return res
+
+            def _cell_html(yr_dict, color):
+                if not yr_dict:
+                    return '<span style="color:#ccc;font-size:0.75rem;">—</span>'
+                parts = []
+                for _yy in sorted(y for y in yr_dict if y is not None):
+                    brs = ', '.join(yr_dict[_yy])
+                    parts.append(
+                        f'<div style="margin-bottom:3px;">'
+                        f'<span style="font-weight:700;color:{color};font-size:0.72rem;">{_yy}:</span> '
+                        f'<span style="font-size:0.72rem;">{brs}</span></div>'
+                    )
+                if None in yr_dict:
+                    brs = ', '.join(yr_dict[None])
+                    parts.append(
+                        f'<div style="margin-bottom:3px;">'
+                        f'<span style="font-weight:700;color:#aaa;font-size:0.72rem;">?:</span> '
+                        f'<span style="font-size:0.72rem;">{brs}</span></div>'
+                    )
+                return ''.join(parts)
+
+            _region_rows_html = ''
             for _brn in _bns_regions:
                 _dreg = _df_bns[_df_bns['REGION_NAME'] == _brn]
-                _rc  = int((_dreg['_BNS_CAT'] == 'close').sum())
-                _ri  = int((_dreg['_BNS_CAT'] == 'invest').sum())
-                _rcs = int((_dreg['_BNS_CAT'] == 'cashless').sum())
-                _rk  = int(((_dreg['_BNS_CAT'] == 'keep') | (_dreg['_BNS_CAT'] == 'other')).sum())
-                _rt  = len(_dreg)
-                _reg_chart_labels.append(_brn)
-                _reg_chart_series_close.append(_rc)
-                _reg_chart_series_invest.append(_ri)
-                _reg_chart_series_cashless.append(_rcs)
-                _reg_chart_series_keep.append(_rk)
-
-                def _pct_bar(n, total, color, label):
-                    pct = n / total * 100 if total > 0 else 0
-                    return (
-                        f'<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;">'
-                        f'<div style="min-width:70px;font-size:0.7rem;color:#555;">{label}</div>'
-                        f'<div style="flex:1;background:#f1f5f9;border-radius:2px;height:8px;">'
-                        f'<div style="width:{pct:.0f}%;height:100%;background:{color};border-radius:2px;"></div></div>'
-                        f'<div style="min-width:30px;font-size:0.7rem;font-weight:700;color:{color};text-align:right;">{n}</div>'
-                        f'</div>'
-                    )
-                _reg_strat_rows += (
-                    f'<div style="background:white;border:1px solid #e2e8f0;border-radius:8px;'
-                    f'padding:10px 14px;margin-bottom:8px;">'
-                    f'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'
-                    f'<div style="font-weight:700;font-size:0.85rem;color:#0f172a;">{_brn}</div>'
-                    f'<div style="font-size:0.72rem;color:#888;">{_rt} poboček</div>'
-                    f'</div>'
-                    + _pct_bar(_rc, _rt, '#d62728', '🔴 Uzavírané')
-                    + _pct_bar(_ri, _rt, '#2770f0', '🔵 Investice')
-                    + _pct_bar(_rcs, _rt, '#e07a2a', '🟠 Cashless')
-                    + _pct_bar(_rk, _rt, '#2ca02c', '🟢 Zachované')
-                    + f'</div>'
+                _close_d   = _yr_branches(_dreg[_dreg['_BNS_CAT'] == 'close'])
+                _invest_d  = _yr_branches(_dreg[_dreg['_BNS_CAT'] == 'invest'])
+                _cashless_d = _yr_branches(_dreg[_dreg['_BNS_CAT'] == 'cashless'])
+                _rt = len(_dreg)
+                _region_rows_html += (
+                    f'<tr style="border-bottom:1px solid #e8eef8;vertical-align:top;">'
+                    f'<td style="padding:8px 12px;font-weight:700;font-size:0.82rem;color:#0f172a;'
+                    f'white-space:nowrap;min-width:120px;">{_brn}'
+                    f'<div style="font-size:0.68rem;color:#888;font-weight:400;">{_rt} poboček</div></td>'
+                    f'<td style="padding:8px 12px;">{_cell_html(_close_d, "#d62728")}</td>'
+                    f'<td style="padding:8px 12px;">{_cell_html(_invest_d, "#2770f0")}</td>'
+                    f'<td style="padding:8px 12px;">{_cell_html(_cashless_d, "#e07a2a")}</td>'
+                    f'</tr>'
                 )
 
-            _reg_chart_id = 'bns-reg-' + str(id(_df_bns))[:8]
-            _reg_chart_html = (
-                f'<div id="{_reg_chart_id}" style="height:{max(300, len(_bns_regions)*40)}px;"></div>'
-                f'<script>'
-                f'(function(){{'
-                f'var lbl={_bns_json.dumps(_reg_chart_labels)};'
-                f'var sc={_bns_json.dumps(_reg_chart_series_close)};'
-                f'var si={_bns_json.dumps(_reg_chart_series_invest)};'
-                f'var ss={_bns_json.dumps(_reg_chart_series_cashless)};'
-                f'var sk={_bns_json.dumps(_reg_chart_series_keep)};'
-                f'function _rrR(){{'
-                f'if(typeof ApexCharts==="undefined"){{setTimeout(_rrR,200);return;}}'
-                f'var el=document.getElementById("{_reg_chart_id}");'
-                f'if(!el){{setTimeout(_rrR,200);return;}}'
-                f'var r=el.getBoundingClientRect();if(r.width<10){{setTimeout(_rrR,300);return;}}'
-                f'try{{'
-                f'new ApexCharts(el,{{'
-                f'chart:{{type:"bar",height:Math.max(300,lbl.length*40),stacked:true,toolbar:{{show:false}}}},'
-                f'series:['
-                f'{{name:"🔴 Uzavření",data:sc}},'
-                f'{{name:"🔵 Investice",data:si}},'
-                f'{{name:"🟠 Cashless",data:ss}},'
-                f'{{name:"🟢 Zachované",data:sk}}'
-                f'],'
-                f'xaxis:{{categories:lbl}},'
-                f'colors:["#d62728","#2770f0","#e07a2a","#2ca02c"],'
-                f'plotOptions:{{bar:{{horizontal:true,borderRadius:2,dataLabels:{{total:{{enabled:true,style:{{fontSize:"11px",color:"#333"}}}}}}}}}},'
-                f'dataLabels:{{enabled:false}},'
-                f'legend:{{position:"top"}},'
-                f'tooltip:{{shared:true,intersect:false}}'
-                f'}}).render();'
-                f'}}catch(e){{console.error(e);}}'
-                f'}}'
-                f'setTimeout(_rrR,150);'
-                f'document.addEventListener("toggle",function(ev){{'
-                f'if(ev.target&&ev.target.open){{setTimeout(_rrR,100);}}}},true);'
-                f'}})();'
-                f'</script>'
-            )
+            _region_table_html = (
+                f'<div style="overflow-x:auto;">'
+                f'<table style="width:100%;border-collapse:collapse;">'
+                f'<thead><tr style="background:#f0f4ff;">'
+                f'<th style="padding:8px 12px;text-align:left;font-size:0.82rem;font-weight:700;'
+                f'color:#374151;border-bottom:2px solid #dde4f5;">Region</th>'
+                f'<th style="padding:8px 12px;text-align:left;font-size:0.82rem;font-weight:700;'
+                f'color:#d62728;border-bottom:2px solid #fecaca;">🔴 CLOSE</th>'
+                f'<th style="padding:8px 12px;text-align:left;font-size:0.82rem;font-weight:700;'
+                f'color:#2770f0;border-bottom:2px solid #bfdbfe;">🔵 INVESTICE</th>'
+                f'<th style="padding:8px 12px;text-align:left;font-size:0.82rem;font-weight:700;'
+                f'color:#e07a2a;border-bottom:2px solid #fed7aa;">🟠 CASHLESS</th>'
+                f'</tr></thead>'
+                f'<tbody>{_region_rows_html}</tbody>'
+                f'</table></div>'
+            ) if _region_rows_html else '<p style="color:#aaa;font-style:italic;">Žádná regionální data.</p>'
 
             _sec_region = make_collapsible(
                 'bns-region',
                 '🗂 Strategie dle regionů',
-                (
-                    f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">'
-                    f'<div>{_reg_strat_rows}</div>'
-                    f'<div>{_reg_chart_html}</div>'
-                    f'</div>'
-                ) if _bns_regions else '<p style="color:#aaa;font-style:italic;">Žádná regionální data.</p>',
+                _region_table_html,
                 default_open=True,
+            )
+
+            # ── Investment cost estimates per region ─────────────────────────
+            _df_invest_cost = _df_bns[_df_bns['_BNS_CAT'] == 'invest'].copy()
+            _inv_money_cols = [c for c in ['LAST_INV', 'BIGGEST_INV', 'TOTAL_INV'] if c in _df_invest_cost.columns]
+            for _imc in _inv_money_cols:
+                _df_invest_cost[_imc] = pd.to_numeric(_df_invest_cost[_imc], errors='coerce')
+
+            if not _df_invest_cost.empty and _inv_money_cols:
+                _inv_cost_rows = ''
+                _inv_tot_n = 0; _inv_tot_last = 0; _inv_tot_big = 0; _inv_tot_total = 0
+                for _brn in _bns_regions:
+                    _dreg_inv = _df_invest_cost[_df_invest_cost['REGION_NAME'] == _brn]
+                    if _dreg_inv.empty:
+                        continue
+                    _n_iv = len(_dreg_inv)
+                    _sl = _dreg_inv['LAST_INV'].sum() if 'LAST_INV' in _dreg_inv.columns else 0
+                    _sb = _dreg_inv['BIGGEST_INV'].sum() if 'BIGGEST_INV' in _dreg_inv.columns else 0
+                    _st = _dreg_inv['TOTAL_INV'].sum() if 'TOTAL_INV' in _dreg_inv.columns else 0
+                    _inv_tot_n += _n_iv; _inv_tot_last += _sl; _inv_tot_big += _sb; _inv_tot_total += _st
+                    _inv_cost_rows += (
+                        f'<tr style="border-bottom:1px solid #f0f4f8;">'
+                        f'<td style="padding:6px 10px;font-weight:600;font-size:0.8rem;">{_brn}</td>'
+                        f'<td style="padding:6px 10px;font-size:0.8rem;text-align:center;">{_n_iv}</td>'
+                        + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{format_money(_sl)}</td>' if 'LAST_INV' in _inv_money_cols else '')
+                        + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{format_money(_sb)}</td>' if 'BIGGEST_INV' in _inv_money_cols else '')
+                        + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;font-weight:700;color:#2770f0;">{format_money(_st)}</td>' if 'TOTAL_INV' in _inv_money_cols else '')
+                        + '</tr>'
+                    )
+                _inv_cost_rows += (
+                    f'<tr style="background:#f0f6ff;font-weight:700;border-top:2px solid #bfdbfe;">'
+                    f'<td style="padding:6px 10px;font-size:0.8rem;">CELKEM</td>'
+                    f'<td style="padding:6px 10px;font-size:0.8rem;text-align:center;">{_inv_tot_n}</td>'
+                    + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{format_money(_inv_tot_last)}</td>' if 'LAST_INV' in _inv_money_cols else '')
+                    + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{format_money(_inv_tot_big)}</td>' if 'BIGGEST_INV' in _inv_money_cols else '')
+                    + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;color:#2770f0;">{format_money(_inv_tot_total)}</td>' if 'TOTAL_INV' in _inv_money_cols else '')
+                    + '</tr>'
+                )
+                _inv_cost_hdr = (
+                    '<th style="padding:7px 10px;background:#2770f0;color:white;font-size:0.78rem;text-align:left;">Region</th>'
+                    '<th style="padding:7px 10px;background:#2770f0;color:white;font-size:0.78rem;text-align:center;">Poboček</th>'
+                    + ('<th style="padding:7px 10px;background:#2770f0;color:white;font-size:0.78rem;text-align:right;">Poslední invest. (Kč)</th>' if 'LAST_INV' in _inv_money_cols else '')
+                    + ('<th style="padding:7px 10px;background:#2770f0;color:white;font-size:0.78rem;text-align:right;">Největší invest. (Kč)</th>' if 'BIGGEST_INV' in _inv_money_cols else '')
+                    + ('<th style="padding:7px 10px;background:#2770f0;color:white;font-size:0.78rem;text-align:right;">Celkové invest. (Kč)</th>' if 'TOTAL_INV' in _inv_money_cols else '')
+                )
+                _sec_invest_cost = make_collapsible(
+                    'bns-invest-cost',
+                    '💰 Odhad nákladů investic dle regionů',
+                    (f'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'
+                     f'<thead><tr>{_inv_cost_hdr}</tr></thead>'
+                     f'<tbody>{_inv_cost_rows}</tbody></table></div>'
+                     f'<div style="font-size:0.72rem;color:#888;margin-top:6px;">'
+                     f'Zdroj: LAST_INV / BIGGEST_INV / TOTAL_INV z footprint dat</div>'),
+                    default_open=False,
+                )
+            else:
+                _sec_invest_cost = ''
+
+            # ── FTE impact of close branches ─────────────────────────────────
+            _df_close_fte = _df_bns[_df_bns['_BNS_CAT'] == 'close'].copy()
+            _fte_cols_av = [c for c in ['FTE', 'BANKERS_COUNT', 'OBCHODNI_FTE'] if c in _df_close_fte.columns]
+            for _fc in _fte_cols_av:
+                _df_close_fte[_fc] = pd.to_numeric(_df_close_fte[_fc], errors='coerce')
+
+            if not _df_close_fte.empty and _fte_cols_av:
+                _fte_rows = ''
+                _fte_tot_n = 0; _fte_tot_fte = 0; _fte_tot_bnk = 0; _fte_tot_obch = 0
+                for _brn in _bns_regions:
+                    _dreg_cl = _df_close_fte[_df_close_fte['REGION_NAME'] == _brn]
+                    if _dreg_cl.empty:
+                        continue
+                    _nc = len(_dreg_cl)
+                    _sf = _dreg_cl['FTE'].sum() if 'FTE' in _dreg_cl.columns else 0
+                    _sb2 = _dreg_cl['BANKERS_COUNT'].sum() if 'BANKERS_COUNT' in _dreg_cl.columns else 0
+                    _so = _dreg_cl['OBCHODNI_FTE'].sum() if 'OBCHODNI_FTE' in _dreg_cl.columns else 0
+                    _fte_tot_n += _nc; _fte_tot_fte += _sf; _fte_tot_bnk += _sb2; _fte_tot_obch += _so
+                    _fte_rows += (
+                        f'<tr style="border-bottom:1px solid #f0f4f8;">'
+                        f'<td style="padding:6px 10px;font-weight:600;font-size:0.8rem;">{_brn}</td>'
+                        f'<td style="padding:6px 10px;font-size:0.8rem;text-align:center;color:#d62728;font-weight:700;">{_nc}</td>'
+                        + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{_sf:.1f}</td>' if 'FTE' in _fte_cols_av else '')
+                        + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{_sb2:.1f}</td>' if 'BANKERS_COUNT' in _fte_cols_av else '')
+                        + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;font-weight:700;color:#d62728;">{_so:.1f}</td>' if 'OBCHODNI_FTE' in _fte_cols_av else '')
+                        + '</tr>'
+                    )
+                _fte_rows += (
+                    f'<tr style="background:#fff8f8;font-weight:700;border-top:2px solid #fecaca;">'
+                    f'<td style="padding:6px 10px;font-size:0.8rem;">CELKEM</td>'
+                    f'<td style="padding:6px 10px;font-size:0.8rem;text-align:center;color:#d62728;">{_fte_tot_n}</td>'
+                    + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{_fte_tot_fte:.1f}</td>' if 'FTE' in _fte_cols_av else '')
+                    + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{_fte_tot_bnk:.1f}</td>' if 'BANKERS_COUNT' in _fte_cols_av else '')
+                    + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;color:#d62728;">{_fte_tot_obch:.1f}</td>' if 'OBCHODNI_FTE' in _fte_cols_av else '')
+                    + '</tr>'
+                )
+                _fte_hdr = (
+                    '<th style="padding:7px 10px;background:#d62728;color:white;font-size:0.78rem;text-align:left;">Region</th>'
+                    '<th style="padding:7px 10px;background:#d62728;color:white;font-size:0.78rem;text-align:center;">Uzavíraných poboček</th>'
+                    + ('<th style="padding:7px 10px;background:#d62728;color:white;font-size:0.78rem;text-align:right;">FTE celkem</th>' if 'FTE' in _fte_cols_av else '')
+                    + ('<th style="padding:7px 10px;background:#d62728;color:white;font-size:0.78rem;text-align:right;">Bankéři</th>' if 'BANKERS_COUNT' in _fte_cols_av else '')
+                    + ('<th style="padding:7px 10px;background:#d62728;color:white;font-size:0.78rem;text-align:right;">Obchodní FTE</th>' if 'OBCHODNI_FTE' in _fte_cols_av else '')
+                )
+                _sec_fte = make_collapsible(
+                    'bns-fte',
+                    f'👥 Dopad do FTE — uzavírané pobočky ({_fte_tot_n} poboček)',
+                    (f'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'
+                     f'<thead><tr>{_fte_hdr}</tr></thead>'
+                     f'<tbody>{_fte_rows}</tbody></table></div>'
+                     f'<div style="font-size:0.72rem;color:#888;margin-top:6px;">'
+                     f'Celkový dopad: {_fte_tot_n} poboček &nbsp;·&nbsp; '
+                     f'{_fte_tot_fte:.1f} FTE &nbsp;·&nbsp; {_fte_tot_obch:.1f} obchodních FTE</div>'),
+                    default_open=False,
+                )
+            else:
+                _sec_fte = ''
+
+            # ── BNS Keep/Close přehled (reuse existing function) ─────────────
+            _bns_kc_html = generate_bns_close_table(_df_bns)
+            _sec_bns_keep_close = make_collapsible(
+                'bns-keep-close',
+                '📋 Přehled poboček dle strategie BNS — Keep/Close po letech',
+                _bns_kc_html or '<p style="color:#aaa;font-style:italic;">Data nejsou k dispozici.</p>',
+                default_open=False,
             )
 
             # ── Map: enhanced BNS strategy map ──────────────────────────────
@@ -13503,6 +13610,7 @@ function obSet_{_fn_slug}(btn, ob){{
   details.collapsible-section[open] summary{{border-radius:8px 8px 0 0;}}
   .cnt-pad{{padding:16px;}}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3"></script>
 </head><body>
 <div class="bns-wrapper">
   <div style="margin-bottom:24px;padding:20px 24px;background:white;border-radius:12px;
@@ -13521,6 +13629,12 @@ function obSet_{_fn_slug}(btn, ob){{
   {_sec_timeline}
 
   {_sec_region}
+
+  {_sec_invest_cost}
+
+  {_sec_fte}
+
+  {_sec_bns_keep_close}
 
   {_sec_map}
 
