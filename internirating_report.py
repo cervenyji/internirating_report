@@ -13020,20 +13020,23 @@ function obSet_{_fn_slug}(btn, ob){{
             )
 
             # ── Timeline: vývoj sítě 2027-2030 ──────────────────────────────
-            _df_close_yr  = _df_bns[_df_bns['_BNS_CAT'] == 'close'].copy()
             _df_invest_yr = _df_bns[_df_bns['_BNS_CAT'] == 'invest'].copy()
             _df_cashless_yr = _df_bns[_df_bns['_BNS_CAT'] == 'cashless'].copy()
 
-            _close_by_yr  = {y: int((_df_close_yr['_BNS_YEAR'] == y).sum())  for y in _BNS_YEARS}
             _invest_by_yr = {y: int((_df_invest_yr['_BNS_YEAR'] == y).sum()) for y in _BNS_YEARS}
             _cashless_by_yr = {y: int((_df_cashless_yr['_BNS_YEAR'] == y).sum()) for y in _BNS_YEARS}
 
-            # Cumulative active branches (after closures)
-            _active_by_yr = {}
-            _cumclosed = 0
-            for _y in _BNS_YEARS:
-                _cumclosed += _close_by_yr[_y]
-                _active_by_yr[_y] = _n_total - _cumclosed
+            # Active & close counts — same logic as generate_bns_close_table:
+            # keep = NOT close OR close_year > given_year (fillna→9999 means unknown = not yet closed)
+            _bns_strat_col = 'FOOTPRINT_STRATEGIE_(2030)'
+            _bns_cyr_col   = 'PLAN_CLOSE_(ROK)'
+            _bns_is_cl = _df_bns[_bns_strat_col].astype(str).str.lower().str.contains('close', na=False) if _bns_strat_col in _df_bns.columns else pd.Series(False, index=_df_bns.index)
+            _bns_cl_yr = pd.to_numeric(_df_bns[_bns_cyr_col] if _bns_cyr_col in _df_bns.columns else pd.Series(dtype=float), errors='coerce').reindex(_df_bns.index)
+            _close_by_yr   = {_y: int((_bns_is_cl & (_bns_cl_yr == _y)).sum()) for _y in _BNS_YEARS}
+            _active_by_yr  = {
+                _y: int(((~_bns_is_cl) | (_bns_cl_yr.fillna(9999) > _y)).sum())
+                for _y in _BNS_YEARS
+            }
 
             _timeline_years_json = _bns_json.dumps([str(y) for y in _BNS_YEARS])
             _close_data_json   = _bns_json.dumps([_close_by_yr[y] for y in _BNS_YEARS])
@@ -13155,24 +13158,32 @@ function obSet_{_fn_slug}(btn, ob){{
                 return ''.join(parts)
 
             def _invest_cell_full(dreg):
-                """INVESTICE cell: NF/FHC + BO Online + Remote Room + Adhoc"""
+                """INVESTICE cell: NF / FHC separately + BO Online + Remote Room + Adhoc"""
                 parts = []
-                inv_d = _yr_branches(dreg[dreg['_BNS_CAT'] == 'invest'])
-                if inv_d:
-                    for _yy in sorted(y for y in inv_d if y is not None):
-                        brs = ', '.join(inv_d[_yy])
-                        parts.append(
-                            f'<div style="margin-bottom:3px;">'
-                            f'<span style="font-weight:700;color:#2770f0;font-size:0.72rem;">{_yy}:</span> '
-                            f'<span style="font-size:0.72rem;">{brs}</span></div>'
-                        )
-                    if None in inv_d:
-                        brs = ', '.join(inv_d[None])
-                        parts.append(
-                            f'<div style="margin-bottom:3px;">'
-                            f'<span style="font-weight:700;color:#aaa;font-size:0.72rem;">?:</span> '
-                            f'<span style="font-size:0.72rem;">{brs}</span></div>'
-                        )
+
+                def _yr_group_html(sub, yr_col, color, label):
+                    if yr_col not in sub.columns:
+                        return
+                    _sub2 = sub[pd.to_numeric(sub[yr_col], errors='coerce') > 0]
+                    if _sub2.empty:
+                        return
+                    if parts:
+                        parts.append('<hr style="border:none;border-top:1px solid #f1f5f9;margin:3px 0;">')
+                    parts.append(f'<div style="font-size:0.65rem;color:{color};font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;">{label}</div>')
+                    _by_yr2 = {}
+                    for _, _r2 in _sub2.iterrows():
+                        try: _y2 = int(float(_r2.get(yr_col, '?')))
+                        except: _y2 = None
+                        _by_yr2.setdefault(_y2, []).append(_blabel(_r2))
+                    for _y2 in sorted(y2 for y2 in _by_yr2 if y2 is not None):
+                        brs = ', '.join(_by_yr2[_y2])
+                        parts.append(f'<div style="margin-bottom:2px;"><span style="font-weight:700;color:{color};font-size:0.72rem;">{_y2}:</span> <span style="font-size:0.72rem;">{brs}</span></div>')
+                    if None in _by_yr2:
+                        brs = ', '.join(_by_yr2[None])
+                        parts.append(f'<div style="margin-bottom:2px;"><span style="font-weight:700;color:#aaa;font-size:0.72rem;">?:</span> <span style="font-size:0.72rem;">{brs}</span></div>')
+
+                _yr_group_html(dreg, 'INVESTICE_NF_(ROK)',  '#2770f0', '🔵 NF')
+                _yr_group_html(dreg, 'INVESTICE_FHC_(ROK)', '#7c3aed', '🟣 FHC')
                 # BO Online
                 if 'BACK_OFFICE_ONLINE' in dreg.columns:
                     _bo_sub = dreg[pd.to_numeric(dreg['BACK_OFFICE_ONLINE'], errors='coerce') > 0]
@@ -13249,19 +13260,20 @@ function obSet_{_fn_slug}(btn, ob){{
                 default_open=True,
             )
 
-            # ── Investment cost estimates — formula: round(FTE×0.9)×format_factor ──
+            # ── Investment cost estimates 2027 — formula: round(FTE×0.9)×format_factor ──
             _NF_FORMAT_FACTORS = {
                 'flagship': 1_600_000, 'medium': 1_680_000,
                 'medium economy': 2_167_000, 'small': 2_167_000,
             }
             _BUDGET_PER_YEAR = 500_000_000  # 500 M Kč / rok
 
-            # Compute cost estimate per NF investment branch
-            _reg_yr_cost = {}   # {region: {year: cost_czk}}
-            _reg_nf_n    = {}   # {region: count}
+            # Cost per region for year 2027 only
+            _reg_cost27 = {}  # {region: cost_czk}
+            _reg_nf_n27 = {}  # {region: count}
+            _reg_nf_branches27 = {}  # {region: [branch_names]}
             for _, _icrow in _df_bns[_df_bns['_BNS_CAT'] == 'invest'].iterrows():
                 _nf_yr_v = pd.to_numeric(_icrow.get('INVESTICE_NF_(ROK)', None), errors='coerce') if 'INVESTICE_NF_(ROK)' in _icrow.index else None
-                if not pd.notna(_nf_yr_v) or _nf_yr_v <= 0:
+                if not (pd.notna(_nf_yr_v) and int(_nf_yr_v) == 2027):
                     continue
                 try:
                     _ic_fte = float(_icrow.get('_total_spec', 0) or 0)
@@ -13269,153 +13281,130 @@ function obSet_{_fn_slug}(btn, ob){{
                     _ic_fac = _NF_FORMAT_FACTORS.get(_ic_fmt)
                     if _ic_fte > 0 and _ic_fac:
                         _ic_cost = round(_ic_fte * 0.9) * _ic_fac
-                        _ic_reg = str(_icrow.get('REGION_NAME', '?'))
-                        _ic_yr  = int(_nf_yr_v)
-                        _reg_yr_cost.setdefault(_ic_reg, {})
-                        _reg_yr_cost[_ic_reg][_ic_yr] = _reg_yr_cost[_ic_reg].get(_ic_yr, 0) + _ic_cost
-                        _reg_nf_n[_ic_reg] = _reg_nf_n.get(_ic_reg, 0) + 1
+                        _ic_reg  = str(_icrow.get('REGION_NAME', '?'))
+                        _ic_nm   = str(_icrow.get(_name_col, _icrow.get('BRANCH_CODE', '?')))
+                        _reg_cost27[_ic_reg]  = _reg_cost27.get(_ic_reg, 0) + _ic_cost
+                        _reg_nf_n27[_ic_reg]  = _reg_nf_n27.get(_ic_reg, 0) + 1
+                        _reg_nf_branches27.setdefault(_ic_reg, []).append(_ic_nm)
                 except Exception:
                     pass
 
-            _reg_totals_cost = {_r: sum(_yd.values()) for _r, _yd in _reg_yr_cost.items()}
-            _yr_totals_cost  = {}
-            for _yd in _reg_yr_cost.values():
-                for _y, _c in _yd.items():
-                    _yr_totals_cost[_y] = _yr_totals_cost.get(_y, 0) + _c
-            _grand_cost = sum(_reg_totals_cost.values())
+            _total_cost27 = sum(_reg_cost27.values())
+            _pct27 = _total_cost27 / _BUDGET_PER_YEAR * 100
 
-            # Table rows per region
-            _cost_tbl_rows = ''
-            for _brn in _bns_regions:
-                _rc_total = _reg_totals_cost.get(_brn, 0)
-                if _rc_total == 0 and _reg_nf_n.get(_brn, 0) == 0:
-                    continue
-                _rc_n = _reg_nf_n.get(_brn, 0)
-                _yr_cells = ''.join(
-                    f'<td style="padding:5px 8px;font-size:0.78rem;text-align:right;">'
-                    f'{format_money(_reg_yr_cost.get(_brn, {}).get(_y, 0)) if _reg_yr_cost.get(_brn, {}).get(_y, 0) > 0 else "—"}</td>'
-                    for _y in _BNS_YEARS
-                )
-                _cost_tbl_rows += (
-                    f'<tr style="border-bottom:1px solid #f0f4f8;">'
-                    f'<td style="padding:5px 8px;font-weight:600;font-size:0.8rem;">{_brn}</td>'
-                    f'<td style="padding:5px 8px;font-size:0.78rem;text-align:center;">{_rc_n}</td>'
-                    f'{_yr_cells}'
-                    f'<td style="padding:5px 8px;font-size:0.78rem;font-weight:700;text-align:right;color:#2770f0;">{format_money(_rc_total) if _rc_total > 0 else "—"}</td>'
-                    f'</tr>'
-                )
-            _yr_total_cells = ''.join(
-                f'<td style="padding:5px 8px;font-size:0.78rem;font-weight:700;text-align:right;">{format_money(_yr_totals_cost.get(_y, 0))}</td>'
-                for _y in _BNS_YEARS
-            )
-            _cost_tbl_rows += (
-                f'<tr style="background:#f0f6ff;font-weight:700;border-top:2px solid #bfdbfe;">'
-                f'<td style="padding:5px 8px;font-size:0.8rem;">CELKEM</td>'
-                f'<td style="padding:5px 8px;font-size:0.78rem;text-align:center;">{sum(_reg_nf_n.values())}</td>'
-                f'{_yr_total_cells}'
-                f'<td style="padding:5px 8px;font-size:0.78rem;text-align:right;color:#2770f0;">{format_money(_grand_cost)}</td>'
-                f'</tr>'
-            )
-            _cost_tbl_hdr = (
-                '<th style="padding:6px 8px;background:#2770f0;color:white;font-size:0.77rem;text-align:left;">Region</th>'
-                '<th style="padding:6px 8px;background:#2770f0;color:white;font-size:0.77rem;text-align:center;">NF poboček</th>'
-                + ''.join(f'<th style="padding:6px 8px;background:#2770f0;color:white;font-size:0.77rem;text-align:right;">{_y}</th>' for _y in _BNS_YEARS)
-                + '<th style="padding:6px 8px;background:#1a55cc;color:white;font-size:0.77rem;text-align:right;">Celkem</th>'
+            # Progress bar color
+            _pbcolor27 = '#d62728' if _pct27 > 100 else ('#e07a2a' if _pct27 > 75 else '#2ca02c')
+
+            # Budget gauge card
+            _budget27_gauge = (
+                f'<div style="background:white;border:1px solid #e2e8f0;border-radius:10px;padding:16px 20px;margin-bottom:16px;">'
+                f'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
+                f'<div>'
+                f'<div style="font-size:0.72rem;color:#888;text-transform:uppercase;letter-spacing:.4px;">NF investice 2027 vs roční budget</div>'
+                f'<div style="font-size:1.8rem;font-weight:800;color:#0f172a;margin-top:2px;">{_total_cost27/1_000_000:.0f} M Kč</div>'
+                f'<div style="font-size:0.75rem;color:#555;">z {_BUDGET_PER_YEAR//1_000_000} M Kč ročního budgetu — <b style="color:{_pbcolor27};">{_pct27:.0f}%</b></div>'
+                f'</div>'
+                f'<div style="font-size:2.4rem;font-weight:900;color:{_pbcolor27};">{_pct27:.0f}%</div>'
+                f'</div>'
+                f'<div style="background:#f1f5f9;border-radius:6px;height:14px;overflow:hidden;">'
+                f'<div style="width:{min(_pct27,100):.1f}%;height:100%;background:{_pbcolor27};border-radius:6px;'
+                f'transition:width .5s;"></div></div>'
+                f'<div style="display:flex;justify-content:space-between;font-size:0.68rem;color:#aaa;margin-top:4px;">'
+                f'<span>0 M</span><span>250 M</span><span>500 M (budget)</span>'
+                f'</div></div>'
             )
 
-            # Budget bar chart (stacked by region, x=year, ref line at 500M)
-            _budget_chart_id = 'bns-budget-' + str(id(_df_bns))[:8]
-            _budget_series = []
-            for _brn in _bns_regions:
-                _bdata = [round(_reg_yr_cost.get(_brn, {}).get(_y, 0) / 1_000_000, 1) for _y in _BNS_YEARS]
-                if any(_bd > 0 for _bd in _bdata):
-                    _budget_series.append({'name': _brn, 'data': _bdata})
-            _budget_series_json = _bns_json.dumps(_budget_series)
-            _budget_years_json = _bns_json.dumps([str(_y) for _y in _BNS_YEARS])
-            _budget_max_m = max(550, max((_yr_totals_cost.get(_y, 0) for _y in _BNS_YEARS), default=0) / 1_000_000 + 50)
+            # Horizontal bar chart per region (2027)
+            _budget27_chart_id = 'bns-budget27-' + str(id(_df_bns))[:8]
+            _b27_labels = [_brn for _brn in _bns_regions if _reg_cost27.get(_brn, 0) > 0]
+            _b27_data   = [round(_reg_cost27.get(_brn, 0) / 1_000_000, 1) for _brn in _b27_labels]
+            _b27_labels_json = _bns_json.dumps(_b27_labels)
+            _b27_data_json   = _bns_json.dumps(_b27_data)
+            _b27_max_m = max(550, (_total_cost27 / 1_000_000) + 20)
 
-            # KPI cards for budget
-            def _budget_kpi(label, val_m, color, sub=''):
-                pct = val_m / 500 * 100
-                bar_color = '#d62728' if pct > 100 else ('#e07a2a' if pct > 75 else '#2ca02c')
-                return (
-                    f'<div style="flex:1;min-width:130px;background:white;border:1px solid #e2e8f0;'
-                    f'border-radius:8px;padding:10px 14px;border-top:3px solid {color};">'
-                    f'<div style="font-size:0.68rem;color:#888;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">{label}</div>'
-                    f'<div style="font-size:1.35rem;font-weight:800;color:#0f172a;">{val_m:.0f} M Kč</div>'
-                    f'<div style="margin:5px 0 2px;background:#f1f5f9;border-radius:3px;height:6px;">'
-                    f'<div style="width:{min(pct,100):.0f}%;height:100%;background:{bar_color};border-radius:3px;"></div></div>'
-                    f'<div style="font-size:0.7rem;color:{bar_color};font-weight:600;">{pct:.0f}% ročního budgetu 500M</div>'
-                    + (f'<div style="font-size:0.67rem;color:#aaa;margin-top:2px;">{sub}</div>' if sub else '')
-                    + '</div>'
-                )
-
-            _budget_kpi_strip = (
-                f'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">'
-                + ''.join(
-                    _budget_kpi(str(_y), _yr_totals_cost.get(_y, 0) / 1_000_000,
-                                '#d62728' if _yr_totals_cost.get(_y, 0) > _BUDGET_PER_YEAR else '#2770f0',
-                                f'budget: 500 M Kč/rok')
-                    for _y in _BNS_YEARS
-                )
-                + f'<div style="flex:1;min-width:130px;background:#f0f6ff;border:2px solid #2770f0;'
-                  f'border-radius:8px;padding:10px 14px;">'
-                  f'<div style="font-size:0.68rem;color:#888;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Celkem 2027–2030</div>'
-                  f'<div style="font-size:1.35rem;font-weight:800;color:#2770f0;">{_grand_cost/1_000_000:.0f} M Kč</div>'
-                  f'<div style="font-size:0.7rem;color:#555;margin-top:3px;">= {_grand_cost/4/1_000_000:.0f} M Kč průměr/rok</div>'
-                  f'</div>'
-                + '</div>'
-            )
-
-            _budget_chart_html = (
-                f'<div id="{_budget_chart_id}" style="height:360px;"></div>'
+            _budget27_chart_html = (
+                f'<div id="{_budget27_chart_id}" style="height:{max(200, len(_b27_labels)*38)}px;"></div>'
                 f'<script>'
                 f'(function(){{'
-                f'var yrs={_budget_years_json};'
-                f'var ser={_budget_series_json};'
-                f'var _br=false;'
-                f'function _bgR(){{'
-                f'if(_br)return;'
-                f'if(typeof ApexCharts==="undefined"){{setTimeout(_bgR,200);return;}}'
-                f'var el=document.getElementById("{_budget_chart_id}");'
-                f'if(!el){{setTimeout(_bgR,200);return;}}'
-                f'var r=el.getBoundingClientRect();if(r.width<10){{setTimeout(_bgR,300);return;}}'
-                f'_br=true;'
+                f'var lbl={_b27_labels_json};var dat={_b27_data_json};'
+                f'var _br27=false;'
+                f'function _b27R(){{'
+                f'if(_br27)return;'
+                f'if(typeof ApexCharts==="undefined"){{setTimeout(_b27R,200);return;}}'
+                f'var el=document.getElementById("{_budget27_chart_id}");'
+                f'if(!el){{setTimeout(_b27R,200);return;}}'
+                f'var r=el.getBoundingClientRect();if(r.width<10){{setTimeout(_b27R,300);return;}}'
+                f'_br27=true;'
                 f'try{{'
                 f'new ApexCharts(el,{{'
-                f'chart:{{type:"bar",height:340,stacked:true,toolbar:{{show:false}}}},'
-                f'series:ser,'
-                f'xaxis:{{categories:yrs,title:{{text:"Rok realizace"}}}},'
-                f'yaxis:{{min:0,max:{_budget_max_m:.0f},title:{{text:"M Kč"}},labels:{{formatter:function(v){{return v.toFixed(0)}}}}}},'
-                f'annotations:{{yaxis:[{{y:500,borderColor:"#d62728",strokeDashArray:5,label:{{text:"Budget 500 M/rok",position:"right",style:{{color:"white",background:"#d62728",fontSize:"11px"}}}}}}]}},'
-                f'dataLabels:{{enabled:false}},'
-                f'legend:{{position:"top",fontSize:"11px"}},'
-                f'tooltip:{{y:{{formatter:function(v){{return v.toFixed(1)+" M Kč"}}}}}},'
-                f'plotOptions:{{bar:{{borderRadius:2,columnWidth:"55%"}}}}'
+                f'chart:{{type:"bar",height:Math.max(200,lbl.length*38),toolbar:{{show:false}}}},'
+                f'series:[{{name:"Odh. náklady 2027 (M Kč)",data:dat}}],'
+                f'xaxis:{{categories:lbl}},'
+                f'yaxis:{{min:0,max:{_b27_max_m:.0f},title:{{text:"M Kč"}}}},'
+                f'annotations:{{yaxis:[{{y:500,borderColor:"#d62728",strokeDashArray:4,label:{{text:"Budget 500M",position:"right",style:{{color:"white",background:"#d62728",fontSize:"10px"}}}}}}]}},'
+                f'colors:["#2770f0"],'
+                f'plotOptions:{{bar:{{horizontal:true,borderRadius:2,dataLabels:{{position:"top"}}}}}},'
+                f'dataLabels:{{enabled:true,formatter:function(v){{return v>0?v.toFixed(1)+" M":""}},offsetX:5,style:{{fontSize:"11px",colors:["#333"]}}}},'
+                f'tooltip:{{y:{{formatter:function(v){{return v.toFixed(1)+" M Kč"}}}}}}'
                 f'}}).render();'
-                f'}}catch(e){{_br=false;console.error(e);}}'
+                f'}}catch(e){{_br27=false;console.error(e);}}'
                 f'}}'
-                f'setTimeout(_bgR,150);'
+                f'setTimeout(_b27R,150);'
                 f'document.addEventListener("toggle",function(ev){{'
-                f'if(ev.target&&ev.target.open){{setTimeout(_bgR,100);}}}},true);'
+                f'if(ev.target&&ev.target.open){{setTimeout(_b27R,100);}}}},true);'
                 f'}})();'
                 f'</script>'
             )
 
+            # Table rows per region for 2027
+            _cost27_rows = ''
+            for _brn in _bns_regions:
+                _c27 = _reg_cost27.get(_brn, 0)
+                if _c27 == 0:
+                    continue
+                _n27 = _reg_nf_n27.get(_brn, 0)
+                _brs27 = ', '.join(_reg_nf_branches27.get(_brn, []))
+                _pct_r27 = _c27 / _BUDGET_PER_YEAR * 100
+                _pc_col = '#d62728' if _pct_r27 > 100 else ('#e07a2a' if _pct_r27 > 30 else '#2ca02c')
+                _cost27_rows += (
+                    f'<tr style="border-bottom:1px solid #f0f4f8;">'
+                    f'<td style="padding:6px 8px;font-weight:600;font-size:0.8rem;">{_brn}</td>'
+                    f'<td style="padding:6px 8px;font-size:0.78rem;text-align:center;">{_n27}</td>'
+                    f'<td style="padding:6px 8px;font-size:0.78rem;color:#555;">{_brs27}</td>'
+                    f'<td style="padding:6px 8px;font-size:0.78rem;text-align:right;font-weight:700;color:#2770f0;">{format_money(_c27)}</td>'
+                    f'<td style="padding:6px 8px;font-size:0.78rem;text-align:right;color:{_pc_col};font-weight:600;">{_pct_r27:.0f}%</td>'
+                    f'</tr>'
+                )
+            _cost27_rows += (
+                f'<tr style="background:#f0f6ff;font-weight:700;border-top:2px solid #bfdbfe;">'
+                f'<td style="padding:6px 8px;font-size:0.8rem;">CELKEM 2027</td>'
+                f'<td style="padding:6px 8px;font-size:0.78rem;text-align:center;">{sum(_reg_nf_n27.values())}</td>'
+                f'<td></td>'
+                f'<td style="padding:6px 8px;font-size:0.78rem;text-align:right;color:#2770f0;">{format_money(_total_cost27)}</td>'
+                f'<td style="padding:6px 8px;font-size:0.78rem;text-align:right;color:{_pbcolor27};font-weight:700;">{_pct27:.0f}%</td>'
+                f'</tr>'
+            )
+            _cost27_hdr = (
+                '<th style="padding:6px 8px;background:#2770f0;color:white;font-size:0.77rem;text-align:left;">Region</th>'
+                '<th style="padding:6px 8px;background:#2770f0;color:white;font-size:0.77rem;text-align:center;">NF 2027</th>'
+                '<th style="padding:6px 8px;background:#2770f0;color:white;font-size:0.77rem;text-align:left;">Pobočky</th>'
+                '<th style="padding:6px 8px;background:#1a55cc;color:white;font-size:0.77rem;text-align:right;">Odh. náklady (Kč)</th>'
+                '<th style="padding:6px 8px;background:#1a55cc;color:white;font-size:0.77rem;text-align:right;">% budgetu</th>'
+            )
+
             _sec_invest_cost = make_collapsible(
                 'bns-invest-cost',
-                '💰 Odhad nákladů NF investic dle regionů (vs budget 500 M Kč/rok)',
+                f'💰 Odhad nákladů NF investic 2027 — budget 500 M Kč/rok ({_pct27:.0f}% využito)',
                 (
-                    _budget_kpi_strip
+                    _budget27_gauge
                     + f'<div style="overflow-x:auto;margin-bottom:16px;">'
                     f'<table style="width:100%;border-collapse:collapse;">'
-                    f'<thead><tr>{_cost_tbl_hdr}</tr></thead>'
-                    f'<tbody>{_cost_tbl_rows}</tbody></table></div>'
-                    + _budget_chart_html
+                    f'<thead><tr>{_cost27_hdr}</tr></thead>'
+                    f'<tbody>{_cost27_rows}</tbody></table></div>'
+                    + _budget27_chart_html
                     + f'<div style="font-size:0.71rem;color:#888;margin-top:8px;">'
-                    f'Výpočet: round(FTE × 0,9) × cena/formát (Flagship 1,6M, Medium 1,68M, Medium Economy/Small 2,167M Kč/os.)'
-                    f'&nbsp;·&nbsp; červená čára = roční budget 500 M Kč</div>'
-                ) if _cost_tbl_rows else '<p style="color:#aaa;font-style:italic;">Žádné NF investice se standardním formátem.</p>',
+                    f'Výpočet: round(FTE × 0,9) × cena/formát (Flagship 1,6M, Medium 1,68M, Medium Economy/Small 2,167M Kč/os.) — pouze NF investice rok 2027</div>'
+                ) if _cost27_rows else '<p style="color:#aaa;font-style:italic;">Žádné NF investice 2027 se standardním formátem.</p>',
                 default_open=True,
             )
 
@@ -13617,222 +13606,196 @@ function obSet_{_fn_slug}(btn, ob){{
                 default_open=True,
             )
 
-            # ── Close detail table ───────────────────────────────────────────
-            _close_tbl_cols = [
-                ('BRANCH_CODE',            'Kód',         lambda v: str(v)),
-                ('BRANCH_NAME',            'Název',        lambda v: str(v)),
-                ('REGION_NAME',            'Region',       lambda v: str(v)),
-                ('BRANCH_FORMAT',          'Formát',       lambda v: str(v)),
-                ('PLAN_CLOSE_(ROK)',        'Rok uzavření', lambda v: str(int(float(v))) if pd.notna(v) else '—'),
-                ('IR',                     'IR 2025',      lambda v: f'{float(v):.1f}' if pd.notna(v) else '—'),
-                ('CASHLESS',               'Cashless',     lambda v: str(v)),
-                ('FOOTPRINT_STRATEGIE_(2030)', 'Strategie', lambda v: str(v)),
-            ]
-            _sort_keys_cl = [c for c in ['REGION_NAME', '_BNS_YEAR'] if c in _df_bns.columns]
-            _df_close_detail = _df_bns[_df_bns['_BNS_CAT'] == 'close'].sort_values(
-                _sort_keys_cl, na_position='last'
+            # ── Unified detail: Close + Invest (NF/FHC) + Cashless + BO + RR + Adhoc ──
+            # Build flat actions list — one entry per (branch × action-type)
+            _TYP_CFG = {
+                'close':    ('#d62728', '🔴 CLOSE',   '#fff8f8'),
+                'nf':       ('#2770f0', '🔵 NF inv.',  '#f0f6ff'),
+                'fhc':      ('#7c3aed', '🟣 FHC inv.', '#f5f3ff'),
+                'cashless': ('#e07a2a', '🟠 Cashless', '#fff7f0'),
+                'bo':       ('#ea580c', '📋 BO Online','#fff7ed'),
+                'rr':       ('#16a34a', '🖥️ Rem.Room', '#f0fdf4'),
+                'adhoc':    ('#78716c', '📌 Adhoc',    '#fafaf9'),
+            }
+
+            _detail_actions = []
+            for _, _drow in _df_bns.iterrows():
+                _dreg2 = str(_drow.get('REGION_NAME', '?'))
+                _dbc   = str(_drow.get('BRANCH_CODE', '?'))
+                _dnm   = str(_drow.get(_name_col, _dbc)) if _name_col in _drow.index else _dbc
+
+                def _clean(v):
+                    s = str(v or '').strip()
+                    return '' if s in ('nan','None','0','') else s
+
+                def _add(typ, yr, notes='', status=''):
+                    _detail_actions.append({
+                        'region': _dreg2, 'code': _dbc, 'name': _dnm,
+                        'typ': typ, 'year': yr, 'notes': notes, 'status': status,
+                        'row': _drow,
+                    })
+
+                # Close
+                if _drow.get('_BNS_CAT') == 'close':
+                    _add('close', _drow.get('_BNS_YEAR'), _clean(_drow.get('CLOSE_DESC','')))
+
+                # NF invest
+                _nf_v = pd.to_numeric(_drow.get('INVESTICE_NF_(ROK)', None), errors='coerce') if 'INVESTICE_NF_(ROK)' in _drow.index else None
+                if pd.notna(_nf_v) and _nf_v > 0:
+                    _add('nf', int(_nf_v), _clean(_drow.get('INV_NF_DESC','')), _clean(_drow.get('INV_NF_STATUS','')))
+
+                # FHC invest
+                _fhc_v = pd.to_numeric(_drow.get('INVESTICE_FHC_(ROK)', None), errors='coerce') if 'INVESTICE_FHC_(ROK)' in _drow.index else None
+                if pd.notna(_fhc_v) and _fhc_v > 0:
+                    _add('fhc', int(_fhc_v), _clean(_drow.get('INV_FHC_DESC','')), _clean(_drow.get('INV_FHC_STATUS','')))
+
+                # Cashless
+                if _drow.get('_BNS_CAT') == 'cashless':
+                    _add('cashless', _drow.get('_BNS_YEAR'), _clean(_drow.get('CASHLESS_DESC','')))
+
+                # BO Online
+                if 'BACK_OFFICE_ONLINE' in _drow.index:
+                    _bov = pd.to_numeric(_drow.get('BACK_OFFICE_ONLINE', None), errors='coerce')
+                    if pd.notna(_bov) and _bov > 0:
+                        _add('bo', int(_bov))
+
+                # Remote Room
+                if 'REMOTE_ROOM' in _drow.index:
+                    _rrv = pd.to_numeric(_drow.get('REMOTE_ROOM', None), errors='coerce')
+                    if pd.notna(_rrv) and _rrv > 0:
+                        _add('rr', int(_rrv))
+
+                # Adhoc
+                if 'ADHOC_YEAR' in _drow.index:
+                    _adv = pd.to_numeric(_drow.get('ADHOC_YEAR', None), errors='coerce')
+                    if pd.notna(_adv) and _adv > 0:
+                        _add('adhoc', int(_adv), _clean(_drow.get('ADHOC_DESCRIPTION','')))
+
+            # Sort: region → year (None last) → branch name
+            _detail_actions.sort(key=lambda x: (x['region'], x['year'] or 9999, x['name']))
+
+            # Helper: format value from row
+            def _fv(row, col, fmt='str'):
+                v = row.get(col, None) if col in row.index else None
+                if v is None or (isinstance(v, float) and pd.isna(v)):
+                    return '—'
+                if fmt == 'money': return format_money(float(v))
+                if fmt == 'num1':
+                    try: return f'{float(v):.1f}'
+                    except: return str(v)
+                if fmt == 'int':
+                    try: return str(int(float(v)))
+                    except: return str(v)
+                return str(v)
+
+            # Quintile dot helper (Q1=green=best, Q5=red=worst)
+            _Q_COLORS = {1:'#16a34a',2:'#84cc16',3:'#eab308',4:'#f97316',5:'#d62728'}
+
+            def _qdot(val, tooltip=''):
+                try:
+                    q = int(round(float(val)))
+                    c = _Q_COLORS.get(q,'#888')
+                    return f'<span title="{tooltip} Q{q}" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{c};margin-right:2px;"></span><span style="font-size:0.7rem;color:{c};font-weight:700;">Q{q}</span>'
+                except: return '—'
+
+            # Determine available detail columns
+            _dcols_avail = {c: c in _df_bns.columns for c in
+                            ['IR','CAP_Q','OBJEM_VYNOSU_CZK','FTE','PRIMARNI_KLIENTI','DZ_STITKY',
+                             'BRANCH_FORMAT','CASHLESS']}
+
+            # Build header
+            _det_th = (
+                '<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;white-space:nowrap;">Typ</th>'
+                '<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;">Rok</th>'
+                '<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;">Kód</th>'
+                '<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;min-width:140px;">Název</th>'
+                + ('<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;">IR</th>' if _dcols_avail['IR'] else '')
+                + ('<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;white-space:nowrap;">Bus. Q</th>' if _dcols_avail['CAP_Q'] else '')
+                + ('<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;white-space:nowrap;">Nové výnosy</th>' if _dcols_avail['OBJEM_VYNOSU_CZK'] else '')
+                + ('<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;">FTE</th>' if _dcols_avail['FTE'] else '')
+                + ('<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;white-space:nowrap;">Prim. klienti</th>' if _dcols_avail['PRIMARNI_KLIENTI'] else '')
+                + ('<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;white-space:nowrap;">Nebez. zóna</th>' if _dcols_avail['DZ_STITKY'] else '')
+                + '<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;min-width:140px;">Poznámky / stav</th>'
             )
-            _close_avail = [(c, l, f) for c, l, f in _close_tbl_cols if c in _df_close_detail.columns or c == 'BRANCH_CODE']
 
-            _close_th = ''.join(
-                f'<th style="padding:6px 8px;background:#d62728;color:white;font-size:0.77rem;'
-                f'white-space:nowrap;cursor:pointer;user-select:none;" '
-                f'onclick="(function(t,i){{var rows=Array.from(t.querySelectorAll(\'tbody tr\'));'
-                f'var asc=t.dataset.sc==i&&t.dataset.sd==\'asc\';'
-                f'rows.sort(function(a,b){{var av=a.cells[i].dataset.v||a.cells[i].textContent,'
-                f'bv=b.cells[i].dataset.v||b.cells[i].textContent;'
-                f'return asc?(bv>av?1:(bv<av?-1:0)):(av>bv?1:(av<bv?-1:0));}}); '
-                f'rows.forEach(function(r){{t.querySelector(\'tbody\').appendChild(r);}});'
-                f't.dataset.sc=i;t.dataset.sd=asc?\'desc\':\'asc\';}})('
-                f'this.closest(\'table\'),{_ci3})">{_lbl3} ↕</th>'
-                for _ci3, (_c3, _lbl3, _f3) in enumerate(_close_avail)
-            )
-            _close_tbody = ''
-            for _, _crow in _df_close_detail.iterrows():
-                _cells3 = ''
-                for _c3, _, _f3 in _close_avail:
-                    _raw3 = _crow.get(_c3, '—') if _c3 in _crow.index else '—'
-                    try: _dv3 = str(float(_raw3)) if pd.notna(_raw3) and _c3 not in ('BRANCH_CODE','BRANCH_NAME','REGION_NAME','FOOTPRINT_STRATEGIE_(2030)','CASHLESS') else ''
-                    except: _dv3 = ''
-                    _cells3 += f'<td data-v="{_dv3}" style="padding:5px 8px;border-bottom:1px solid #f0f4f8;font-size:0.77rem;">{_f3(_raw3)}</td>'
-                _close_tbody += f'<tr>{_cells3}</tr>'
+            # Build rows grouped by region
+            _det_tbody = ''
+            _cur_reg = None
+            for _da in _detail_actions:
+                _row = _da['row']
+                if _da['region'] != _cur_reg:
+                    _cur_reg = _da['region']
+                    _ncols = 9 + sum(1 for k in ['IR','CAP_Q','OBJEM_VYNOSU_CZK','FTE','PRIMARNI_KLIENTI','DZ_STITKY'] if _dcols_avail[k])
+                    _reg_n_all = len(_df_bns[_df_bns['REGION_NAME'] == _cur_reg]) if 'REGION_NAME' in _df_bns.columns else ''
+                    _det_tbody += (
+                        f'<tr style="background:#1e293b;">'
+                        f'<td colspan="{_ncols}" style="padding:7px 10px;font-size:0.82rem;font-weight:700;color:white;letter-spacing:.3px;">'
+                        f'📍 {_cur_reg}'
+                        + (f'<span style="font-weight:400;font-size:0.72rem;color:#94a3b8;margin-left:8px;">{_reg_n_all} poboček celkem</span>' if _reg_n_all else '')
+                        + '</td></tr>'
+                    )
 
-            _close_tbl_html = (
-                f'<div style="overflow-x:auto;">'
-                f'<table style="width:100%;border-collapse:collapse;">'
-                f'<thead><tr>{_close_th}</tr></thead>'
-                f'<tbody>{_close_tbody}</tbody>'
-                f'</table></div>'
-                f'<div style="font-size:0.72rem;color:#888;margin-top:6px;">'
-                f'Celkem uzavíraných: {_n_close} poboček &nbsp;·&nbsp; klikni záhlaví pro řazení</div>'
-            ) if _close_tbody else '<p style="color:#aaa;font-style:italic;">Žádné uzavírané pobočky.</p>'
+                _tcfg = _TYP_CFG.get(_da['typ'], ('#888','?','#f9f9f9'))
+                _tcolor, _tlabel, _tbg = _tcfg
+                _typ_badge = f'<span style="background:{_tcolor};color:white;font-size:0.68rem;font-weight:700;padding:2px 7px;border-radius:4px;white-space:nowrap;">{_tlabel}</span>'
+                _yr_cell = str(_da['year']) if _da['year'] else '—'
+                _notes_cell = ''
+                if _da['notes']:
+                    _notes_cell += f'<span style="font-size:0.72rem;color:#555;">{_da["notes"]}</span>'
+                if _da['status']:
+                    _notes_cell += f' <span style="font-size:0.68rem;background:#f0f4ff;color:#2770f0;border:1px solid #c7d9fb;padding:1px 5px;border-radius:3px;">{_da["status"]}</span>'
 
-            _sec_close = make_collapsible(
-                'bns-close',
-                f'🔴 Detail uzavíraných poboček ({_n_close})',
-                _close_tbl_html,
-                default_open=False,
-            )
+                _ir_q_html = ''
+                if _dcols_avail['IR']:
+                    _ir_val = _row.get('IR', None) if 'IR' in _row.index else None
+                    try:
+                        _ir_f = float(_ir_val)
+                        # Compute IR quintile within the network
+                        _ir_q = None
+                        if 'IR' in _df_bns.columns:
+                            _irs = pd.to_numeric(_df_bns['IR'], errors='coerce').dropna()
+                            if len(_irs) > 0:
+                                _ir_q = int(pd.cut([_ir_f], bins=pd.qcut(_irs, 5, retbins=True)[1], labels=False, include_lowest=True)[0]) + 1
+                        _ir_q_html = (f'{_ir_f:.1f}'
+                                      + (f' {_qdot(_ir_q, "IR")}' if _ir_q else ''))
+                    except: _ir_q_html = '—'
 
-            # ── Investment detail table (NF/FHC + BO Online + Remote Room + Adhoc) ──
-            _invest_tbl_cols = [
-                ('BRANCH_CODE',             'Kód',        lambda v: str(v)),
-                ('BRANCH_NAME',             'Název',       lambda v: str(v)),
-                ('REGION_NAME',             'Region',      lambda v: str(v)),
-                ('BRANCH_FORMAT',           'Formát',      lambda v: str(v)),
-                ('INVESTICE_NF_(ROK)',       'Inv. NF',     lambda v: str(int(float(v))) if pd.notna(v) else '—'),
-                ('INVESTICE_FHC_(ROK)',      'Inv. FHC',    lambda v: str(int(float(v))) if pd.notna(v) else '—'),
-                ('INVESTICE_NF_OR_FHC_(ROK)','1. investice',lambda v: str(int(float(v))) if pd.notna(v) else '—'),
-                ('IR',                      'IR 2025',     lambda v: f'{float(v):.1f}' if pd.notna(v) else '—'),
-                ('FOOTPRINT_STRATEGIE_(2030)', 'Strategie', lambda v: str(v)),
-            ]
-            _sort_keys_iv = [c for c in ['REGION_NAME', '_BNS_YEAR'] if c in _df_bns.columns]
-            _df_invest_detail = _df_bns[_df_bns['_BNS_CAT'] == 'invest'].sort_values(
-                _sort_keys_iv, na_position='last'
-            )
-            _invest_avail = [(c, l, f) for c, l, f in _invest_tbl_cols if c in _df_invest_detail.columns or c == 'BRANCH_CODE']
-
-            _invest_th = ''.join(
-                f'<th style="padding:6px 8px;background:#2770f0;color:white;font-size:0.77rem;white-space:nowrap;">{_lbl4}</th>'
-                for _, _lbl4, _ in _invest_avail
-            )
-            _invest_tbody = ''
-            for _, _irow in _df_invest_detail.iterrows():
-                _cells4 = ''
-                _ibg = '#f0f6ff' if _ % 2 == 0 else '#fff'
-                for _c4, _, _f4 in _invest_avail:
-                    _raw4 = _irow.get(_c4, '—') if _c4 in _irow.index else '—'
-                    _cells4 += f'<td style="padding:5px 8px;border-bottom:1px solid #f0f4f8;font-size:0.77rem;">{_f4(_raw4)}</td>'
-                _invest_tbody += f'<tr style="background:{_ibg};">{_cells4}</tr>'
-
-            # Helper: mini-table for BO Online / Remote Room / Adhoc extra projects
-            def _extra_proj_table(df_sub, yr_col, desc_col, label, badge_bg, badge_color, row_bg):
-                if df_sub.empty:
-                    return ''
-                _mini_cols = [
-                    ('BRANCH_CODE', 'Kód'),
-                    ('BRANCH_NAME', 'Název') if 'BRANCH_NAME' in df_sub.columns else ('BRANCH_CODE', 'Název'),
-                    ('REGION_NAME', 'Region'),
-                    (yr_col, 'Rok'),
-                    ('IR', 'IR 2025'),
-                ]
-                if desc_col and desc_col in df_sub.columns:
-                    _mini_cols.append((desc_col, 'Popis'))
-                _mini_cols = [(c, l) for c, l in _mini_cols if c in df_sub.columns]
-                _th_mini = ''.join(
-                    f'<th style="padding:5px 8px;background:{badge_bg};color:{badge_color};font-size:0.75rem;white-space:nowrap;">{l}</th>'
-                    for c, l in _mini_cols
+                _det_tbody += (
+                    f'<tr style="background:{_tbg};border-bottom:1px solid #e8eef8;">'
+                    f'<td style="padding:5px 8px;">{_typ_badge}</td>'
+                    f'<td style="padding:5px 8px;font-size:0.8rem;font-weight:700;color:{_tcolor};">{_yr_cell}</td>'
+                    f'<td style="padding:5px 8px;font-size:0.75rem;color:#888;">{_da["code"]}</td>'
+                    f'<td style="padding:5px 8px;font-size:0.8rem;font-weight:600;">{_da["name"]}</td>'
+                    + (f'<td style="padding:5px 8px;font-size:0.75rem;">{_ir_q_html}</td>' if _dcols_avail['IR'] else '')
+                    + (f'<td style="padding:5px 8px;">{_qdot(_fv(_row,"CAP_Q"), "Business rating")}</td>' if _dcols_avail['CAP_Q'] else '')
+                    + (f'<td style="padding:5px 8px;font-size:0.75rem;text-align:right;">{_fv(_row,"OBJEM_VYNOSU_CZK","money")}</td>' if _dcols_avail['OBJEM_VYNOSU_CZK'] else '')
+                    + (f'<td style="padding:5px 8px;font-size:0.75rem;text-align:right;">{_fv(_row,"FTE","num1")}</td>' if _dcols_avail['FTE'] else '')
+                    + (f'<td style="padding:5px 8px;font-size:0.75rem;text-align:right;">{_fv(_row,"PRIMARNI_KLIENTI","int")}</td>' if _dcols_avail['PRIMARNI_KLIENTI'] else '')
+                    + (f'<td style="padding:5px 8px;font-size:0.73rem;color:#d62728;">{_fv(_row,"DZ_STITKY") if _fv(_row,"DZ_STITKY") not in ("—","") else ""}</td>' if _dcols_avail['DZ_STITKY'] else '')
+                    + f'<td style="padding:5px 8px;">{_notes_cell}</td>'
+                    + '</tr>'
                 )
-                _tb_mini = ''
-                for _ei, (_, _er) in enumerate(df_sub.iterrows()):
-                    _ebg = row_bg if _ei % 2 == 0 else '#fff'
-                    _cells = ''
-                    for _ec, _ in _mini_cols:
-                        _raw = _er.get(_ec, '—') if _ec in _er.index else '—'
-                        if _ec == yr_col:
-                            try: _raw = str(int(float(_raw))) if pd.notna(_raw) else '—'
-                            except: _raw = str(_raw)
-                        elif _ec == 'IR':
-                            try: _raw = f'{float(_raw):.1f}' if pd.notna(_raw) else '—'
-                            except: _raw = '—'
-                        else:
-                            _raw = str(_raw) if pd.notna(_raw) else '—'
-                        _cells += f'<td style="padding:5px 8px;border-bottom:1px solid #f0f4f8;font-size:0.77rem;">{_raw}</td>'
-                    _tb_mini += f'<tr style="background:{_ebg};">{_cells}</tr>'
-                return (
-                    f'<hr style="border:none;border-top:1px solid #e8edf5;margin:12px 0 8px;">'
-                    f'<div style="font-size:0.72rem;color:#888;font-weight:600;margin-bottom:6px;'
-                    f'text-transform:uppercase;letter-spacing:.4px;">{label} ({len(df_sub)})</div>'
+
+            _n_det_total = len(_detail_actions)
+            _sec_detail = make_collapsible(
+                'bns-detail',
+                f'📋 Přehled všech BNS akcí ({_n_det_total}) — dle regionů a data',
+                (
                     f'<div style="overflow-x:auto;">'
                     f'<table style="width:100%;border-collapse:collapse;">'
-                    f'<thead><tr>{_th_mini}</tr></thead>'
-                    f'<tbody>{_tb_mini}</tbody>'
+                    f'<thead><tr>{_det_th}</tr></thead>'
+                    f'<tbody>{_det_tbody}</tbody>'
                     f'</table></div>'
-                )
-
-            # BO Online
-            _extra_bo_html = ''
-            if 'BACK_OFFICE_ONLINE' in _df_bns.columns:
-                _df_bo = _df_bns[pd.to_numeric(_df_bns['BACK_OFFICE_ONLINE'], errors='coerce') > 0].copy()
-                _extra_bo_html = _extra_proj_table(
-                    _df_bo, 'BACK_OFFICE_ONLINE', None,
-                    '📋 BO Online', '#fff7ed', '#ea580c', '#fff7f0'
-                )
-            # Remote Room
-            _extra_rr_html = ''
-            if 'REMOTE_ROOM' in _df_bns.columns:
-                _df_rr = _df_bns[pd.to_numeric(_df_bns['REMOTE_ROOM'], errors='coerce') > 0].copy()
-                _extra_rr_html = _extra_proj_table(
-                    _df_rr, 'REMOTE_ROOM', None,
-                    '🖥️ Remote Room', '#f0fdf4', '#16a34a', '#f0fdf8'
-                )
-            # Adhoc
-            _extra_adhoc_html = ''
-            if 'ADHOC_YEAR' in _df_bns.columns:
-                _df_adhoc = _df_bns[pd.to_numeric(_df_bns['ADHOC_YEAR'], errors='coerce') > 0].copy()
-                _extra_adhoc_html = _extra_proj_table(
-                    _df_adhoc, 'ADHOC_YEAR', 'ADHOC_DESCRIPTION',
-                    '📌 Adhoc akce', '#f5f5f4', '#78716c', '#fafaf9'
-                )
-
-            _n_extra = (
-                (len(_df_bo) if 'BACK_OFFICE_ONLINE' in _df_bns.columns and '_df_bo' in dir() and not _df_bo.empty else 0) +
-                (len(_df_rr) if 'REMOTE_ROOM' in _df_bns.columns and '_df_rr' in dir() and not _df_rr.empty else 0) +
-                (len(_df_adhoc) if 'ADHOC_YEAR' in _df_bns.columns and '_df_adhoc' in dir() and not _df_adhoc.empty else 0)
-            )
-
-            _invest_tbl_html = (
-                f'<div style="overflow-x:auto;">'
-                f'<table style="width:100%;border-collapse:collapse;">'
-                f'<thead><tr>{_invest_th}</tr></thead>'
-                f'<tbody>{_invest_tbody}</tbody>'
-                f'</table></div>'
-                + _extra_bo_html + _extra_rr_html + _extra_adhoc_html +
-                f'<div style="font-size:0.72rem;color:#888;margin-top:6px;">'
-                f'Celkem investičních NF/FHC: {_n_invest} poboček</div>'
-            ) if (_invest_tbody or _extra_bo_html or _extra_rr_html or _extra_adhoc_html) else '<p style="color:#aaa;font-style:italic;">Žádné investiční pobočky.</p>'
-
-            _invest_total_label = _n_invest + _n_extra
-            _sec_invest = make_collapsible(
-                'bns-invest',
-                f'🔵 Detail investičních poboček ({_invest_total_label})',
-                _invest_tbl_html,
+                    f'<div style="font-size:0.72rem;color:#888;margin-top:6px;">'
+                    f'Seřazeno: region → rok → pobočka &nbsp;·&nbsp; '
+                    f'Bus.Q = Business rating kvintil (Q1🟢 nejlepší) &nbsp;·&nbsp; '
+                    f'IR = interior rating &nbsp;·&nbsp; jednu pobočku může mít více akcí</div>'
+                ) if _det_tbody else '<p style="color:#aaa;font-style:italic;">Žádné BNS akce.</p>',
                 default_open=False,
             )
 
-            # ── Cashless detail table ────────────────────────────────────────
-            _cashless_tbl_cols = [
-                ('BRANCH_CODE',              'Kód',          lambda v: str(v)),
-                ('BRANCH_NAME',              'Název',         lambda v: str(v)),
-                ('REGION_NAME',              'Region',        lambda v: str(v)),
-                ('PLAN_NEW_CASHIERLESS_(ROK)','Rok cashless',  lambda v: str(int(float(v))) if pd.notna(v) else '—'),
-                ('CASHLESS',                 'Stav',          lambda v: str(v)),
-                ('IR',                       'IR 2025',       lambda v: f'{float(v):.1f}' if pd.notna(v) else '—'),
-            ]
-            _sort_keys_cs = [c for c in ['REGION_NAME', '_BNS_YEAR'] if c in _df_bns.columns]
-            _df_cashless_detail = _df_bns[_df_bns['_BNS_CAT'] == 'cashless'].sort_values(_sort_keys_cs, na_position='last')
-            _cashless_avail = [(c, l, f) for c, l, f in _cashless_tbl_cols if c in _df_cashless_detail.columns or c == 'BRANCH_CODE']
-            _cashless_th = ''.join(
-                f'<th style="padding:6px 8px;background:#e07a2a;color:white;font-size:0.77rem;">{_lbl5}</th>'
-                for _, _lbl5, _ in _cashless_avail
-            )
-            _cashless_tbody = ''
-            for _, _csrow in _df_cashless_detail.iterrows():
-                _cells5 = ''
-                _csbg = '#fff8f0' if _ % 2 == 0 else '#fff'
-                for _c5, _, _f5 in _cashless_avail:
-                    _raw5 = _csrow.get(_c5, '—') if _c5 in _csrow.index else '—'
-                    _cells5 += f'<td style="padding:5px 8px;border-bottom:1px solid #f0f4f8;font-size:0.77rem;">{_f5(_raw5)}</td>'
-                _cashless_tbody += f'<tr style="background:{_csbg};">{_cells5}</tr>'
-
-            _sec_cashless = make_collapsible(
-                'bns-cashless',
-                f'🟠 Cashless přechod ({_n_cashless} poboček)',
-                (f'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'
-                 f'<thead><tr>{_cashless_th}</tr></thead><tbody>{_cashless_tbody}</tbody></table></div>'
-                 if _cashless_tbody else '<p style="color:#aaa;font-style:italic;">Žádné cashless pobočky.</p>'),
-                default_open=False,
-            )
+            # Legacy aliases (for backward compat with HTML assembly below)
+            _sec_close = _sec_invest = _sec_cashless = ''
 
             # ── Assemble BNS report ──────────────────────────────────────────
             _bns_full_html = f'''<!DOCTYPE html>
@@ -13878,11 +13841,7 @@ function obSet_{_fn_slug}(btn, ob){{
 
   {_sec_map}
 
-  {_sec_close}
-
-  {_sec_invest}
-
-  {_sec_cashless}
+  {_sec_detail}
 
 </div>
 </body></html>'''
