@@ -12954,6 +12954,595 @@ function obSet_{_fn_slug}(btn, ob){{
             except Exception as _xlsx_err:
                 print(f"  ⚠️  Excel pro region {region} selhal: {_xlsx_err}")
 
+    elif mode == 'bns':
+        # ══════════════════════════════════════════════════════════════════════
+        # WS BNS 2026 — Strategie sítě poboček
+        # ══════════════════════════════════════════════════════════════════════
+        try:
+            import json as _bns_json
+            import plotly.graph_objects as _bns_go
+
+            _df_bns = rating_status.copy()
+            _BNS_YEARS = [2027, 2028, 2029, 2030]
+
+            # ── Numeric conversions ──────────────────────────────────────────
+            for _bc in ['PLAN_CLOSE_(ROK)', 'INVESTICE_NF_(ROK)', 'INVESTICE_FHC_(ROK)',
+                        'INVESTICE_NF_OR_FHC_(ROK)', 'PLAN_NEW_CASHIERLESS_(ROK)', 'GPS_X', 'GPS_Y']:
+                if _bc in _df_bns.columns:
+                    _df_bns[_bc] = pd.to_numeric(_df_bns[_bc], errors='coerce')
+
+            def _yr(v):
+                try:
+                    y = int(float(str(v))); return y if 1900 < y < 2200 else None
+                except: return None
+
+            # ── Strategie kategorie per row ──────────────────────────────────
+            def _bns_cat(row):
+                strat = str(row.get('FOOTPRINT_STRATEGIE_(2030)', '')).lower()
+                cl = _yr(row.get('PLAN_CLOSE_(ROK)'))
+                inv = _yr(row.get('INVESTICE_NF_OR_FHC_(ROK)'))
+                cs = _yr(row.get('PLAN_NEW_CASHIERLESS_(ROK)'))
+                if 'close' in strat or cl: return ('close', cl)
+                if inv:                    return ('invest', inv)
+                if cs or 'cashless' in strat: return ('cashless', cs)
+                if 'keep' in strat:        return ('keep', None)
+                return ('other', None)
+
+            _df_bns['_BNS_CAT']  = [_bns_cat(r)[0] for _, r in _df_bns.iterrows()]
+            _df_bns['_BNS_YEAR'] = [_bns_cat(r)[1] for _, r in _df_bns.iterrows()]
+
+            _n_total   = len(_df_bns)
+            _n_close   = (_df_bns['_BNS_CAT'] == 'close').sum()
+            _n_invest  = (_df_bns['_BNS_CAT'] == 'invest').sum()
+            _n_cashless= (_df_bns['_BNS_CAT'] == 'cashless').sum()
+            _n_keep    = (_df_bns['_BNS_CAT'] == 'keep').sum()
+            _n_other   = (_df_bns['_BNS_CAT'] == 'other').sum()
+
+            # ── KPI strip ────────────────────────────────────────────────────
+            def _kpi(label, val, color, sub=''):
+                return (
+                    f'<div style="background:white;border:1px solid #e2e8f0;border-radius:8px;'
+                    f'padding:12px 18px;flex:1;min-width:110px;border-top:3px solid {color};">'
+                    f'<div style="font-size:0.68rem;color:#888;text-transform:uppercase;'
+                    f'letter-spacing:.4px;margin-bottom:4px;">{label}</div>'
+                    f'<div style="font-size:1.6rem;font-weight:800;color:#0f172a;">{val}</div>'
+                    + (f'<div style="font-size:0.72rem;color:#888;margin-top:2px;">{sub}</div>' if sub else '')
+                    + '</div>'
+                )
+            _kpi_strip = (
+                f'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">'
+                + _kpi('Celkem poboček', _n_total, '#64748b')
+                + _kpi('Uzavírané', _n_close, '#d62728', '🔴 Close')
+                + _kpi('Investice', _n_invest, '#2770f0', '🔵 NF / FHC')
+                + _kpi('Cashless', _n_cashless, '#e07a2a', '🟠 → Bezhotovostní')
+                + _kpi('Zachované', _n_keep + _n_other, '#2ca02c', '🟢 Keep / ostatní')
+                + '</div>'
+            )
+
+            # ── Timeline: vývoj sítě 2027-2030 ──────────────────────────────
+            _df_close_yr  = _df_bns[_df_bns['_BNS_CAT'] == 'close'].copy()
+            _df_invest_yr = _df_bns[_df_bns['_BNS_CAT'] == 'invest'].copy()
+            _df_cashless_yr = _df_bns[_df_bns['_BNS_CAT'] == 'cashless'].copy()
+
+            _close_by_yr  = {y: int((_df_close_yr['_BNS_YEAR'] == y).sum())  for y in _BNS_YEARS}
+            _invest_by_yr = {y: int((_df_invest_yr['_BNS_YEAR'] == y).sum()) for y in _BNS_YEARS}
+            _cashless_by_yr = {y: int((_df_cashless_yr['_BNS_YEAR'] == y).sum()) for y in _BNS_YEARS}
+
+            # Cumulative active branches (after closures)
+            _active_by_yr = {}
+            _cumclosed = 0
+            for _y in _BNS_YEARS:
+                _cumclosed += _close_by_yr[_y]
+                _active_by_yr[_y] = _n_total - _cumclosed
+
+            _timeline_years_json = _bns_json.dumps([str(y) for y in _BNS_YEARS])
+            _close_data_json   = _bns_json.dumps([_close_by_yr[y] for y in _BNS_YEARS])
+            _invest_data_json  = _bns_json.dumps([_invest_by_yr[y] for y in _BNS_YEARS])
+            _cashless_data_json = _bns_json.dumps([_cashless_by_yr[y] for y in _BNS_YEARS])
+            _active_data_json  = _bns_json.dumps([_active_by_yr[y] for y in _BNS_YEARS])
+            _tl_chart_id = 'bns-tl-' + str(id(_df_bns))[:8]
+
+            _timeline_html = (
+                f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'
+                f'<div><div id="{_tl_chart_id}-a" style="height:300px;"></div>'
+                f'<div style="text-align:center;font-size:0.75rem;color:#888;margin-top:4px;">'
+                f'Počet poboček aktivní (po uzavřeních)</div></div>'
+                f'<div><div id="{_tl_chart_id}-b" style="height:300px;"></div>'
+                f'<div style="text-align:center;font-size:0.75rem;color:#888;margin-top:4px;">'
+                f'Plánované akce v daném roce</div></div>'
+                f'</div>'
+                f'<script>'
+                f'(function(){{'
+                f'var yrs={_timeline_years_json};'
+                f'var act={_active_data_json};'
+                f'var cls={_close_data_json};'
+                f'var inv={_invest_data_json};'
+                f'var csl={_cashless_data_json};'
+                f'function _tlR(){{'
+                f'if(typeof ApexCharts==="undefined"){{setTimeout(_tlR,200);return;}}'
+                f'var elA=document.getElementById("{_tl_chart_id}-a");'
+                f'var elB=document.getElementById("{_tl_chart_id}-b");'
+                f'if(!elA||!elB){{setTimeout(_tlR,200);return;}}'
+                f'var rA=elA.getBoundingClientRect();if(rA.width<10){{setTimeout(_tlR,300);return;}}'
+                f'try{{'
+                f'new ApexCharts(elA,{{'
+                f'chart:{{type:"line",height:280,toolbar:{{show:false}}}},'
+                f'series:[{{name:"Aktivní pobočky",data:act}}],'
+                f'xaxis:{{categories:yrs}},'
+                f'yaxis:{{min:0,title:{{text:"Počet poboček"}}}},'
+                f'colors:["#2ca02c"],'
+                f'stroke:{{width:3,curve:"smooth"}},'
+                f'markers:{{size:6}},'
+                f'dataLabels:{{enabled:true}},'
+                f'tooltip:{{y:{{formatter:function(v){{return v+" poboček";}}}}}},'
+                f'annotations:{{yaxis:[{{y:act[act.length-1],borderColor:"#999",label:{{text:"Cílový stav 2030"}}}}]}}'
+                f'}}).render();'
+                f'new ApexCharts(elB,{{'
+                f'chart:{{type:"bar",height:280,stacked:true,toolbar:{{show:false}}}},'
+                f'series:['
+                f'{{name:"Uzavření 🔴",data:cls}},'
+                f'{{name:"Investice 🔵",data:inv}},'
+                f'{{name:"Cashless 🟠",data:csl}}'
+                f'],'
+                f'xaxis:{{categories:yrs}},'
+                f'yaxis:{{title:{{text:"Počet poboček"}}}},'
+                f'colors:["#d62728","#2770f0","#e07a2a"],'
+                f'dataLabels:{{enabled:true}},'
+                f'legend:{{position:"top"}},'
+                f'plotOptions:{{bar:{{borderRadius:3}}}}'
+                f'}}).render();'
+                f'}}catch(e){{console.error(e);}}'
+                f'}}'
+                f'setTimeout(_tlR,150);'
+                f'document.addEventListener("toggle",function(ev){{'
+                f'if(ev.target&&ev.target.open){{setTimeout(_tlR,100);}}}},true);'
+                f'}})();'
+                f'</script>'
+            )
+            _sec_timeline = make_collapsible(
+                'bns-timeline',
+                '📈 Vývoj počtu poboček 2027–2030',
+                _timeline_html,
+                default_open=True,
+            )
+
+            # ── Regional strategy breakdown ──────────────────────────────────
+            _bns_regions = sorted(
+                [r for r in _df_bns['REGION_NAME'].dropna().unique()
+                 if str(r) not in ('', 'nan', 'None')]
+            ) if 'REGION_NAME' in _df_bns.columns else []
+
+            _reg_strat_rows = ''
+            _reg_chart_series_close   = []
+            _reg_chart_series_invest  = []
+            _reg_chart_series_cashless= []
+            _reg_chart_series_keep    = []
+            _reg_chart_labels = []
+
+            for _brn in _bns_regions:
+                _dreg = _df_bns[_df_bns['REGION_NAME'] == _brn]
+                _rc  = int((_dreg['_BNS_CAT'] == 'close').sum())
+                _ri  = int((_dreg['_BNS_CAT'] == 'invest').sum())
+                _rcs = int((_dreg['_BNS_CAT'] == 'cashless').sum())
+                _rk  = int(((_dreg['_BNS_CAT'] == 'keep') | (_dreg['_BNS_CAT'] == 'other')).sum())
+                _rt  = len(_dreg)
+                _reg_chart_labels.append(_brn)
+                _reg_chart_series_close.append(_rc)
+                _reg_chart_series_invest.append(_ri)
+                _reg_chart_series_cashless.append(_rcs)
+                _reg_chart_series_keep.append(_rk)
+
+                def _pct_bar(n, total, color, label):
+                    pct = n / total * 100 if total > 0 else 0
+                    return (
+                        f'<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;">'
+                        f'<div style="min-width:70px;font-size:0.7rem;color:#555;">{label}</div>'
+                        f'<div style="flex:1;background:#f1f5f9;border-radius:2px;height:8px;">'
+                        f'<div style="width:{pct:.0f}%;height:100%;background:{color};border-radius:2px;"></div></div>'
+                        f'<div style="min-width:30px;font-size:0.7rem;font-weight:700;color:{color};text-align:right;">{n}</div>'
+                        f'</div>'
+                    )
+                _reg_strat_rows += (
+                    f'<div style="background:white;border:1px solid #e2e8f0;border-radius:8px;'
+                    f'padding:10px 14px;margin-bottom:8px;">'
+                    f'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'
+                    f'<div style="font-weight:700;font-size:0.85rem;color:#0f172a;">{_brn}</div>'
+                    f'<div style="font-size:0.72rem;color:#888;">{_rt} poboček</div>'
+                    f'</div>'
+                    + _pct_bar(_rc, _rt, '#d62728', '🔴 Uzavírané')
+                    + _pct_bar(_ri, _rt, '#2770f0', '🔵 Investice')
+                    + _pct_bar(_rcs, _rt, '#e07a2a', '🟠 Cashless')
+                    + _pct_bar(_rk, _rt, '#2ca02c', '🟢 Zachované')
+                    + f'</div>'
+                )
+
+            _reg_chart_id = 'bns-reg-' + str(id(_df_bns))[:8]
+            _reg_chart_html = (
+                f'<div id="{_reg_chart_id}" style="height:{max(300, len(_bns_regions)*40)}px;"></div>'
+                f'<script>'
+                f'(function(){{'
+                f'var lbl={_bns_json.dumps(_reg_chart_labels)};'
+                f'var sc={_bns_json.dumps(_reg_chart_series_close)};'
+                f'var si={_bns_json.dumps(_reg_chart_series_invest)};'
+                f'var ss={_bns_json.dumps(_reg_chart_series_cashless)};'
+                f'var sk={_bns_json.dumps(_reg_chart_series_keep)};'
+                f'function _rrR(){{'
+                f'if(typeof ApexCharts==="undefined"){{setTimeout(_rrR,200);return;}}'
+                f'var el=document.getElementById("{_reg_chart_id}");'
+                f'if(!el){{setTimeout(_rrR,200);return;}}'
+                f'var r=el.getBoundingClientRect();if(r.width<10){{setTimeout(_rrR,300);return;}}'
+                f'try{{'
+                f'new ApexCharts(el,{{'
+                f'chart:{{type:"bar",height:Math.max(300,lbl.length*40),stacked:true,toolbar:{{show:false}}}},'
+                f'series:['
+                f'{{name:"🔴 Uzavření",data:sc}},'
+                f'{{name:"🔵 Investice",data:si}},'
+                f'{{name:"🟠 Cashless",data:ss}},'
+                f'{{name:"🟢 Zachované",data:sk}}'
+                f'],'
+                f'xaxis:{{categories:lbl}},'
+                f'colors:["#d62728","#2770f0","#e07a2a","#2ca02c"],'
+                f'plotOptions:{{bar:{{horizontal:true,borderRadius:2,dataLabels:{{total:{{enabled:true,style:{{fontSize:"11px",color:"#333"}}}}}}}}}},'
+                f'dataLabels:{{enabled:false}},'
+                f'legend:{{position:"top"}},'
+                f'tooltip:{{shared:true,intersect:false}}'
+                f'}}).render();'
+                f'}}catch(e){{console.error(e);}}'
+                f'}}'
+                f'setTimeout(_rrR,150);'
+                f'document.addEventListener("toggle",function(ev){{'
+                f'if(ev.target&&ev.target.open){{setTimeout(_rrR,100);}}}},true);'
+                f'}})();'
+                f'</script>'
+            )
+
+            _sec_region = make_collapsible(
+                'bns-region',
+                '🗂 Strategie dle regionů',
+                (
+                    f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">'
+                    f'<div>{_reg_strat_rows}</div>'
+                    f'<div>{_reg_chart_html}</div>'
+                    f'</div>'
+                ) if _bns_regions else '<p style="color:#aaa;font-style:italic;">Žádná regionální data.</p>',
+                default_open=True,
+            )
+
+            # ── Map: enhanced BNS strategy map ──────────────────────────────
+            _df_map = _df_bns.copy()
+            for _gc in ['GPS_X', 'GPS_Y']:
+                if _gc in _df_map.columns:
+                    _df_map[_gc] = pd.to_numeric(_df_map[_gc], errors='coerce')
+
+            _map_html_bns = '<p style="color:#aaa;font-style:italic;">GPS souřadnice nejsou k dispozici.</p>'
+            if 'GPS_X' in _df_map.columns and 'GPS_Y' in _df_map.columns:
+                _df_map = _df_map[_df_map['GPS_X'].notna() & _df_map['GPS_Y'].notna()].copy()
+                if not _df_map.empty:
+                    # Close year color gradient (darker = sooner)
+                    _CLOSE_COLORS = {2027:'#8b0000',2028:'#d62728',2029:'#e87070',2030:'#f4a8a8'}
+                    _INVEST_COLORS = {'NF':'#1565c0','FHC':'#0891b2','both':'#7c3aed'}
+
+                    def _bns_hover(row):
+                        bc   = str(row.get('BRANCH_CODE','?'))
+                        nm   = str(row.get('BRANCH_NAME', row.get('NAZEV', bc)))
+                        reg  = str(row.get('REGION_NAME','?'))
+                        strat= str(row.get('FOOTPRINT_STRATEGIE_(2030)','?'))
+                        cat  = row.get('_BNS_CAT','other')
+                        yr   = row.get('_BNS_YEAR')
+                        fmt  = str(row.get('BRANCH_FORMAT','?'))
+                        ir   = str(row.get('IR','?'))
+                        cash = '🏦 Bezhotovostní' if str(row.get('CASHLESS','N')).upper() in ['Y','YES','ANO','1','TRUE'] else '💵 Hotovostní'
+                        nf_yr = _yr(row.get('INVESTICE_NF_(ROK)'))
+                        fhc_yr = _yr(row.get('INVESTICE_FHC_(ROK)'))
+                        lines = [
+                            f'<b>{nm}</b> <span style="color:#aaa;">#{bc}</span>',
+                            f'📍 {reg} &nbsp;·&nbsp; {fmt} &nbsp;·&nbsp; {cash}',
+                            f'⭐ IR 2025: {ir} &nbsp;·&nbsp; 🏗️ {strat}',
+                        ]
+                        if cat == 'close' and yr: lines.append(f'🔴 <b>UZAVŘENÍ {yr}</b>')
+                        if nf_yr: lines.append(f'🔵 Investice NF: <b>{nf_yr}</b>')
+                        if fhc_yr: lines.append(f'🔵 Investice FHC: <b>{fhc_yr}</b>')
+                        if cat == 'cashless' and yr: lines.append(f'🟠 Cashless přechod: <b>{yr}</b>')
+                        return '<br>'.join(lines)
+
+                    _df_map['_hover'] = [_bns_hover(r) for _, r in _df_map.iterrows()]
+
+                    # Build traces: close (per year), invest NF, invest FHC, cashless, keep/other
+                    _traces = []
+
+                    # Close branches — per year (darkest = soonest)
+                    _df_close_map = _df_map[_df_map['_BNS_CAT'] == 'close']
+                    for _cy in sorted(_BNS_YEARS):
+                        _sub = _df_close_map[_df_close_map['_BNS_YEAR'] == _cy]
+                        if _sub.empty: continue
+                        _cc = _CLOSE_COLORS.get(_cy, '#d62728')
+                        _traces.append(_bns_go.Scattermapbox(
+                            lat=_sub['GPS_X'].tolist(), lon=_sub['GPS_Y'].tolist(),
+                            mode='markers', name=f'🔴 Uzavření {_cy}',
+                            marker=dict(size=10, color=_cc, opacity=0.92),
+                            text=_sub['_hover'].tolist(), hovertemplate='%{text}<extra></extra>',
+                        ))
+
+                    # Invest NF
+                    _df_inv_map = _df_map[_df_map['_BNS_CAT'] == 'invest']
+                    _df_nf  = _df_inv_map[_df_inv_map['INVESTICE_NF_(ROK)'].notna() & _df_inv_map['INVESTICE_FHC_(ROK)'].isna()] if 'INVESTICE_NF_(ROK)' in _df_inv_map.columns and 'INVESTICE_FHC_(ROK)' in _df_inv_map.columns else pd.DataFrame()
+                    _df_fhc = _df_inv_map[_df_inv_map['INVESTICE_FHC_(ROK)'].notna() & _df_inv_map['INVESTICE_NF_(ROK)'].isna()] if 'INVESTICE_NF_(ROK)' in _df_inv_map.columns and 'INVESTICE_FHC_(ROK)' in _df_inv_map.columns else pd.DataFrame()
+                    _df_both= _df_inv_map[_df_inv_map.get('INVESTICE_NF_(ROK)', pd.Series()).notna() & _df_inv_map.get('INVESTICE_FHC_(ROK)', pd.Series()).notna()] if not _df_inv_map.empty else pd.DataFrame()
+
+                    for _isub, _iname, _icolor in [
+                        (_df_nf,   '🔵 Investice NF',   '#1565c0'),
+                        (_df_fhc,  '🔵 Investice FHC',  '#0891b2'),
+                        (_df_both, '🟣 NF + FHC',       '#7c3aed'),
+                    ]:
+                        if not hasattr(_isub, 'empty') or _isub.empty: continue
+                        _traces.append(_bns_go.Scattermapbox(
+                            lat=_isub['GPS_X'].tolist(), lon=_isub['GPS_Y'].tolist(),
+                            mode='markers', name=_iname,
+                            marker=dict(size=10, color=_icolor, opacity=0.88),
+                            text=_isub['_hover'].tolist(), hovertemplate='%{text}<extra></extra>',
+                        ))
+                    # Fallback: all invest as one group if NF/FHC cols not split
+                    if _df_nf.empty and _df_fhc.empty and not _df_inv_map.empty:
+                        _traces.append(_bns_go.Scattermapbox(
+                            lat=_df_inv_map['GPS_X'].tolist(), lon=_df_inv_map['GPS_Y'].tolist(),
+                            mode='markers', name='🔵 Investice',
+                            marker=dict(size=10, color='#2770f0', opacity=0.88),
+                            text=_df_inv_map['_hover'].tolist(), hovertemplate='%{text}<extra></extra>',
+                        ))
+
+                    # Cashless
+                    _df_cs_map = _df_map[_df_map['_BNS_CAT'] == 'cashless']
+                    if not _df_cs_map.empty:
+                        _traces.append(_bns_go.Scattermapbox(
+                            lat=_df_cs_map['GPS_X'].tolist(), lon=_df_cs_map['GPS_Y'].tolist(),
+                            mode='markers', name='🟠 Cashless přechod',
+                            marker=dict(size=9, color='#e07a2a', opacity=0.85),
+                            text=_df_cs_map['_hover'].tolist(), hovertemplate='%{text}<extra></extra>',
+                        ))
+
+                    # Keep / other
+                    _df_keep_map = _df_map[_df_map['_BNS_CAT'].isin(['keep','other'])]
+                    if not _df_keep_map.empty:
+                        _traces.append(_bns_go.Scattermapbox(
+                            lat=_df_keep_map['GPS_X'].tolist(), lon=_df_keep_map['GPS_Y'].tolist(),
+                            mode='markers', name='🟢 Zachované',
+                            marker=dict(size=7, color='#2ca02c', opacity=0.55),
+                            text=_df_keep_map['_hover'].tolist(), hovertemplate='%{text}<extra></extra>',
+                        ))
+
+                    _fig_bns = _bns_go.Figure(_traces)
+                    _fig_bns.update_layout(
+                        mapbox=_mapbox_layout(center_lat=49.8, center_lon=15.5, zoom=6.5),
+                        margin=dict(l=0, r=0, t=0, b=0),
+                        height=620,
+                        legend=dict(
+                            bgcolor='rgba(255,255,255,0.93)', bordercolor='#ccc',
+                            borderwidth=1, font=dict(size=11),
+                            x=0.01, y=0.99, xanchor='left', yanchor='top',
+                        ),
+                        paper_bgcolor='white',
+                    )
+                    import plotly.io as _pio_bns
+                    _map_html_bns = _fig_bns.to_html(
+                        full_html=False, include_plotlyjs='cdn',
+                        config={'displayModeBar': True, 'scrollZoom': True,
+                                'modeBarButtonsToRemove': ['toImage']},
+                        div_id='bns-map-div',
+                    )
+
+            _sec_map = make_collapsible(
+                'bns-map',
+                '🗺️ Mapa BNS — strategie poboček 2027–2030',
+                f'<div style="font-size:0.74rem;color:#555;margin-bottom:8px;">'
+                f'🔴 Uzavření (tmavší = dříve) &nbsp;·&nbsp; 🔵 Investice NF/FHC &nbsp;·&nbsp; '
+                f'🟠 Cashless přechod &nbsp;·&nbsp; 🟢 Zachované &nbsp;— najeď myší pro detail</div>'
+                + _map_html_bns,
+                default_open=True,
+            )
+
+            # ── Close detail table ───────────────────────────────────────────
+            _close_tbl_cols = [
+                ('BRANCH_CODE',            'Kód',         lambda v: str(v)),
+                ('BRANCH_NAME',            'Název',        lambda v: str(v)),
+                ('REGION_NAME',            'Region',       lambda v: str(v)),
+                ('BRANCH_FORMAT',          'Formát',       lambda v: str(v)),
+                ('PLAN_CLOSE_(ROK)',        'Rok uzavření', lambda v: str(int(float(v))) if pd.notna(v) else '—'),
+                ('IR',                     'IR 2025',      lambda v: f'{float(v):.1f}' if pd.notna(v) else '—'),
+                ('CASHLESS',               'Cashless',     lambda v: str(v)),
+                ('FOOTPRINT_STRATEGIE_(2030)', 'Strategie', lambda v: str(v)),
+            ]
+            _df_close_detail = _df_bns[_df_bns['_BNS_CAT'] == 'close'].sort_values(
+                '_BNS_YEAR', na_position='last'
+            )
+            _close_avail = [(c, l, f) for c, l, f in _close_tbl_cols if c in _df_close_detail.columns or c == 'BRANCH_CODE']
+
+            _close_th = ''.join(
+                f'<th style="padding:6px 8px;background:#d62728;color:white;font-size:0.77rem;'
+                f'white-space:nowrap;cursor:pointer;user-select:none;" '
+                f'onclick="(function(t,i){{var rows=Array.from(t.querySelectorAll(\'tbody tr\'));'
+                f'var asc=t.dataset.sc==i&&t.dataset.sd==\'asc\';'
+                f'rows.sort(function(a,b){{var av=a.cells[i].dataset.v||a.cells[i].textContent,'
+                f'bv=b.cells[i].dataset.v||b.cells[i].textContent;'
+                f'return asc?(bv>av?1:(bv<av?-1:0)):(av>bv?1:(av<bv?-1:0));}}); '
+                f'rows.forEach(function(r){{t.querySelector(\'tbody\').appendChild(r);}});'
+                f't.dataset.sc=i;t.dataset.sd=asc?\'desc\':\'asc\';}})('
+                f'this.closest(\'table\'),{_ci3})">{_lbl3} ↕</th>'
+                for _ci3, (_c3, _lbl3, _f3) in enumerate(_close_avail)
+            )
+            _close_tbody = ''
+            for _cy_val in sorted(_BNS_YEARS):
+                _df_cy = _df_close_detail[_df_close_detail['_BNS_YEAR'] == _cy_val]
+                for _, _crow in _df_cy.iterrows():
+                    _cells3 = ''
+                    for _c3, _, _f3 in _close_avail:
+                        _raw3 = _crow.get(_c3, '—') if _c3 in _crow.index else '—'
+                        try: _dv3 = str(float(_raw3)) if pd.notna(_raw3) and _c3 not in ('BRANCH_CODE','BRANCH_NAME','REGION_NAME','FOOTPRINT_STRATEGIE_(2030)','CASHLESS') else ''
+                        except: _dv3 = ''
+                        _cells3 += f'<td data-v="{_dv3}" style="padding:5px 8px;border-bottom:1px solid #f0f4f8;font-size:0.77rem;">{_f3(_raw3)}</td>'
+                    _close_tbody += f'<tr>{_cells3}</tr>'
+            # Also add rows with no year
+            for _, _crow in _df_close_detail[_df_close_detail['_BNS_YEAR'].isna()].iterrows():
+                _cells3 = ''
+                for _c3, _, _f3 in _close_avail:
+                    _raw3 = _crow.get(_c3, '—') if _c3 in _crow.index else '—'
+                    try: _dv3 = str(float(_raw3)) if pd.notna(_raw3) and _c3 not in ('BRANCH_CODE','BRANCH_NAME','REGION_NAME','FOOTPRINT_STRATEGIE_(2030)','CASHLESS') else ''
+                    except: _dv3 = ''
+                    _cells3 += f'<td data-v="{_dv3}" style="padding:5px 8px;border-bottom:1px solid #f0f4f8;font-size:0.77rem;">{_f3(_raw3)}</td>'
+                _close_tbody += f'<tr style="background:#fff8f8;">{_cells3}</tr>'
+
+            _close_tbl_html = (
+                f'<div style="overflow-x:auto;">'
+                f'<table style="width:100%;border-collapse:collapse;">'
+                f'<thead><tr>{_close_th}</tr></thead>'
+                f'<tbody>{_close_tbody}</tbody>'
+                f'</table></div>'
+                f'<div style="font-size:0.72rem;color:#888;margin-top:6px;">'
+                f'Celkem uzavíraných: {_n_close} poboček &nbsp;·&nbsp; klikni záhlaví pro řazení</div>'
+            ) if _close_tbody else '<p style="color:#aaa;font-style:italic;">Žádné uzavírané pobočky.</p>'
+
+            _sec_close = make_collapsible(
+                'bns-close',
+                f'🔴 Detail uzavíraných poboček ({_n_close})',
+                _close_tbl_html,
+                default_open=False,
+            )
+
+            # ── Investment detail table ──────────────────────────────────────
+            _invest_tbl_cols = [
+                ('BRANCH_CODE',             'Kód',        lambda v: str(v)),
+                ('BRANCH_NAME',             'Název',       lambda v: str(v)),
+                ('REGION_NAME',             'Region',      lambda v: str(v)),
+                ('BRANCH_FORMAT',           'Formát',      lambda v: str(v)),
+                ('INVESTICE_NF_(ROK)',       'Inv. NF',     lambda v: str(int(float(v))) if pd.notna(v) else '—'),
+                ('INVESTICE_FHC_(ROK)',      'Inv. FHC',    lambda v: str(int(float(v))) if pd.notna(v) else '—'),
+                ('INVESTICE_NF_OR_FHC_(ROK)','1. investice',lambda v: str(int(float(v))) if pd.notna(v) else '—'),
+                ('IR',                      'IR 2025',     lambda v: f'{float(v):.1f}' if pd.notna(v) else '—'),
+                ('FOOTPRINT_STRATEGIE_(2030)', 'Strategie', lambda v: str(v)),
+            ]
+            _df_invest_detail = _df_bns[_df_bns['_BNS_CAT'] == 'invest'].sort_values(
+                '_BNS_YEAR', na_position='last'
+            )
+            _invest_avail = [(c, l, f) for c, l, f in _invest_tbl_cols if c in _df_invest_detail.columns or c == 'BRANCH_CODE']
+
+            _invest_th = ''.join(
+                f'<th style="padding:6px 8px;background:#2770f0;color:white;font-size:0.77rem;white-space:nowrap;">{_lbl4}</th>'
+                for _, _lbl4, _ in _invest_avail
+            )
+            _invest_tbody = ''
+            for _, _irow in _df_invest_detail.iterrows():
+                _cells4 = ''
+                _ibg = '#f0f6ff' if _ % 2 == 0 else '#fff'
+                for _c4, _, _f4 in _invest_avail:
+                    _raw4 = _irow.get(_c4, '—') if _c4 in _irow.index else '—'
+                    _cells4 += f'<td style="padding:5px 8px;border-bottom:1px solid #f0f4f8;font-size:0.77rem;">{_f4(_raw4)}</td>'
+                _invest_tbody += f'<tr style="background:{_ibg};">{_cells4}</tr>'
+
+            _invest_tbl_html = (
+                f'<div style="overflow-x:auto;">'
+                f'<table style="width:100%;border-collapse:collapse;">'
+                f'<thead><tr>{_invest_th}</tr></thead>'
+                f'<tbody>{_invest_tbody}</tbody>'
+                f'</table></div>'
+                f'<div style="font-size:0.72rem;color:#888;margin-top:6px;">'
+                f'Celkem investičních: {_n_invest} poboček</div>'
+            ) if _invest_tbody else '<p style="color:#aaa;font-style:italic;">Žádné investiční pobočky.</p>'
+
+            _sec_invest = make_collapsible(
+                'bns-invest',
+                f'🔵 Detail investičních poboček ({_n_invest})',
+                _invest_tbl_html,
+                default_open=False,
+            )
+
+            # ── Cashless detail table ────────────────────────────────────────
+            _cashless_tbl_cols = [
+                ('BRANCH_CODE',              'Kód',          lambda v: str(v)),
+                ('BRANCH_NAME',              'Název',         lambda v: str(v)),
+                ('REGION_NAME',              'Region',        lambda v: str(v)),
+                ('PLAN_NEW_CASHIERLESS_(ROK)','Rok cashless',  lambda v: str(int(float(v))) if pd.notna(v) else '—'),
+                ('CASHLESS',                 'Stav',          lambda v: str(v)),
+                ('IR',                       'IR 2025',       lambda v: f'{float(v):.1f}' if pd.notna(v) else '—'),
+            ]
+            _df_cashless_detail = _df_bns[_df_bns['_BNS_CAT'] == 'cashless'].sort_values('_BNS_YEAR', na_position='last')
+            _cashless_avail = [(c, l, f) for c, l, f in _cashless_tbl_cols if c in _df_cashless_detail.columns or c == 'BRANCH_CODE']
+            _cashless_th = ''.join(
+                f'<th style="padding:6px 8px;background:#e07a2a;color:white;font-size:0.77rem;">{_lbl5}</th>'
+                for _, _lbl5, _ in _cashless_avail
+            )
+            _cashless_tbody = ''
+            for _, _csrow in _df_cashless_detail.iterrows():
+                _cells5 = ''
+                _csbg = '#fff8f0' if _ % 2 == 0 else '#fff'
+                for _c5, _, _f5 in _cashless_avail:
+                    _raw5 = _csrow.get(_c5, '—') if _c5 in _csrow.index else '—'
+                    _cells5 += f'<td style="padding:5px 8px;border-bottom:1px solid #f0f4f8;font-size:0.77rem;">{_f5(_raw5)}</td>'
+                _cashless_tbody += f'<tr style="background:{_csbg};">{_cells5}</tr>'
+
+            _sec_cashless = make_collapsible(
+                'bns-cashless',
+                f'🟠 Cashless přechod ({_n_cashless} poboček)',
+                (f'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'
+                 f'<thead><tr>{_cashless_th}</tr></thead><tbody>{_cashless_tbody}</tbody></table></div>'
+                 if _cashless_tbody else '<p style="color:#aaa;font-style:italic;">Žádné cashless pobočky.</p>'),
+                default_open=False,
+            )
+
+            # ── Assemble BNS report ──────────────────────────────────────────
+            _bns_full_html = f'''<!DOCTYPE html>
+<html lang="cs"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Výstup z WS BNS 2026</title>
+<style>
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f8faff;color:#1e293b;}}
+  .bns-wrapper{{max-width:1400px;margin:0 auto;padding:20px;}}
+  details.collapsible-section{{margin-bottom:6px;border:1px solid #dde4f5;border-radius:8px;background:white;}}
+  details.collapsible-section summary{{display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none;
+    padding:10px 14px;border-radius:8px;background:linear-gradient(90deg,#f0f4ff,#f8faff);
+    border-bottom:1px solid #dde4f5;user-select:none;outline:none;}}
+  details.collapsible-section[open] summary{{border-radius:8px 8px 0 0;}}
+  .cnt-pad{{padding:16px;}}
+</style>
+</head><body>
+<div class="bns-wrapper">
+  <div style="margin-bottom:24px;padding:20px 24px;background:white;border-radius:12px;
+              border-left:6px solid #2770f0;box-shadow:0 2px 8px rgba(0,0,0,.06);">
+    <div style="font-size:1.6rem;font-weight:800;color:#0f172a;margin-bottom:4px;">
+      🏦 Výstup z WS BNS 2026</div>
+    <div style="font-size:0.88rem;color:#555;">
+      📅 DBS ke dni <strong>{DBS_DATE}</strong> &nbsp;·&nbsp;
+      Strategie sítě poboček 2027–2030 &nbsp;·&nbsp;
+      Zdroj: footprint_bns.xlsx (WS BNS 26.2.2026)
+    </div>
+  </div>
+
+  {_kpi_strip}
+
+  {_sec_timeline}
+
+  {_sec_region}
+
+  {_sec_map}
+
+  {_sec_close}
+
+  {_sec_invest}
+
+  {_sec_cashless}
+
+</div>
+</body></html>'''
+
+            _bns_output = output_prefix + '_ws_bns_2026.html'
+            with open(_bns_output, 'w', encoding='utf-8') as _f:
+                _f.write(_bns_full_html)
+            print(f'✅ WS BNS 2026 report: {_bns_output}')
+
+        except Exception as e:
+            import traceback
+            print(f'⚠ WS BNS 2026 report failed: {e}')
+            traceback.print_exc()
+
     elif mode == 'comparison':
         try:
             import json as _json_cmp
@@ -18233,6 +18822,9 @@ generate_report(rating_status, mode='static', output_prefix="report_rating_2026"
 
 # Regionální reporty (jeden soubor per region)
 generate_report(rating_status, mode='regional', output_prefix="report")
+
+# WS BNS 2026 — strategie sítě poboček
+generate_report(rating_status, mode='bns', output_prefix="report")
 
 # Pobočkové reporty (jeden soubor per pobočka)
 generate_branch_reports(rating_status, output_dir="report_pobocky", hotovostni_trn=hotovostni_trn, hotovostni_trn_detail=hotovostni_trn_detail, export_atm=export_atm, kapacita_atm=kapacita_atm, visits=visits, parties_full=parties_full, spadovky=spadovky, oteviraci_doba_detail=oteviraci_doba_detail)
