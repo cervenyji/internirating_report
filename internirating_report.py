@@ -13154,11 +13154,64 @@ function obSet_{_fn_slug}(btn, ob){{
                     )
                 return ''.join(parts)
 
+            def _invest_cell_full(dreg):
+                """INVESTICE cell: NF/FHC + BO Online + Remote Room + Adhoc"""
+                parts = []
+                inv_d = _yr_branches(dreg[dreg['_BNS_CAT'] == 'invest'])
+                if inv_d:
+                    for _yy in sorted(y for y in inv_d if y is not None):
+                        brs = ', '.join(inv_d[_yy])
+                        parts.append(
+                            f'<div style="margin-bottom:3px;">'
+                            f'<span style="font-weight:700;color:#2770f0;font-size:0.72rem;">{_yy}:</span> '
+                            f'<span style="font-size:0.72rem;">{brs}</span></div>'
+                        )
+                    if None in inv_d:
+                        brs = ', '.join(inv_d[None])
+                        parts.append(
+                            f'<div style="margin-bottom:3px;">'
+                            f'<span style="font-weight:700;color:#aaa;font-size:0.72rem;">?:</span> '
+                            f'<span style="font-size:0.72rem;">{brs}</span></div>'
+                        )
+                # BO Online
+                if 'BACK_OFFICE_ONLINE' in dreg.columns:
+                    _bo_sub = dreg[pd.to_numeric(dreg['BACK_OFFICE_ONLINE'], errors='coerce') > 0]
+                    if not _bo_sub.empty:
+                        if parts:
+                            parts.append('<hr style="border:none;border-top:1px solid #f1f5f9;margin:4px 0;">')
+                        parts.append('<div style="font-size:0.65rem;color:#ea580c;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;">📋 BO Online</div>')
+                        for _, _bor in _bo_sub.iterrows():
+                            try: _bo_yr = str(int(float(_bor.get('BACK_OFFICE_ONLINE', '?'))))
+                            except: _bo_yr = '?'
+                            parts.append(f'<div style="margin-bottom:2px;"><span style="font-weight:700;color:#ea580c;font-size:0.72rem;">{_bo_yr}:</span> <span style="font-size:0.72rem;">{_blabel(_bor)}</span></div>')
+                # Remote Room
+                if 'REMOTE_ROOM' in dreg.columns:
+                    _rr_sub = dreg[pd.to_numeric(dreg['REMOTE_ROOM'], errors='coerce') > 0]
+                    if not _rr_sub.empty:
+                        if parts:
+                            parts.append('<hr style="border:none;border-top:1px solid #f1f5f9;margin:4px 0;">')
+                        parts.append('<div style="font-size:0.65rem;color:#16a34a;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;">🖥️ Remote Room</div>')
+                        for _, _rrr in _rr_sub.iterrows():
+                            try: _rr_yr = str(int(float(_rrr.get('REMOTE_ROOM', '?'))))
+                            except: _rr_yr = '?'
+                            parts.append(f'<div style="margin-bottom:2px;"><span style="font-weight:700;color:#16a34a;font-size:0.72rem;">{_rr_yr}:</span> <span style="font-size:0.72rem;">{_blabel(_rrr)}</span></div>')
+                # Adhoc
+                if 'ADHOC_YEAR' in dreg.columns:
+                    _adhoc_sub = dreg[pd.to_numeric(dreg['ADHOC_YEAR'], errors='coerce') > 0]
+                    if not _adhoc_sub.empty:
+                        if parts:
+                            parts.append('<hr style="border:none;border-top:1px solid #f1f5f9;margin:4px 0;">')
+                        parts.append('<div style="font-size:0.65rem;color:#78716c;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;">📌 Adhoc</div>')
+                        for _, _adhr in _adhoc_sub.iterrows():
+                            try: _adhoc_yr = str(int(float(_adhr.get('ADHOC_YEAR', '?'))))
+                            except: _adhoc_yr = '?'
+                            parts.append(f'<div style="margin-bottom:2px;"><span style="font-weight:700;color:#78716c;font-size:0.72rem;">{_adhoc_yr}:</span> <span style="font-size:0.72rem;">{_blabel(_adhr)}</span></div>')
+                return ''.join(parts) if parts else '<span style="color:#ccc;font-size:0.75rem;">—</span>'
+
             _region_rows_html = ''
             for _brn in _bns_regions:
                 _dreg = _df_bns[_df_bns['REGION_NAME'] == _brn]
                 _close_d   = _yr_branches(_dreg[_dreg['_BNS_CAT'] == 'close'])
-                _invest_d  = _yr_branches(_dreg[_dreg['_BNS_CAT'] == 'invest'])
                 _cashless_d = _yr_branches(_dreg[_dreg['_BNS_CAT'] == 'cashless'])
                 _rt = len(_dreg)
                 _region_rows_html += (
@@ -13167,7 +13220,7 @@ function obSet_{_fn_slug}(btn, ob){{
                     f'white-space:nowrap;min-width:120px;">{_brn}'
                     f'<div style="font-size:0.68rem;color:#888;font-weight:400;">{_rt} poboček</div></td>'
                     f'<td style="padding:8px 12px;">{_cell_html(_close_d, "#d62728")}</td>'
-                    f'<td style="padding:8px 12px;">{_cell_html(_invest_d, "#2770f0")}</td>'
+                    f'<td style="padding:8px 12px;">{_invest_cell_full(_dreg)}</td>'
                     f'<td style="padding:8px 12px;">{_cell_html(_cashless_d, "#e07a2a")}</td>'
                     f'</tr>'
                 )
@@ -13196,61 +13249,175 @@ function obSet_{_fn_slug}(btn, ob){{
                 default_open=True,
             )
 
-            # ── Investment cost estimates per region ─────────────────────────
-            _df_invest_cost = _df_bns[_df_bns['_BNS_CAT'] == 'invest'].copy()
-            _inv_money_cols = [c for c in ['LAST_INV', 'BIGGEST_INV', 'TOTAL_INV'] if c in _df_invest_cost.columns]
-            for _imc in _inv_money_cols:
-                _df_invest_cost[_imc] = pd.to_numeric(_df_invest_cost[_imc], errors='coerce')
+            # ── Investment cost estimates — formula: round(FTE×0.9)×format_factor ──
+            _NF_FORMAT_FACTORS = {
+                'flagship': 1_600_000, 'medium': 1_680_000,
+                'medium economy': 2_167_000, 'small': 2_167_000,
+            }
+            _BUDGET_PER_YEAR = 500_000_000  # 500 M Kč / rok
 
-            if not _df_invest_cost.empty and _inv_money_cols:
-                _inv_cost_rows = ''
-                _inv_tot_n = 0; _inv_tot_last = 0; _inv_tot_big = 0; _inv_tot_total = 0
-                for _brn in _bns_regions:
-                    _dreg_inv = _df_invest_cost[_df_invest_cost['REGION_NAME'] == _brn]
-                    if _dreg_inv.empty:
-                        continue
-                    _n_iv = len(_dreg_inv)
-                    _sl = _dreg_inv['LAST_INV'].sum() if 'LAST_INV' in _dreg_inv.columns else 0
-                    _sb = _dreg_inv['BIGGEST_INV'].sum() if 'BIGGEST_INV' in _dreg_inv.columns else 0
-                    _st = _dreg_inv['TOTAL_INV'].sum() if 'TOTAL_INV' in _dreg_inv.columns else 0
-                    _inv_tot_n += _n_iv; _inv_tot_last += _sl; _inv_tot_big += _sb; _inv_tot_total += _st
-                    _inv_cost_rows += (
-                        f'<tr style="border-bottom:1px solid #f0f4f8;">'
-                        f'<td style="padding:6px 10px;font-weight:600;font-size:0.8rem;">{_brn}</td>'
-                        f'<td style="padding:6px 10px;font-size:0.8rem;text-align:center;">{_n_iv}</td>'
-                        + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{format_money(_sl)}</td>' if 'LAST_INV' in _inv_money_cols else '')
-                        + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{format_money(_sb)}</td>' if 'BIGGEST_INV' in _inv_money_cols else '')
-                        + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;font-weight:700;color:#2770f0;">{format_money(_st)}</td>' if 'TOTAL_INV' in _inv_money_cols else '')
-                        + '</tr>'
-                    )
-                _inv_cost_rows += (
-                    f'<tr style="background:#f0f6ff;font-weight:700;border-top:2px solid #bfdbfe;">'
-                    f'<td style="padding:6px 10px;font-size:0.8rem;">CELKEM</td>'
-                    f'<td style="padding:6px 10px;font-size:0.8rem;text-align:center;">{_inv_tot_n}</td>'
-                    + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{format_money(_inv_tot_last)}</td>' if 'LAST_INV' in _inv_money_cols else '')
-                    + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{format_money(_inv_tot_big)}</td>' if 'BIGGEST_INV' in _inv_money_cols else '')
-                    + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;color:#2770f0;">{format_money(_inv_tot_total)}</td>' if 'TOTAL_INV' in _inv_money_cols else '')
-                    + '</tr>'
+            # Compute cost estimate per NF investment branch
+            _reg_yr_cost = {}   # {region: {year: cost_czk}}
+            _reg_nf_n    = {}   # {region: count}
+            for _, _icrow in _df_bns[_df_bns['_BNS_CAT'] == 'invest'].iterrows():
+                _nf_yr_v = pd.to_numeric(_icrow.get('INVESTICE_NF_(ROK)', None), errors='coerce') if 'INVESTICE_NF_(ROK)' in _icrow.index else None
+                if not pd.notna(_nf_yr_v) or _nf_yr_v <= 0:
+                    continue
+                try:
+                    _ic_fte = float(_icrow.get('_total_spec', 0) or 0)
+                    _ic_fmt = str(_icrow.get('BRANCH_FORMAT', '') or '').lower().strip()
+                    _ic_fac = _NF_FORMAT_FACTORS.get(_ic_fmt)
+                    if _ic_fte > 0 and _ic_fac:
+                        _ic_cost = round(_ic_fte * 0.9) * _ic_fac
+                        _ic_reg = str(_icrow.get('REGION_NAME', '?'))
+                        _ic_yr  = int(_nf_yr_v)
+                        _reg_yr_cost.setdefault(_ic_reg, {})
+                        _reg_yr_cost[_ic_reg][_ic_yr] = _reg_yr_cost[_ic_reg].get(_ic_yr, 0) + _ic_cost
+                        _reg_nf_n[_ic_reg] = _reg_nf_n.get(_ic_reg, 0) + 1
+                except Exception:
+                    pass
+
+            _reg_totals_cost = {_r: sum(_yd.values()) for _r, _yd in _reg_yr_cost.items()}
+            _yr_totals_cost  = {}
+            for _yd in _reg_yr_cost.values():
+                for _y, _c in _yd.items():
+                    _yr_totals_cost[_y] = _yr_totals_cost.get(_y, 0) + _c
+            _grand_cost = sum(_reg_totals_cost.values())
+
+            # Table rows per region
+            _cost_tbl_rows = ''
+            for _brn in _bns_regions:
+                _rc_total = _reg_totals_cost.get(_brn, 0)
+                if _rc_total == 0 and _reg_nf_n.get(_brn, 0) == 0:
+                    continue
+                _rc_n = _reg_nf_n.get(_brn, 0)
+                _yr_cells = ''.join(
+                    f'<td style="padding:5px 8px;font-size:0.78rem;text-align:right;">'
+                    f'{format_money(_reg_yr_cost.get(_brn, {}).get(_y, 0)) if _reg_yr_cost.get(_brn, {}).get(_y, 0) > 0 else "—"}</td>'
+                    for _y in _BNS_YEARS
                 )
-                _inv_cost_hdr = (
-                    '<th style="padding:7px 10px;background:#2770f0;color:white;font-size:0.78rem;text-align:left;">Region</th>'
-                    '<th style="padding:7px 10px;background:#2770f0;color:white;font-size:0.78rem;text-align:center;">Poboček</th>'
-                    + ('<th style="padding:7px 10px;background:#2770f0;color:white;font-size:0.78rem;text-align:right;">Poslední invest. (Kč)</th>' if 'LAST_INV' in _inv_money_cols else '')
-                    + ('<th style="padding:7px 10px;background:#2770f0;color:white;font-size:0.78rem;text-align:right;">Největší invest. (Kč)</th>' if 'BIGGEST_INV' in _inv_money_cols else '')
-                    + ('<th style="padding:7px 10px;background:#2770f0;color:white;font-size:0.78rem;text-align:right;">Celkové invest. (Kč)</th>' if 'TOTAL_INV' in _inv_money_cols else '')
+                _cost_tbl_rows += (
+                    f'<tr style="border-bottom:1px solid #f0f4f8;">'
+                    f'<td style="padding:5px 8px;font-weight:600;font-size:0.8rem;">{_brn}</td>'
+                    f'<td style="padding:5px 8px;font-size:0.78rem;text-align:center;">{_rc_n}</td>'
+                    f'{_yr_cells}'
+                    f'<td style="padding:5px 8px;font-size:0.78rem;font-weight:700;text-align:right;color:#2770f0;">{format_money(_rc_total) if _rc_total > 0 else "—"}</td>'
+                    f'</tr>'
                 )
-                _sec_invest_cost = make_collapsible(
-                    'bns-invest-cost',
-                    '💰 Odhad nákladů investic dle regionů',
-                    (f'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'
-                     f'<thead><tr>{_inv_cost_hdr}</tr></thead>'
-                     f'<tbody>{_inv_cost_rows}</tbody></table></div>'
-                     f'<div style="font-size:0.72rem;color:#888;margin-top:6px;">'
-                     f'Zdroj: LAST_INV / BIGGEST_INV / TOTAL_INV z footprint dat</div>'),
-                    default_open=False,
+            _yr_total_cells = ''.join(
+                f'<td style="padding:5px 8px;font-size:0.78rem;font-weight:700;text-align:right;">{format_money(_yr_totals_cost.get(_y, 0))}</td>'
+                for _y in _BNS_YEARS
+            )
+            _cost_tbl_rows += (
+                f'<tr style="background:#f0f6ff;font-weight:700;border-top:2px solid #bfdbfe;">'
+                f'<td style="padding:5px 8px;font-size:0.8rem;">CELKEM</td>'
+                f'<td style="padding:5px 8px;font-size:0.78rem;text-align:center;">{sum(_reg_nf_n.values())}</td>'
+                f'{_yr_total_cells}'
+                f'<td style="padding:5px 8px;font-size:0.78rem;text-align:right;color:#2770f0;">{format_money(_grand_cost)}</td>'
+                f'</tr>'
+            )
+            _cost_tbl_hdr = (
+                '<th style="padding:6px 8px;background:#2770f0;color:white;font-size:0.77rem;text-align:left;">Region</th>'
+                '<th style="padding:6px 8px;background:#2770f0;color:white;font-size:0.77rem;text-align:center;">NF poboček</th>'
+                + ''.join(f'<th style="padding:6px 8px;background:#2770f0;color:white;font-size:0.77rem;text-align:right;">{_y}</th>' for _y in _BNS_YEARS)
+                + '<th style="padding:6px 8px;background:#1a55cc;color:white;font-size:0.77rem;text-align:right;">Celkem</th>'
+            )
+
+            # Budget bar chart (stacked by region, x=year, ref line at 500M)
+            _budget_chart_id = 'bns-budget-' + str(id(_df_bns))[:8]
+            _budget_series = []
+            for _brn in _bns_regions:
+                _bdata = [round(_reg_yr_cost.get(_brn, {}).get(_y, 0) / 1_000_000, 1) for _y in _BNS_YEARS]
+                if any(_bd > 0 for _bd in _bdata):
+                    _budget_series.append({'name': _brn, 'data': _bdata})
+            _budget_series_json = _bns_json.dumps(_budget_series)
+            _budget_years_json = _bns_json.dumps([str(_y) for _y in _BNS_YEARS])
+            _budget_max_m = max(550, max((_yr_totals_cost.get(_y, 0) for _y in _BNS_YEARS), default=0) / 1_000_000 + 50)
+
+            # KPI cards for budget
+            def _budget_kpi(label, val_m, color, sub=''):
+                pct = val_m / 500 * 100
+                bar_color = '#d62728' if pct > 100 else ('#e07a2a' if pct > 75 else '#2ca02c')
+                return (
+                    f'<div style="flex:1;min-width:130px;background:white;border:1px solid #e2e8f0;'
+                    f'border-radius:8px;padding:10px 14px;border-top:3px solid {color};">'
+                    f'<div style="font-size:0.68rem;color:#888;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">{label}</div>'
+                    f'<div style="font-size:1.35rem;font-weight:800;color:#0f172a;">{val_m:.0f} M Kč</div>'
+                    f'<div style="margin:5px 0 2px;background:#f1f5f9;border-radius:3px;height:6px;">'
+                    f'<div style="width:{min(pct,100):.0f}%;height:100%;background:{bar_color};border-radius:3px;"></div></div>'
+                    f'<div style="font-size:0.7rem;color:{bar_color};font-weight:600;">{pct:.0f}% ročního budgetu 500M</div>'
+                    + (f'<div style="font-size:0.67rem;color:#aaa;margin-top:2px;">{sub}</div>' if sub else '')
+                    + '</div>'
                 )
-            else:
-                _sec_invest_cost = ''
+
+            _budget_kpi_strip = (
+                f'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">'
+                + ''.join(
+                    _budget_kpi(str(_y), _yr_totals_cost.get(_y, 0) / 1_000_000,
+                                '#d62728' if _yr_totals_cost.get(_y, 0) > _BUDGET_PER_YEAR else '#2770f0',
+                                f'budget: 500 M Kč/rok')
+                    for _y in _BNS_YEARS
+                )
+                + f'<div style="flex:1;min-width:130px;background:#f0f6ff;border:2px solid #2770f0;'
+                  f'border-radius:8px;padding:10px 14px;">'
+                  f'<div style="font-size:0.68rem;color:#888;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Celkem 2027–2030</div>'
+                  f'<div style="font-size:1.35rem;font-weight:800;color:#2770f0;">{_grand_cost/1_000_000:.0f} M Kč</div>'
+                  f'<div style="font-size:0.7rem;color:#555;margin-top:3px;">= {_grand_cost/4/1_000_000:.0f} M Kč průměr/rok</div>'
+                  f'</div>'
+                + '</div>'
+            )
+
+            _budget_chart_html = (
+                f'<div id="{_budget_chart_id}" style="height:360px;"></div>'
+                f'<script>'
+                f'(function(){{'
+                f'var yrs={_budget_years_json};'
+                f'var ser={_budget_series_json};'
+                f'var _br=false;'
+                f'function _bgR(){{'
+                f'if(_br)return;'
+                f'if(typeof ApexCharts==="undefined"){{setTimeout(_bgR,200);return;}}'
+                f'var el=document.getElementById("{_budget_chart_id}");'
+                f'if(!el){{setTimeout(_bgR,200);return;}}'
+                f'var r=el.getBoundingClientRect();if(r.width<10){{setTimeout(_bgR,300);return;}}'
+                f'_br=true;'
+                f'try{{'
+                f'new ApexCharts(el,{{'
+                f'chart:{{type:"bar",height:340,stacked:true,toolbar:{{show:false}}}},'
+                f'series:ser,'
+                f'xaxis:{{categories:yrs,title:{{text:"Rok realizace"}}}},'
+                f'yaxis:{{min:0,max:{_budget_max_m:.0f},title:{{text:"M Kč"}},labels:{{formatter:function(v){{return v.toFixed(0)}}}}}},'
+                f'annotations:{{yaxis:[{{y:500,borderColor:"#d62728",strokeDashArray:5,label:{{text:"Budget 500 M/rok",position:"right",style:{{color:"white",background:"#d62728",fontSize:"11px"}}}}}}]}},'
+                f'dataLabels:{{enabled:false}},'
+                f'legend:{{position:"top",fontSize:"11px"}},'
+                f'tooltip:{{y:{{formatter:function(v){{return v.toFixed(1)+" M Kč"}}}}}},'
+                f'plotOptions:{{bar:{{borderRadius:2,columnWidth:"55%"}}}}'
+                f'}}).render();'
+                f'}}catch(e){{_br=false;console.error(e);}}'
+                f'}}'
+                f'setTimeout(_bgR,150);'
+                f'document.addEventListener("toggle",function(ev){{'
+                f'if(ev.target&&ev.target.open){{setTimeout(_bgR,100);}}}},true);'
+                f'}})();'
+                f'</script>'
+            )
+
+            _sec_invest_cost = make_collapsible(
+                'bns-invest-cost',
+                '💰 Odhad nákladů NF investic dle regionů (vs budget 500 M Kč/rok)',
+                (
+                    _budget_kpi_strip
+                    + f'<div style="overflow-x:auto;margin-bottom:16px;">'
+                    f'<table style="width:100%;border-collapse:collapse;">'
+                    f'<thead><tr>{_cost_tbl_hdr}</tr></thead>'
+                    f'<tbody>{_cost_tbl_rows}</tbody></table></div>'
+                    + _budget_chart_html
+                    + f'<div style="font-size:0.71rem;color:#888;margin-top:8px;">'
+                    f'Výpočet: round(FTE × 0,9) × cena/formát (Flagship 1,6M, Medium 1,68M, Medium Economy/Small 2,167M Kč/os.)'
+                    f'&nbsp;·&nbsp; červená čára = roční budget 500 M Kč</div>'
+                ) if _cost_tbl_rows else '<p style="color:#aaa;font-style:italic;">Žádné NF investice se standardním formátem.</p>',
+                default_open=True,
+            )
 
             # ── FTE impact of close branches ─────────────────────────────────
             _df_close_fte = _df_bns[_df_bns['_BNS_CAT'] == 'close'].copy()
@@ -13461,8 +13628,9 @@ function obSet_{_fn_slug}(btn, ob){{
                 ('CASHLESS',               'Cashless',     lambda v: str(v)),
                 ('FOOTPRINT_STRATEGIE_(2030)', 'Strategie', lambda v: str(v)),
             ]
+            _sort_keys_cl = [c for c in ['REGION_NAME', '_BNS_YEAR'] if c in _df_bns.columns]
             _df_close_detail = _df_bns[_df_bns['_BNS_CAT'] == 'close'].sort_values(
-                '_BNS_YEAR', na_position='last'
+                _sort_keys_cl, na_position='last'
             )
             _close_avail = [(c, l, f) for c, l, f in _close_tbl_cols if c in _df_close_detail.columns or c == 'BRANCH_CODE']
 
@@ -13480,25 +13648,14 @@ function obSet_{_fn_slug}(btn, ob){{
                 for _ci3, (_c3, _lbl3, _f3) in enumerate(_close_avail)
             )
             _close_tbody = ''
-            for _cy_val in sorted(_BNS_YEARS):
-                _df_cy = _df_close_detail[_df_close_detail['_BNS_YEAR'] == _cy_val]
-                for _, _crow in _df_cy.iterrows():
-                    _cells3 = ''
-                    for _c3, _, _f3 in _close_avail:
-                        _raw3 = _crow.get(_c3, '—') if _c3 in _crow.index else '—'
-                        try: _dv3 = str(float(_raw3)) if pd.notna(_raw3) and _c3 not in ('BRANCH_CODE','BRANCH_NAME','REGION_NAME','FOOTPRINT_STRATEGIE_(2030)','CASHLESS') else ''
-                        except: _dv3 = ''
-                        _cells3 += f'<td data-v="{_dv3}" style="padding:5px 8px;border-bottom:1px solid #f0f4f8;font-size:0.77rem;">{_f3(_raw3)}</td>'
-                    _close_tbody += f'<tr>{_cells3}</tr>'
-            # Also add rows with no year
-            for _, _crow in _df_close_detail[_df_close_detail['_BNS_YEAR'].isna()].iterrows():
+            for _, _crow in _df_close_detail.iterrows():
                 _cells3 = ''
                 for _c3, _, _f3 in _close_avail:
                     _raw3 = _crow.get(_c3, '—') if _c3 in _crow.index else '—'
                     try: _dv3 = str(float(_raw3)) if pd.notna(_raw3) and _c3 not in ('BRANCH_CODE','BRANCH_NAME','REGION_NAME','FOOTPRINT_STRATEGIE_(2030)','CASHLESS') else ''
                     except: _dv3 = ''
                     _cells3 += f'<td data-v="{_dv3}" style="padding:5px 8px;border-bottom:1px solid #f0f4f8;font-size:0.77rem;">{_f3(_raw3)}</td>'
-                _close_tbody += f'<tr style="background:#fff8f8;">{_cells3}</tr>'
+                _close_tbody += f'<tr>{_cells3}</tr>'
 
             _close_tbl_html = (
                 f'<div style="overflow-x:auto;">'
@@ -13529,8 +13686,9 @@ function obSet_{_fn_slug}(btn, ob){{
                 ('IR',                      'IR 2025',     lambda v: f'{float(v):.1f}' if pd.notna(v) else '—'),
                 ('FOOTPRINT_STRATEGIE_(2030)', 'Strategie', lambda v: str(v)),
             ]
+            _sort_keys_iv = [c for c in ['REGION_NAME', '_BNS_YEAR'] if c in _df_bns.columns]
             _df_invest_detail = _df_bns[_df_bns['_BNS_CAT'] == 'invest'].sort_values(
-                '_BNS_YEAR', na_position='last'
+                _sort_keys_iv, na_position='last'
             )
             _invest_avail = [(c, l, f) for c, l, f in _invest_tbl_cols if c in _df_invest_detail.columns or c == 'BRANCH_CODE']
 
@@ -13651,7 +13809,8 @@ function obSet_{_fn_slug}(btn, ob){{
                 ('CASHLESS',                 'Stav',          lambda v: str(v)),
                 ('IR',                       'IR 2025',       lambda v: f'{float(v):.1f}' if pd.notna(v) else '—'),
             ]
-            _df_cashless_detail = _df_bns[_df_bns['_BNS_CAT'] == 'cashless'].sort_values('_BNS_YEAR', na_position='last')
+            _sort_keys_cs = [c for c in ['REGION_NAME', '_BNS_YEAR'] if c in _df_bns.columns]
+            _df_cashless_detail = _df_bns[_df_bns['_BNS_CAT'] == 'cashless'].sort_values(_sort_keys_cs, na_position='last')
             _cashless_avail = [(c, l, f) for c, l, f in _cashless_tbl_cols if c in _df_cashless_detail.columns or c == 'BRANCH_CODE']
             _cashless_th = ''.join(
                 f'<th style="padding:6px 8px;background:#e07a2a;color:white;font-size:0.77rem;">{_lbl5}</th>'
