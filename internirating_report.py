@@ -13606,16 +13606,16 @@ function obSet_{_fn_slug}(btn, ob){{
                 default_open=True,
             )
 
-            # ── Unified detail: Close + Invest (NF/FHC) + Cashless + BO + RR + Adhoc ──
+            # ── Unified detail: aggregated by region × typ × year ──────────────
             # Build flat actions list — one entry per (branch × action-type)
-            _TYP_CFG = {
-                'close':    ('#d62728', '🔴 CLOSE',   '#fff8f8'),
-                'nf':       ('#2770f0', '🔵 NF inv.',  '#f0f6ff'),
-                'fhc':      ('#7c3aed', '🟣 FHC inv.', '#f5f3ff'),
-                'cashless': ('#e07a2a', '🟠 Cashless', '#fff7f0'),
-                'bo':       ('#ea580c', '📋 BO Online','#fff7ed'),
-                'rr':       ('#16a34a', '🖥️ Rem.Room', '#f0fdf4'),
-                'adhoc':    ('#78716c', '📌 Adhoc',    '#fafaf9'),
+            _TYP_CFG = {  # color, label (muted)
+                'close':    ('#94a3b8', '✕ Close'),
+                'nf':       ('#2770f0', '↑ NF invest.'),
+                'fhc':      ('#7c3aed', '↑ FHC invest.'),
+                'cashless': ('#e07a2a', '⊙ Cashless'),
+                'bo':       ('#78716c', '◻ BO Online'),
+                'rr':       ('#78716c', '◻ Remote Room'),
+                'adhoc':    ('#78716c', '◻ Adhoc'),
             }
 
             _detail_actions = []
@@ -13635,167 +13635,175 @@ function obSet_{_fn_slug}(btn, ob){{
                         'row': _drow,
                     })
 
-                # Close
                 if _drow.get('_BNS_CAT') == 'close':
                     _add('close', _drow.get('_BNS_YEAR'), _clean(_drow.get('CLOSE_DESC','')))
-
-                # NF invest
                 _nf_v = pd.to_numeric(_drow.get('INVESTICE_NF_(ROK)', None), errors='coerce') if 'INVESTICE_NF_(ROK)' in _drow.index else None
                 if pd.notna(_nf_v) and _nf_v > 0:
                     _add('nf', int(_nf_v), _clean(_drow.get('INV_NF_DESC','')), _clean(_drow.get('INV_NF_STATUS','')))
-
-                # FHC invest
                 _fhc_v = pd.to_numeric(_drow.get('INVESTICE_FHC_(ROK)', None), errors='coerce') if 'INVESTICE_FHC_(ROK)' in _drow.index else None
                 if pd.notna(_fhc_v) and _fhc_v > 0:
                     _add('fhc', int(_fhc_v), _clean(_drow.get('INV_FHC_DESC','')), _clean(_drow.get('INV_FHC_STATUS','')))
-
-                # Cashless
                 if _drow.get('_BNS_CAT') == 'cashless':
                     _add('cashless', _drow.get('_BNS_YEAR'), _clean(_drow.get('CASHLESS_DESC','')))
-
-                # BO Online
                 if 'BACK_OFFICE_ONLINE' in _drow.index:
                     _bov = pd.to_numeric(_drow.get('BACK_OFFICE_ONLINE', None), errors='coerce')
                     if pd.notna(_bov) and _bov > 0:
                         _add('bo', int(_bov))
-
-                # Remote Room
                 if 'REMOTE_ROOM' in _drow.index:
                     _rrv = pd.to_numeric(_drow.get('REMOTE_ROOM', None), errors='coerce')
                     if pd.notna(_rrv) and _rrv > 0:
                         _add('rr', int(_rrv))
-
-                # Adhoc
                 if 'ADHOC_YEAR' in _drow.index:
                     _adv = pd.to_numeric(_drow.get('ADHOC_YEAR', None), errors='coerce')
                     if pd.notna(_adv) and _adv > 0:
                         _add('adhoc', int(_adv), _clean(_drow.get('ADHOC_DESCRIPTION','')))
 
-            # Sort: region → year (None last) → branch name
-            _detail_actions.sort(key=lambda x: (x['region'], x['year'] or 9999, x['name']))
+            # Pre-compute IR quintile bins for whole network
+            _ir_q_bins = None
+            if 'IR' in _df_bns.columns:
+                _ir_ser = pd.to_numeric(_df_bns['IR'], errors='coerce').dropna()
+                if len(_ir_ser) >= 5:
+                    try: _, _ir_q_bins = pd.qcut(_ir_ser, 5, retbins=True, duplicates='drop')
+                    except: pass
 
-            # Helper: format value from row
-            def _fv(row, col, fmt='str'):
-                v = row.get(col, None) if col in row.index else None
-                if v is None or (isinstance(v, float) and pd.isna(v)):
-                    return '—'
-                if fmt == 'money': return format_money(float(v))
-                if fmt == 'num1':
-                    try: return f'{float(v):.1f}'
-                    except: return str(v)
-                if fmt == 'int':
-                    try: return str(int(float(v)))
-                    except: return str(v)
-                return str(v)
-
-            # Quintile dot helper (Q1=green=best, Q5=red=worst)
-            _Q_COLORS = {1:'#16a34a',2:'#84cc16',3:'#eab308',4:'#f97316',5:'#d62728'}
-
-            def _qdot(val, tooltip=''):
+            def _ir_to_q(val):
+                if _ir_q_bins is None: return None
                 try:
-                    q = int(round(float(val)))
-                    c = _Q_COLORS.get(q,'#888')
-                    return f'<span title="{tooltip} Q{q}" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{c};margin-right:2px;"></span><span style="font-size:0.7rem;color:{c};font-weight:700;">Q{q}</span>'
-                except: return '—'
+                    v = float(val)
+                    for _qi, (_lo, _hi) in enumerate(zip(_ir_q_bins[:-1], _ir_q_bins[1:])):
+                        if (_qi == 0 and _lo <= v <= _hi) or (_qi > 0 and _lo < v <= _hi):
+                            return _qi + 1
+                except: pass
+                return None
 
-            # Determine available detail columns
-            _dcols_avail = {c: c in _df_bns.columns for c in
-                            ['IR','CAP_Q','OBJEM_VYNOSU_CZK','FTE','PRIMARNI_KLIENTI','DZ_STITKY',
-                             'BRANCH_FORMAT','CASHLESS']}
+            def _median_q(vals):
+                qs = [v for v in vals if v is not None]
+                return int(round(sum(qs) / len(qs))) if qs else None
 
-            # Build header
+            _Q_COLOR = {1:'#16a34a', 2:'#84cc16', 3:'#ca8a04', 4:'#ea580c', 5:'#dc2626'}
+
+            def _qdot_s(q, tip):
+                if q is None: return '<span style="color:#d1d5db;font-size:0.7rem;">—</span>'
+                c = _Q_COLOR.get(q, '#888')
+                return (f'<span title="{tip} Q{q}" style="display:inline-flex;align-items:center;gap:3px;">'
+                        f'<span style="width:9px;height:9px;border-radius:50%;background:{c};display:inline-block;"></span>'
+                        f'<span style="font-size:0.72rem;font-weight:700;color:{c};">Q{q}</span></span>')
+
+            # Aggregate by (region, typ, year)
+            _agg = {}
+            for _da in _detail_actions:
+                _k = (_da['region'], _da['typ'], _da['year'])
+                if _k not in _agg:
+                    _agg[_k] = {'names': [], 'notes': set(), 'ir_qs': [], 'capqs': [],
+                                 'dz_n': 0, 'status_set': set()}
+                _g = _agg[_k]
+                _g['names'].append(_da['name'])
+                if _da['notes']: _g['notes'].add(_da['notes'])
+                if _da['status']: _g['status_set'].add(_da['status'])
+                _r = _da['row']
+                _irv = pd.to_numeric(_r.get('IR', None), errors='coerce') if 'IR' in _r.index else None
+                if pd.notna(_irv): _g['ir_qs'].append(_ir_to_q(_irv))
+                _cqv = pd.to_numeric(_r.get('CAP_Q', None), errors='coerce') if 'CAP_Q' in _r.index else None
+                if pd.notna(_cqv): _g['capqs'].append(int(_cqv))
+                _dzv = str(_r.get('DZ_STITKY', '') or '') if 'DZ_STITKY' in _r.index else ''
+                if _dzv and _dzv not in ('nan','None','—',''): _g['dz_n'] += 1
+
+            _TYP_ORDER = {'close':0,'nf':1,'fhc':2,'cashless':3,'bo':4,'rr':5,'adhoc':6}
+            _agg_keys = sorted(_agg.keys(),
+                               key=lambda k: (k[0], _TYP_ORDER.get(k[1],9), k[2] or 9999))
+
+            _have_ir  = 'IR' in _df_bns.columns
+            _have_capq= 'CAP_Q' in _df_bns.columns
+            _have_dz  = 'DZ_STITKY' in _df_bns.columns
+
             _det_th = (
-                '<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;white-space:nowrap;">Typ</th>'
-                '<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;">Rok</th>'
-                '<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;">Kód</th>'
-                '<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;min-width:140px;">Název</th>'
-                + ('<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;">IR</th>' if _dcols_avail['IR'] else '')
-                + ('<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;white-space:nowrap;">Bus. Q</th>' if _dcols_avail['CAP_Q'] else '')
-                + ('<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;white-space:nowrap;">Nové výnosy</th>' if _dcols_avail['OBJEM_VYNOSU_CZK'] else '')
-                + ('<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;">FTE</th>' if _dcols_avail['FTE'] else '')
-                + ('<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;white-space:nowrap;">Prim. klienti</th>' if _dcols_avail['PRIMARNI_KLIENTI'] else '')
-                + ('<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;white-space:nowrap;">Nebez. zóna</th>' if _dcols_avail['DZ_STITKY'] else '')
-                + '<th style="padding:6px 8px;background:#1e293b;color:white;font-size:0.75rem;min-width:140px;">Poznámky / stav</th>'
+                '<th style="padding:6px 10px;background:#374151;color:#e2e8f0;font-size:0.75rem;font-weight:600;">Typ akce</th>'
+                '<th style="padding:6px 10px;background:#374151;color:#e2e8f0;font-size:0.75rem;font-weight:600;">Rok</th>'
+                '<th style="padding:6px 10px;background:#374151;color:#e2e8f0;font-size:0.75rem;font-weight:600;">Pobočky</th>'
+                + ('<th style="padding:6px 10px;background:#374151;color:#e2e8f0;font-size:0.75rem;font-weight:600;white-space:nowrap;">IR Q</th>' if _have_ir else '')
+                + ('<th style="padding:6px 10px;background:#374151;color:#e2e8f0;font-size:0.75rem;font-weight:600;white-space:nowrap;">Bus. Q</th>' if _have_capq else '')
+                + ('<th style="padding:6px 10px;background:#374151;color:#e2e8f0;font-size:0.75rem;font-weight:600;white-space:nowrap;">⚠</th>' if _have_dz else '')
+                + '<th style="padding:6px 10px;background:#374151;color:#e2e8f0;font-size:0.75rem;font-weight:600;">Poznámky</th>'
             )
 
-            # Build rows grouped by region
             _det_tbody = ''
-            _cur_reg = None
-            for _da in _detail_actions:
-                _row = _da['row']
-                if _da['region'] != _cur_reg:
-                    _cur_reg = _da['region']
-                    _ncols = 9 + sum(1 for k in ['IR','CAP_Q','OBJEM_VYNOSU_CZK','FTE','PRIMARNI_KLIENTI','DZ_STITKY'] if _dcols_avail[k])
-                    _reg_n_all = len(_df_bns[_df_bns['REGION_NAME'] == _cur_reg]) if 'REGION_NAME' in _df_bns.columns else ''
+            _cur_reg3 = None
+            _ncols_d  = 4 + sum([_have_ir, _have_capq, _have_dz])
+            for _k in _agg_keys:
+                _kreg, _ktyp, _kyr = _k
+                _g = _agg[_k]
+
+                if _kreg != _cur_reg3:
+                    _cur_reg3 = _kreg
                     _det_tbody += (
-                        f'<tr style="background:#1e293b;">'
-                        f'<td colspan="{_ncols}" style="padding:7px 10px;font-size:0.82rem;font-weight:700;color:white;letter-spacing:.3px;">'
-                        f'📍 {_cur_reg}'
-                        + (f'<span style="font-weight:400;font-size:0.72rem;color:#94a3b8;margin-left:8px;">{_reg_n_all} poboček celkem</span>' if _reg_n_all else '')
-                        + '</td></tr>'
+                        f'<tr style="background:#374151;">'
+                        f'<td colspan="{_ncols_d}" style="padding:8px 12px;font-size:0.82rem;font-weight:700;'
+                        f'color:white;letter-spacing:.2px;">📍 {_kreg}</td></tr>'
                     )
 
-                _tcfg = _TYP_CFG.get(_da['typ'], ('#888','?','#f9f9f9'))
-                _tcolor, _tlabel, _tbg = _tcfg
-                _typ_badge = f'<span style="background:{_tcolor};color:white;font-size:0.68rem;font-weight:700;padding:2px 7px;border-radius:4px;white-space:nowrap;">{_tlabel}</span>'
-                _yr_cell = str(_da['year']) if _da['year'] else '—'
-                _notes_cell = ''
-                if _da['notes']:
-                    _notes_cell += f'<span style="font-size:0.72rem;color:#555;">{_da["notes"]}</span>'
-                if _da['status']:
-                    _notes_cell += f' <span style="font-size:0.68rem;background:#f0f4ff;color:#2770f0;border:1px solid #c7d9fb;padding:1px 5px;border-radius:3px;">{_da["status"]}</span>'
+                _tcfg = _TYP_CFG.get(_ktyp, ('#888', _ktyp))
+                _tc, _tl = _tcfg
+                _yr_str = str(_kyr) if _kyr else '—'
+                _n = len(_g['names'])
 
-                _ir_q_html = ''
-                if _dcols_avail['IR']:
-                    _ir_val = _row.get('IR', None) if 'IR' in _row.index else None
-                    try:
-                        _ir_f = float(_ir_val)
-                        # Compute IR quintile within the network
-                        _ir_q = None
-                        if 'IR' in _df_bns.columns:
-                            _irs = pd.to_numeric(_df_bns['IR'], errors='coerce').dropna()
-                            if len(_irs) > 0:
-                                _ir_q = int(pd.cut([_ir_f], bins=pd.qcut(_irs, 5, retbins=True)[1], labels=False, include_lowest=True)[0]) + 1
-                        _ir_q_html = (f'{_ir_f:.1f}'
-                                      + (f' {_qdot(_ir_q, "IR")}' if _ir_q else ''))
-                    except: _ir_q_html = '—'
+                # Branch list: up to 5 inline, rest in expandable details
+                _names_short = ', '.join(_g['names'][:5])
+                _names_extra = ''
+                if _n > 5:
+                    _names_extra = (f' <details style="display:inline;"><summary style="display:inline;'
+                                   f'cursor:pointer;color:#2770f0;font-size:0.7rem;">+{_n-5} více</summary>'
+                                   f'<span style="font-size:0.72rem;color:#555;"> {", ".join(_g["names"][5:])}</span>'
+                                   f'</details>')
+                _names_cell = (f'<span style="font-weight:700;font-size:0.8rem;">{_n}</span>'
+                               f'<span style="font-size:0.72rem;color:#64748b;margin-left:5px;">{_names_short}</span>'
+                               + _names_extra)
 
+                _ir_q_med  = _median_q(_g['ir_qs'])
+                _capq_med  = _median_q(_g['capqs'])
+                _dz_cell   = (f'<span style="font-size:0.75rem;font-weight:700;color:#d62728;">{_g["dz_n"]}</span>'
+                              if _g['dz_n'] > 0 else
+                              '<span style="color:#d1d5db;font-size:0.72rem;">—</span>')
+
+                _notes_parts = list(_g['notes'])
+                if _g['status_set']:
+                    _notes_parts += [f'[{s}]' for s in sorted(_g['status_set'])]
+                _notes_cell = f'<span style="font-size:0.72rem;color:#64748b;">{" · ".join(_notes_parts[:3])}</span>' if _notes_parts else ''
+
+                _row_bg = '#ffffff' if _TYP_ORDER.get(_ktyp, 9) % 2 == 0 else '#f8fafc'
                 _det_tbody += (
-                    f'<tr style="background:{_tbg};border-bottom:1px solid #e8eef8;">'
-                    f'<td style="padding:5px 8px;">{_typ_badge}</td>'
-                    f'<td style="padding:5px 8px;font-size:0.8rem;font-weight:700;color:{_tcolor};">{_yr_cell}</td>'
-                    f'<td style="padding:5px 8px;font-size:0.75rem;color:#888;">{_da["code"]}</td>'
-                    f'<td style="padding:5px 8px;font-size:0.8rem;font-weight:600;">{_da["name"]}</td>'
-                    + (f'<td style="padding:5px 8px;font-size:0.75rem;">{_ir_q_html}</td>' if _dcols_avail['IR'] else '')
-                    + (f'<td style="padding:5px 8px;">{_qdot(_fv(_row,"CAP_Q"), "Business rating")}</td>' if _dcols_avail['CAP_Q'] else '')
-                    + (f'<td style="padding:5px 8px;font-size:0.75rem;text-align:right;">{_fv(_row,"OBJEM_VYNOSU_CZK","money")}</td>' if _dcols_avail['OBJEM_VYNOSU_CZK'] else '')
-                    + (f'<td style="padding:5px 8px;font-size:0.75rem;text-align:right;">{_fv(_row,"FTE","num1")}</td>' if _dcols_avail['FTE'] else '')
-                    + (f'<td style="padding:5px 8px;font-size:0.75rem;text-align:right;">{_fv(_row,"PRIMARNI_KLIENTI","int")}</td>' if _dcols_avail['PRIMARNI_KLIENTI'] else '')
-                    + (f'<td style="padding:5px 8px;font-size:0.73rem;color:#d62728;">{_fv(_row,"DZ_STITKY") if _fv(_row,"DZ_STITKY") not in ("—","") else ""}</td>' if _dcols_avail['DZ_STITKY'] else '')
-                    + f'<td style="padding:5px 8px;">{_notes_cell}</td>'
+                    f'<tr style="background:{_row_bg};border-bottom:1px solid #e2e8f0;">'
+                    f'<td style="padding:6px 10px;border-left:3px solid {_tc};">'
+                    f'<span style="font-size:0.75rem;font-weight:600;color:{_tc};">{_tl}</span></td>'
+                    f'<td style="padding:6px 10px;font-size:0.78rem;font-weight:700;color:#374151;">{_yr_str}</td>'
+                    f'<td style="padding:6px 10px;">{_names_cell}</td>'
+                    + (f'<td style="padding:6px 10px;">{_qdot_s(_ir_q_med, "IR")}</td>' if _have_ir else '')
+                    + (f'<td style="padding:6px 10px;">{_qdot_s(_capq_med, "Business rating")}</td>' if _have_capq else '')
+                    + (f'<td style="padding:6px 10px;text-align:center;">{_dz_cell}</td>' if _have_dz else '')
+                    + f'<td style="padding:6px 10px;">{_notes_cell}</td>'
                     + '</tr>'
                 )
 
-            _n_det_total = len(_detail_actions)
+            _n_det_groups = len(_agg_keys)
+            _n_det_branches = len(set((_da['region'], _da['code'], _da['typ']) for _da in _detail_actions))
             _sec_detail = make_collapsible(
                 'bns-detail',
-                f'📋 Přehled všech BNS akcí ({_n_det_total}) — dle regionů a data',
+                f'📋 Přehled BNS akcí — {_n_det_branches} poboček v {_n_det_groups} skupinách',
                 (
                     f'<div style="overflow-x:auto;">'
                     f'<table style="width:100%;border-collapse:collapse;">'
                     f'<thead><tr>{_det_th}</tr></thead>'
                     f'<tbody>{_det_tbody}</tbody>'
                     f'</table></div>'
-                    f'<div style="font-size:0.72rem;color:#888;margin-top:6px;">'
-                    f'Seřazeno: region → rok → pobočka &nbsp;·&nbsp; '
-                    f'Bus.Q = Business rating kvintil (Q1🟢 nejlepší) &nbsp;·&nbsp; '
-                    f'IR = interior rating &nbsp;·&nbsp; jednu pobočku může mít více akcí</div>'
+                    f'<div style="font-size:0.7rem;color:#94a3b8;margin-top:8px;">'
+                    f'Agregace: region → typ akce → rok &nbsp;·&nbsp; '
+                    f'Q = medián kvintilu skupiny (Q1 = nejlepší) &nbsp;·&nbsp; ⚠ = počet poboček s příznakem nebezpečné zóny</div>'
                 ) if _det_tbody else '<p style="color:#aaa;font-style:italic;">Žádné BNS akce.</p>',
                 default_open=False,
             )
 
-            # Legacy aliases (for backward compat with HTML assembly below)
+            # Legacy aliases
             _sec_close = _sec_invest = _sec_cashless = ''
+
 
             # ── Assemble BNS report ──────────────────────────────────────────
             _bns_full_html = f'''<!DOCTYPE html>
