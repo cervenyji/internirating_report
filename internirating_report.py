@@ -13058,12 +13058,15 @@ function obSet_{_fn_slug}(btn, ob){{
                 f'var cls={_close_data_json};'
                 f'var inv={_invest_data_json};'
                 f'var csl={_cashless_data_json};'
+                f'var _rendered=false;'
                 f'function _tlR(){{'
+                f'if(_rendered)return;'
                 f'if(typeof ApexCharts==="undefined"){{setTimeout(_tlR,200);return;}}'
                 f'var elA=document.getElementById("{_tl_chart_id}-a");'
                 f'var elB=document.getElementById("{_tl_chart_id}-b");'
                 f'if(!elA||!elB){{setTimeout(_tlR,200);return;}}'
                 f'var rA=elA.getBoundingClientRect();if(rA.width<10){{setTimeout(_tlR,300);return;}}'
+                f'_rendered=true;'
                 f'try{{'
                 f'new ApexCharts(elA,{{'
                 f'chart:{{type:"line",height:280,toolbar:{{show:false}}}},'
@@ -13091,7 +13094,7 @@ function obSet_{_fn_slug}(btn, ob){{
                 f'legend:{{position:"top"}},'
                 f'plotOptions:{{bar:{{borderRadius:3}}}}'
                 f'}}).render();'
-                f'}}catch(e){{console.error(e);}}'
+                f'}}catch(e){{_rendered=false;console.error(e);}}'
                 f'}}'
                 f'setTimeout(_tlR,150);'
                 f'document.addEventListener("toggle",function(ev){{'
@@ -13514,7 +13517,7 @@ function obSet_{_fn_slug}(btn, ob){{
                 default_open=False,
             )
 
-            # ── Investment detail table ──────────────────────────────────────
+            # ── Investment detail table (NF/FHC + BO Online + Remote Room + Adhoc) ──
             _invest_tbl_cols = [
                 ('BRANCH_CODE',             'Kód',        lambda v: str(v)),
                 ('BRANCH_NAME',             'Název',       lambda v: str(v)),
@@ -13544,19 +13547,97 @@ function obSet_{_fn_slug}(btn, ob){{
                     _cells4 += f'<td style="padding:5px 8px;border-bottom:1px solid #f0f4f8;font-size:0.77rem;">{_f4(_raw4)}</td>'
                 _invest_tbody += f'<tr style="background:{_ibg};">{_cells4}</tr>'
 
+            # Helper: mini-table for BO Online / Remote Room / Adhoc extra projects
+            def _extra_proj_table(df_sub, yr_col, desc_col, label, badge_bg, badge_color, row_bg):
+                if df_sub.empty:
+                    return ''
+                _mini_cols = [
+                    ('BRANCH_CODE', 'Kód'),
+                    ('BRANCH_NAME', 'Název') if 'BRANCH_NAME' in df_sub.columns else ('BRANCH_CODE', 'Název'),
+                    ('REGION_NAME', 'Region'),
+                    (yr_col, 'Rok'),
+                    ('IR', 'IR 2025'),
+                ]
+                if desc_col and desc_col in df_sub.columns:
+                    _mini_cols.append((desc_col, 'Popis'))
+                _mini_cols = [(c, l) for c, l in _mini_cols if c in df_sub.columns]
+                _th_mini = ''.join(
+                    f'<th style="padding:5px 8px;background:{badge_bg};color:{badge_color};font-size:0.75rem;white-space:nowrap;">{l}</th>'
+                    for c, l in _mini_cols
+                )
+                _tb_mini = ''
+                for _ei, (_, _er) in enumerate(df_sub.iterrows()):
+                    _ebg = row_bg if _ei % 2 == 0 else '#fff'
+                    _cells = ''
+                    for _ec, _ in _mini_cols:
+                        _raw = _er.get(_ec, '—') if _ec in _er.index else '—'
+                        if _ec == yr_col:
+                            try: _raw = str(int(float(_raw))) if pd.notna(_raw) else '—'
+                            except: _raw = str(_raw)
+                        elif _ec == 'IR':
+                            try: _raw = f'{float(_raw):.1f}' if pd.notna(_raw) else '—'
+                            except: _raw = '—'
+                        else:
+                            _raw = str(_raw) if pd.notna(_raw) else '—'
+                        _cells += f'<td style="padding:5px 8px;border-bottom:1px solid #f0f4f8;font-size:0.77rem;">{_raw}</td>'
+                    _tb_mini += f'<tr style="background:{_ebg};">{_cells}</tr>'
+                return (
+                    f'<hr style="border:none;border-top:1px solid #e8edf5;margin:12px 0 8px;">'
+                    f'<div style="font-size:0.72rem;color:#888;font-weight:600;margin-bottom:6px;'
+                    f'text-transform:uppercase;letter-spacing:.4px;">{label} ({len(df_sub)})</div>'
+                    f'<div style="overflow-x:auto;">'
+                    f'<table style="width:100%;border-collapse:collapse;">'
+                    f'<thead><tr>{_th_mini}</tr></thead>'
+                    f'<tbody>{_tb_mini}</tbody>'
+                    f'</table></div>'
+                )
+
+            # BO Online
+            _extra_bo_html = ''
+            if 'BACK_OFFICE_ONLINE' in _df_bns.columns:
+                _df_bo = _df_bns[pd.to_numeric(_df_bns['BACK_OFFICE_ONLINE'], errors='coerce') > 0].copy()
+                _extra_bo_html = _extra_proj_table(
+                    _df_bo, 'BACK_OFFICE_ONLINE', None,
+                    '📋 BO Online', '#fff7ed', '#ea580c', '#fff7f0'
+                )
+            # Remote Room
+            _extra_rr_html = ''
+            if 'REMOTE_ROOM' in _df_bns.columns:
+                _df_rr = _df_bns[pd.to_numeric(_df_bns['REMOTE_ROOM'], errors='coerce') > 0].copy()
+                _extra_rr_html = _extra_proj_table(
+                    _df_rr, 'REMOTE_ROOM', None,
+                    '🖥️ Remote Room', '#f0fdf4', '#16a34a', '#f0fdf8'
+                )
+            # Adhoc
+            _extra_adhoc_html = ''
+            if 'ADHOC_YEAR' in _df_bns.columns:
+                _df_adhoc = _df_bns[pd.to_numeric(_df_bns['ADHOC_YEAR'], errors='coerce') > 0].copy()
+                _extra_adhoc_html = _extra_proj_table(
+                    _df_adhoc, 'ADHOC_YEAR', 'ADHOC_DESCRIPTION',
+                    '📌 Adhoc akce', '#f5f5f4', '#78716c', '#fafaf9'
+                )
+
+            _n_extra = (
+                (len(_df_bo) if 'BACK_OFFICE_ONLINE' in _df_bns.columns and '_df_bo' in dir() and not _df_bo.empty else 0) +
+                (len(_df_rr) if 'REMOTE_ROOM' in _df_bns.columns and '_df_rr' in dir() and not _df_rr.empty else 0) +
+                (len(_df_adhoc) if 'ADHOC_YEAR' in _df_bns.columns and '_df_adhoc' in dir() and not _df_adhoc.empty else 0)
+            )
+
             _invest_tbl_html = (
                 f'<div style="overflow-x:auto;">'
                 f'<table style="width:100%;border-collapse:collapse;">'
                 f'<thead><tr>{_invest_th}</tr></thead>'
                 f'<tbody>{_invest_tbody}</tbody>'
                 f'</table></div>'
+                + _extra_bo_html + _extra_rr_html + _extra_adhoc_html +
                 f'<div style="font-size:0.72rem;color:#888;margin-top:6px;">'
-                f'Celkem investičních: {_n_invest} poboček</div>'
-            ) if _invest_tbody else '<p style="color:#aaa;font-style:italic;">Žádné investiční pobočky.</p>'
+                f'Celkem investičních NF/FHC: {_n_invest} poboček</div>'
+            ) if (_invest_tbody or _extra_bo_html or _extra_rr_html or _extra_adhoc_html) else '<p style="color:#aaa;font-style:italic;">Žádné investiční pobočky.</p>'
 
+            _invest_total_label = _n_invest + _n_extra
             _sec_invest = make_collapsible(
                 'bns-invest',
-                f'🔵 Detail investičních poboček ({_n_invest})',
+                f'🔵 Detail investičních poboček ({_invest_total_label})',
                 _invest_tbl_html,
                 default_open=False,
             )
@@ -18939,6 +19020,9 @@ generate_report(rating_status, mode='regional', output_prefix="report")
 
 # WS BNS 2026 — strategie sítě poboček
 generate_report(rating_status, mode='bns', output_prefix="report")
+
+# Porovnání regionů
+generate_report(rating_status, mode='comparison', output_prefix="report")
 
 # Pobočkové reporty (jeden soubor per pobočka)
 generate_branch_reports(rating_status, output_dir="report_pobocky", hotovostni_trn=hotovostni_trn, hotovostni_trn_detail=hotovostni_trn_detail, export_atm=export_atm, kapacita_atm=kapacita_atm, visits=visits, parties_full=parties_full, spadovky=spadovky, oteviraci_doba_detail=oteviraci_doba_detail)
