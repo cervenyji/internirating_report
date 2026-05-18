@@ -4852,11 +4852,14 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
         )
 
         # Schůzky detaily
-        _sch_fyz  = int(float(row.get('POCET_SCHUZEK_FYZICKY', 0) or 0))
-        _sch_onl  = int(float(row.get('POCET_SCHUZEK_ONLINE',  0) or 0))
-        _bezhot   = int(float(row.get('POCET_BEZHOT_WALK_IN',  0) or 0))
+        def _sf2(v):
+            try: f = float(v); return 0.0 if f != f else f
+            except (TypeError, ValueError): return 0.0
+        _sch_fyz  = int(_sf2(row.get('POCET_SCHUZEK_FYZICKY', 0)))
+        _sch_onl  = int(_sf2(row.get('POCET_SCHUZEK_ONLINE',  0)))
+        _bezhot   = int(_sf2(row.get('POCET_BEZHOT_WALK_IN',  0)))
         _bezhot_e = round(_bezhot * BEZHOT_TO_SCH_RATE * BEZHOT_SCH_EQUIV)
-        _delta_c  = float(row.get('_delta_cli', 0) or 0)
+        _delta_c  = _sf2(row.get('_delta_cli', 0))
         _sch_spado = round(_delta_c * SCH_PER_CLIENT)
 
         # Zdrojové pobočky — všechny, ale max 4 na řádek (flex wrap)
