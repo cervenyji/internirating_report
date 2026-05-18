@@ -4537,9 +4537,10 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
 
     # Trend nového výnosu na klienta 2024 → 2025
     _rpc24 = np.where(_cli > 0, _nb24 / _cli, 0.0)
+    _rpc24_safe = np.where(_rpc24 > 0, _rpc24, np.nan)
     _trend_new_per_cli = np.where(
         (_rpc24 > 0) & (_rev_per_cli_now > 0),
-        np.clip(_rev_per_cli_now / _rpc24 - 1, -0.30, 0.50),
+        np.clip(_rev_per_cli_now / _rpc24_safe - 1, -0.30, 0.50),
         0.0
     )
 
@@ -4701,15 +4702,22 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
         Kapacita = bankers × 5 sch./den × 248 dní = bankers × 1 240
         Skutečná zátěž = fyzické + online + bezhot walk-in equiv + spádoví klienti
         """
-        b = float(bankers)
+        def _sf(v):
+            try:
+                f = float(v)
+                return 0.0 if (f != f) else f  # f != f catches NaN
+            except (TypeError, ValueError):
+                return 0.0
+
+        b = _sf(bankers)
         if b <= 0: return 0, 0, 0, 0, '—'
 
         cap   = b * BANKER_CAP_YEAR
 
-        sch_fyz   = float(row.get('POCET_SCHUZEK_FYZICKY', 0) or 0)
-        sch_onl   = float(row.get('POCET_SCHUZEK_ONLINE',  0) or 0)
-        bezhot    = float(row.get('POCET_BEZHOT_WALK_IN',  0) or 0)
-        delta_cli = float(row.get('_delta_cli', 0) or 0)
+        sch_fyz   = _sf(row.get('POCET_SCHUZEK_FYZICKY', 0))
+        sch_onl   = _sf(row.get('POCET_SCHUZEK_ONLINE',  0))
+        bezhot    = _sf(row.get('POCET_BEZHOT_WALK_IN',  0))
+        delta_cli = _sf(row.get('_delta_cli', 0))
         sch_spado = delta_cli * SCH_PER_CLIENT
         actual    = (sch_fyz + sch_onl
                      + bezhot * BEZHOT_TO_SCH_RATE * BEZHOT_SCH_EQUIV
