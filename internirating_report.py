@@ -4866,13 +4866,13 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
         src_list  = _sources.get(bc, [])
         src_chips = ''
         if src_list:
-            sorted_src = sorted(src_list, key=lambda x: -x[2])
+            sorted_src = sorted(src_list, key=lambda x: -(x[2] if x[2] == x[2] else 0))
             chips_html = ''.join(
                 f"<span style='background:#f0f4ff;color:#2770f0;"
                 f"border:1px solid #c7d9fb;"
                 f"border-radius:6px;padding:1px 6px;font-size:0.65rem;"
                 f"white-space:nowrap;margin:1px 2px 1px 0;display:inline-block;'>"
-                f"{sn} <b>+{int(cp):,}</b>"
+                f"{sn} <b>+{int(cp) if cp == cp else 0:,}</b>"
                 f"</span>"
                 for sn, _, cp, co, r in sorted_src
             )
