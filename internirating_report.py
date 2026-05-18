@@ -650,12 +650,15 @@ NOVE_NAZVY = {
     "SP_NAZEV_1":  "Spádová pobočka 1",
     "SP_VISITS_1": "Spád. návštěvy 1",
     "SP_PCT_1":    "Spád. podíl 1",
+    "SP_DIST_1":   "Vzdálenost km 1",
     "SP_NAZEV_2":  "Spádová pobočka 2",
     "SP_VISITS_2": "Spád. návštěvy 2",
     "SP_PCT_2":    "Spád. podíl 2",
+    "SP_DIST_2":   "Vzdálenost km 2",
     "SP_NAZEV_3":  "Spádová pobočka 3",
     "SP_VISITS_3": "Spád. návštěvy 3",
     "SP_PCT_3":    "Spád. podíl 3",
+    "SP_DIST_3":   "Vzdálenost km 3",
 
     # ── 👷 FTE ────────────────────────────────────────────────────
     "FTE":                 "Celková FTE controlling",
@@ -5499,66 +5502,72 @@ def render_strategy_columns(df, uid=None):
                 _desc_val = desc if desc not in ('nan', 'None', '') else ''
                 cards += _card(row, bg, tc, yr, extra, desc=_desc_val, info_html=_inv_info)
                 n += 1
-        # BO Online — oddělovač a sekce pod investicemi
-        bo_cards = ""
-        bo_n = 0
+        # BO Online — sort by year
+        bo_entries = []
         if 'BACK_OFFICE_ONLINE' in d.columns:
             for _, row in d.iterrows():
                 bo = str(row.get('BACK_OFFICE_ONLINE', '') or '').strip()
                 if bo and bo not in ('nan','None','0',''):
                     try: bo_yr = int(float(bo))
                     except: bo_yr = None
-                    yr_lbl = str(bo_yr) if bo_yr else 'BO'
-                    extra_bo = ("<span style='background:#fff7ed;color:#ea580c;border:1px solid #fed7aa;"
-                                "border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:700;'>BO Online</span>")
-                    bo_cards += _card(row, '#f97316', '#f97316', yr_lbl, extra_bo)
-                    bo_n += 1
-        if bo_cards:
+                    bo_entries.append((bo_yr or 9999, row, bo_yr))
+        if bo_entries:
+            bo_entries.sort(key=lambda x: x[0])
+            bo_cards = ""
+            for _, row, bo_yr in bo_entries:
+                yr_lbl = str(bo_yr) if bo_yr else 'BO'
+                extra_bo = ("<span style='background:#fff7ed;color:#ea580c;border:1px solid #fed7aa;"
+                            "border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:700;'>BO Online</span>")
+                bo_cards += _card(row, '#f97316', '#f97316', yr_lbl, extra_bo)
             cards += ("<hr style='border:none;border-top:1px solid #e8edf5;margin:10px 0 8px;'>"
                       f"<div style='font-size:0.72rem;color:#888;font-weight:600;margin-bottom:6px;"
                       f"text-transform:uppercase;letter-spacing:.4px;'>📋 BO Online</div>"
                       + bo_cards)
-            n += bo_n
-        # Remote Room — oddělovač a sekce pod BO Online
-        rr_cards = ""
-        rr_n = 0
+            n += len(bo_entries)
+        # Remote Room — sort by year
+        rr_entries = []
         if 'REMOTE_ROOM' in d.columns:
             for _, row in d.iterrows():
                 rr = str(row.get('REMOTE_ROOM', '') or '').strip()
                 if rr and rr not in ('nan','None','0',''):
                     try: rr_yr = int(float(rr))
                     except: rr_yr = None
-                    yr_lbl = str(rr_yr) if rr_yr else 'RR'
-                    extra_rr = ("<span style='background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;"
-                                "border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:700;'>Remote Room</span>")
-                    rr_cards += _card(row, '#16a34a', '#16a34a', yr_lbl, extra_rr)
-                    rr_n += 1
-        if rr_cards:
+                    rr_entries.append((rr_yr or 9999, row, rr_yr))
+        if rr_entries:
+            rr_entries.sort(key=lambda x: x[0])
+            rr_cards = ""
+            for _, row, rr_yr in rr_entries:
+                yr_lbl = str(rr_yr) if rr_yr else 'RR'
+                extra_rr = ("<span style='background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;"
+                            "border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:700;'>Remote Room</span>")
+                rr_cards += _card(row, '#16a34a', '#16a34a', yr_lbl, extra_rr)
             cards += ("<hr style='border:none;border-top:1px solid #e8edf5;margin:10px 0 8px;'>"
                       f"<div style='font-size:0.72rem;color:#888;font-weight:600;margin-bottom:6px;"
                       f"text-transform:uppercase;letter-spacing:.4px;'>🖥️ Remote Room</div>"
                       + rr_cards)
-            n += rr_n
-        # Adhoc akce — oddělovač a sekce úplně dole
-        adhoc_cards = ""
-        adhoc_n = 0
+            n += len(rr_entries)
+        # Adhoc akce — sort by year
+        adhoc_entries = []
         if 'ADHOC_YEAR' in d.columns:
             for _, row in d.iterrows():
                 ay = str(row.get('ADHOC_YEAR', '') or '').strip()
                 if ay and ay not in ('nan','None','0',''):
                     try: adhoc_yr = int(float(ay))
                     except: adhoc_yr = None
-                    yr_lbl = str(adhoc_yr) if adhoc_yr else '?'
                     adhoc_desc = str(row.get('ADHOC_DESCRIPTION', '') or '').strip()
                     adhoc_desc = '' if adhoc_desc in ('nan', 'None') else adhoc_desc
-                    adhoc_cards += _card(row, '#78716c', '#78716c', yr_lbl, desc=adhoc_desc)
-                    adhoc_n += 1
-        if adhoc_cards:
+                    adhoc_entries.append((adhoc_yr or 9999, row, adhoc_yr, adhoc_desc))
+        if adhoc_entries:
+            adhoc_entries.sort(key=lambda x: x[0])
+            adhoc_cards = ""
+            for _, row, adhoc_yr, adhoc_desc in adhoc_entries:
+                yr_lbl = str(adhoc_yr) if adhoc_yr else '?'
+                adhoc_cards += _card(row, '#78716c', '#78716c', yr_lbl, desc=adhoc_desc)
             cards += ("<hr style='border:none;border-top:1px solid #e8edf5;margin:10px 0 8px;'>"
                       f"<div style='font-size:0.72rem;color:#888;font-weight:600;margin-bottom:6px;"
                       f"text-transform:uppercase;letter-spacing:.4px;'>📌 Adhoc akce</div>"
                       + adhoc_cards)
-            n += adhoc_n
+            n += len(adhoc_entries)
         return cards, n
 
     # ── Sloupec 3: Cashless ──────────────────────────────────────────
@@ -7864,6 +7873,12 @@ def _apply_common_formatting(d, cols_to_show):
             d[_nc] = d[_nc].apply(
                 lambda x: str(x) if pd.notna(x) and str(x).strip() not in ('', 'nan') else '—'
             )
+        _dc = f'SP_DIST_{_i}'
+        if _dc in cols_to_show and _dc in d.columns:
+            d[_dc] = d[_dc].apply(
+                lambda x: (f'<span style="font-size:0.8rem;color:#555;">{float(x):.1f} km</span>'
+                           if pd.notna(x) and str(x).strip() not in ('', 'nan', '0.0', '0') else '—')
+            )
 
     # Performance zone badge — barvy sladěné s kvintily Q1–Q5, Zone 6 tmavě červená
     _PZ_STYLE = {
@@ -8340,9 +8355,9 @@ COL_GROUPS = [
         "Návštěvy / ot. hod.",
     ], "#f8d2e0"),
     ("🔀 Spádová oblast",     [
-        "Spádová pobočka 1", "Spád. návštěvy 1", "Spád. podíl 1",
-        "Spádová pobočka 2", "Spád. návštěvy 2", "Spád. podíl 2",
-        "Spádová pobočka 3", "Spád. návštěvy 3", "Spád. podíl 3",
+        "Spádová pobočka 1", "Spád. návštěvy 1", "Spád. podíl 1", "Vzdálenost km 1",
+        "Spádová pobočka 2", "Spád. návštěvy 2", "Spád. podíl 2", "Vzdálenost km 2",
+        "Spádová pobočka 3", "Spád. návštěvy 3", "Spád. podíl 3", "Vzdálenost km 3",
     ], "#f3bcd0"),
     # ── 🏠 Majetek ────────────────────────────────────────────────────────────
     ("🏠 Nájemné",             ["Vlastnictví", "Roční nájemné", "Nájemné kvintil", "Začátek smlouvy", "Konec smlouvy", "Výpovědní lhůta"], "#f3e5f5"),
@@ -11206,15 +11221,25 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
             _sp = _sp_src.copy()
             _sp.columns = [c.strip().upper() for c in _sp.columns]
             _sp['BRANCH_ID'] = pd.to_numeric(_sp['BRANCH_ID'], errors='coerce')
-            # Vypočítej celkové návštěvy a procentuální podíl pro každou pobočku
             for _i in [1, 2, 3]:
                 _sp[f'TOP_POBOCKA_VISITS_{_i}'] = pd.to_numeric(_sp.get(f'TOP_POBOCKA_VISITS_{_i}', 0), errors='coerce').fillna(0)
             _sp['_SP_VIS_TOTAL'] = _sp['TOP_POBOCKA_VISITS_1'] + _sp['TOP_POBOCKA_VISITS_2'] + _sp['TOP_POBOCKA_VISITS_3']
             for _i in [1, 2, 3]:
-                _sp[f'SP_NAZEV_{_i}']  = _sp.get(f'TOP_POBOCKA_NAZEV_{_i}', '')
+                _sp[f'SP_NAZEV_{_i}']  = _sp.get(f'TOP_POBOCKA_NAZEV_{_i}', pd.Series('', index=_sp.index))
                 _sp[f'SP_VISITS_{_i}'] = _sp[f'TOP_POBOCKA_VISITS_{_i}'].astype(int)
-                _sp[f'SP_PCT_{_i}']    = (_sp[f'TOP_POBOCKA_VISITS_{_i}'] / _sp['_SP_VIS_TOTAL'].replace(0, float('nan')) * 100).round(1)
-            _sp_cols = ['BRANCH_ID'] + [f'SP_NAZEV_{i}' for i in [1,2,3]] + [f'SP_VISITS_{i}' for i in [1,2,3]] + [f'SP_PCT_{i}' for i in [1,2,3]]
+                _pct_src = f'TOP_POBOCKA_VISITS_{_i}_PCT'
+                if _pct_src in _sp.columns:
+                    _sp[f'SP_PCT_{_i}'] = pd.to_numeric(_sp[_pct_src], errors='coerce').round(1)
+                else:
+                    _sp[f'SP_PCT_{_i}'] = (_sp[f'TOP_POBOCKA_VISITS_{_i}'] / _sp['_SP_VIS_TOTAL'].replace(0, float('nan')) * 100).round(1)
+                _dist_src = f'TOP_POBOCKA_DISTANCE_KM_{_i}'
+                if _dist_src in _sp.columns:
+                    _sp[f'SP_DIST_{_i}'] = pd.to_numeric(_sp[_dist_src], errors='coerce').round(1)
+            _sp_cols = (['BRANCH_ID']
+                        + [f'SP_NAZEV_{i}' for i in [1,2,3]]
+                        + [f'SP_VISITS_{i}' for i in [1,2,3]]
+                        + [f'SP_PCT_{i}' for i in [1,2,3]]
+                        + [f'SP_DIST_{i}' for i in [1,2,3] if f'SP_DIST_{i}' in _sp.columns])
             _sp_merge = _sp[[c for c in _sp_cols if c in _sp.columns]].copy()
             # Odstraň staré spádové sloupce pokud existují, pak merguj
             _drop = [c for c in _sp_merge.columns if c != 'BRANCH_ID' and c in rating_status.columns]
@@ -11390,6 +11415,33 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
         margin: 32px 0;
         border: none;
         border-top: 2px solid var(--border);
+    }
+
+    /* ── Sticky header: webkit prefix for older iOS ─────────────────── */
+    .table thead th {
+        position: -webkit-sticky;
+        position: sticky;
+    }
+
+    /* ── Smooth scroll on iOS for overflow containers ────────────────── */
+    .tbl-scroll-wrap, .table-responsive, [style*="overflow-y:auto"],
+    [style*="overflow-x:auto"], [style*="overflow-y: auto"] {
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* ── iOS touch optimizations ────────────────────────────────────── */
+    @supports (-webkit-touch-callout: none) {
+        /* Prevent auto-zoom on input focus (iOS zooms when font-size < 16px) */
+        input[type="text"], input[type="search"], input:not([type]),
+        select, textarea {
+            font-size: 16px !important;
+        }
+        /* Remove gray tap highlight on interactive elements */
+        button, summary, a, label,
+        [onclick], [role="button"], [data-tab] {
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
     }
 </style>'''
 
@@ -13184,39 +13236,9 @@ function obSet_{_fn_slug}(btn, ob){{
 
                 _yr_group_html(dreg, 'INVESTICE_NF_(ROK)',  '#2770f0', '🔵 NF')
                 _yr_group_html(dreg, 'INVESTICE_FHC_(ROK)', '#7c3aed', '🟣 FHC')
-                # BO Online
-                if 'BACK_OFFICE_ONLINE' in dreg.columns:
-                    _bo_sub = dreg[pd.to_numeric(dreg['BACK_OFFICE_ONLINE'], errors='coerce') > 0]
-                    if not _bo_sub.empty:
-                        if parts:
-                            parts.append('<hr style="border:none;border-top:1px solid #f1f5f9;margin:4px 0;">')
-                        parts.append('<div style="font-size:0.65rem;color:#ea580c;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;">📋 BO Online</div>')
-                        for _, _bor in _bo_sub.iterrows():
-                            try: _bo_yr = str(int(float(_bor.get('BACK_OFFICE_ONLINE', '?'))))
-                            except: _bo_yr = '?'
-                            parts.append(f'<div style="margin-bottom:2px;"><span style="font-weight:700;color:#ea580c;font-size:0.72rem;">{_bo_yr}:</span> <span style="font-size:0.72rem;">{_blabel(_bor)}</span></div>')
-                # Remote Room
-                if 'REMOTE_ROOM' in dreg.columns:
-                    _rr_sub = dreg[pd.to_numeric(dreg['REMOTE_ROOM'], errors='coerce') > 0]
-                    if not _rr_sub.empty:
-                        if parts:
-                            parts.append('<hr style="border:none;border-top:1px solid #f1f5f9;margin:4px 0;">')
-                        parts.append('<div style="font-size:0.65rem;color:#16a34a;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;">🖥️ Remote Room</div>')
-                        for _, _rrr in _rr_sub.iterrows():
-                            try: _rr_yr = str(int(float(_rrr.get('REMOTE_ROOM', '?'))))
-                            except: _rr_yr = '?'
-                            parts.append(f'<div style="margin-bottom:2px;"><span style="font-weight:700;color:#16a34a;font-size:0.72rem;">{_rr_yr}:</span> <span style="font-size:0.72rem;">{_blabel(_rrr)}</span></div>')
-                # Adhoc
-                if 'ADHOC_YEAR' in dreg.columns:
-                    _adhoc_sub = dreg[pd.to_numeric(dreg['ADHOC_YEAR'], errors='coerce') > 0]
-                    if not _adhoc_sub.empty:
-                        if parts:
-                            parts.append('<hr style="border:none;border-top:1px solid #f1f5f9;margin:4px 0;">')
-                        parts.append('<div style="font-size:0.65rem;color:#78716c;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;">📌 Adhoc</div>')
-                        for _, _adhr in _adhoc_sub.iterrows():
-                            try: _adhoc_yr = str(int(float(_adhr.get('ADHOC_YEAR', '?'))))
-                            except: _adhoc_yr = '?'
-                            parts.append(f'<div style="margin-bottom:2px;"><span style="font-weight:700;color:#78716c;font-size:0.72rem;">{_adhoc_yr}:</span> <span style="font-size:0.72rem;">{_blabel(_adhr)}</span></div>')
+                _yr_group_html(dreg, 'BACK_OFFICE_ONLINE', '#ea580c', '📋 BO Online')
+                _yr_group_html(dreg, 'REMOTE_ROOM',        '#16a34a', '🖥️ Remote Room')
+                _yr_group_html(dreg, 'ADHOC_YEAR',         '#78716c', '📌 Adhoc')
                 return ''.join(parts) if parts else '<span style="color:#ccc;font-size:0.75rem;">—</span>'
 
             _region_rows_html = ''
@@ -13820,6 +13842,11 @@ function obSet_{_fn_slug}(btn, ob){{
     border-bottom:1px solid #dde4f5;user-select:none;outline:none;}}
   details.collapsible-section[open] summary{{border-radius:8px 8px 0 0;}}
   .cnt-pad{{padding:16px;}}
+  @supports (-webkit-touch-callout: none) {{
+    input[type="text"],input[type="search"],input:not([type]),select,textarea{{font-size:16px!important;}}
+    button,summary,a,label,[onclick]{{-webkit-tap-highlight-color:transparent;touch-action:manipulation;}}
+  }}
+  [style*="overflow-x:auto"],-webkit-overflow-scrolling{{-webkit-overflow-scrolling:touch;}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/apexcharts@3"></script>
 </head><body>
@@ -16578,6 +16605,12 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
     details.collapsible-section > summary::marker { display: none; }
     details.collapsible-section[open] > summary { border-radius: 8px 8px 0 0; border-bottom: 1px solid #dde4f5; }
     details.collapsible-section:not([open]) > summary { border-radius: 8px; border-bottom: none; }
+    .table thead th { position: -webkit-sticky; position: sticky; }
+    [style*="overflow-y:auto"], [style*="overflow-x:auto"] { -webkit-overflow-scrolling: touch; }
+    @supports (-webkit-touch-callout: none) {
+        input[type="text"], input[type="search"], input:not([type]), select, textarea { font-size: 16px !important; }
+        button, summary, a, label, [onclick] { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+    }
 </style>'''
 
     def _v(row, col, default=None):
@@ -18775,19 +18808,19 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
                 _sp_row = _sp_row.iloc[0]
 
                 _sp_data = []
-                for _rank, (_id_col, _nm_col, _vis_col) in enumerate(zip(
-                    ['TOP_POBOCKA_ID_1',     'TOP_POBOCKA_ID_2',     'TOP_POBOCKA_ID_3'],
-                    ['TOP_POBOCKA_NAZEV_1',  'TOP_POBOCKA_NAZEV_2',  'TOP_POBOCKA_NAZEV_3'],
-                    ['TOP_POBOCKA_VISITS_1', 'TOP_POBOCKA_VISITS_2', 'TOP_POBOCKA_VISITS_3'],
-                ), 1):
-                    _vid = _sp_row.get(_id_col)
+                for _rank in [1, 2, 3]:
+                    _vid = _sp_row.get(f'TOP_POBOCKA_ID_{_rank}')
                     if _vid is None or (isinstance(_vid, float) and pd.isna(_vid)) or str(_vid).strip() in ('', 'nan'):
                         continue
-                    _vname = _sp_row.get(_nm_col, '')
+                    _vname = _sp_row.get(f'TOP_POBOCKA_NAZEV_{_rank}', '')
                     _vname = str(_vname) if pd.notna(_vname) else str(_vid)
-                    _vis_raw = _sp_row.get(_vis_col)
+                    _vis_raw = _sp_row.get(f'TOP_POBOCKA_VISITS_{_rank}')
                     _vis = int(float(_vis_raw)) if pd.notna(_vis_raw) and str(_vis_raw).strip() not in ('', 'nan') else None
-                    _sp_data.append({'rank': _rank, 'name': _vname, 'bid': _vid, 'vis': _vis})
+                    _pct_raw = _sp_row.get(f'TOP_POBOCKA_VISITS_{_rank}_PCT')
+                    _src_pct = float(_pct_raw) if _pct_raw is not None and pd.notna(_pct_raw) and str(_pct_raw).strip() not in ('', 'nan') else None
+                    _dist_raw = _sp_row.get(f'TOP_POBOCKA_DISTANCE_KM_{_rank}')
+                    _dist = float(_dist_raw) if _dist_raw is not None and pd.notna(_dist_raw) and str(_dist_raw).strip() not in ('', 'nan') else None
+                    _sp_data.append({'rank': _rank, 'name': _vname, 'bid': _vid, 'vis': _vis, 'src_pct': _src_pct, 'dist': _dist})
 
                 if _sp_data:
                     _vis_total = sum(d['vis'] for d in _sp_data if d['vis'] is not None)
@@ -18795,11 +18828,17 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
 
                     _sp_rows = ""
                     for _d in _sp_data:
-                        _rcol     = _rank_colors.get(_d['rank'], '#aaa')
-                        _vis_str  = f"{_d['vis']:,}" if _d['vis'] is not None else "—"
-                        _pct      = _d['vis'] / _vis_total * 100 if (_d['vis'] and _vis_total) else None
-                        _pct_str  = f"{_pct:.1f} %" if _pct is not None else "—"
-                        _bar_w    = f"{_pct:.1f}" if _pct is not None else "0"
+                        _rcol    = _rank_colors.get(_d['rank'], '#aaa')
+                        _vis_str = f"{_d['vis']:,}" if _d['vis'] is not None else "—"
+                        if _d['src_pct'] is not None:
+                            _pct = _d['src_pct']
+                        elif _d['vis'] and _vis_total:
+                            _pct = _d['vis'] / _vis_total * 100
+                        else:
+                            _pct = None
+                        _pct_str = f"{_pct:.1f} %" if _pct is not None else "—"
+                        _bar_w   = f"{min(_pct, 100):.1f}" if _pct is not None else "0"
+                        _dist_str = f'<span style="font-size:0.7rem;color:#888;">{_d["dist"]:.1f} km</span>' if _d['dist'] is not None else ''
                         _sp_rows += f"""
 <tr>
   <td style="padding:7px 10px;border-bottom:1px solid #eef0f8;">
@@ -18807,7 +18846,7 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
                  background:{_rcol};color:#fff;font-size:0.7rem;font-weight:900;
                  text-align:center;line-height:20px;margin-right:6px;">{_d['rank']}</span>
     <span style="font-size:0.82rem;font-weight:700;color:#1a2a4a;">{_d['name']}</span>
-    <div style="font-size:0.68rem;color:#bbb;padding-left:26px;">ID {_d['bid']}</div>
+    <div style="font-size:0.68rem;color:#bbb;padding-left:26px;">{_dist_str}</div>
   </td>
   <td style="padding:7px 10px;border-bottom:1px solid #eef0f8;text-align:right;
              font-size:0.82rem;font-weight:700;color:#333;white-space:nowrap;">{_vis_str}</td>
