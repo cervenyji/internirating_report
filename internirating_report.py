@@ -381,8 +381,8 @@ soubory = {
         "no_merge": True
     },
     "spadovky": {
-        "path": '../vypocet_ir_2026/zdroje/ČS - návštěvnost poboček ve spádovkách.xlsx',
-        "validity": "31.12.2024",
+        "path": '../vypocet_ir_2026/zdroje/top_3_related_branches15.csv',
+        "validity": "31.12.2025",
         "source_desc": "Spádové pobočky — kam přejdou klienti v případě uzavření pobočky (top 3 alternativy dle analýzy návštěvnosti).",
         "extra_params": {},
         "no_merge": True
