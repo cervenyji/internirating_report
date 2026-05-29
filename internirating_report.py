@@ -5086,7 +5086,90 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
             f'}},0);</script>'
         )
 
-    # ── 11. HTML výstup ───────────────────────────────────────────
+    # ── 11. Přetížené pobočky (nedostatečná kapacita pro příchozí klienty) ──
+    _over = top.copy()
+    _over['_online_overflow'] = _over['SIM_KLIENTI_ONL'].fillna(0)
+    _over['_util_pct'] = (
+        _over['_delta_cli'].fillna(0) /
+        _over['_max_extra_cli'].replace(0, np.nan) * 100
+    ).fillna(0).clip(0, 999)
+    # Přetížená = fyzický přetok NEBO využití kapacity ≥ 90 %
+    _over = _over[
+        (_over['_online_overflow'] > 0) | (_over['_util_pct'] >= 90)
+    ].sort_values(['_online_overflow', '_util_pct'], ascending=False).head(25)
+
+    _overload_html = ''
+    if not _over.empty:
+        _ov_rows = ''
+        for _, _ov in _over.iterrows():
+            _ovn    = str(_ov.get('BRANCH_NAME', _ov.get('BRANCH_CODE', '?')))
+            _ovreg  = str(_ov.get('REGION_NAME', '—'))
+            _ovfmt  = str(_ov.get('BRANCH_FORMAT', '—')).title()
+            _ovdc   = int(_ov.get('_delta_cli', 0) or 0)
+            _ovcap  = int(_ov.get('_max_extra_cli', 0) or 0)
+            _ovonl  = int(_ov.get('_online_overflow', 0) or 0)
+            _ovpct  = float(_ov.get('_util_pct', 0) or 0)
+            _bw     = min(int(_ovpct), 100)
+            _bc_col = '#eb4d79' if _ovonl > 0 else ('#f59e0b' if _ovpct >= 90 else '#2770f0')
+            _pct_bar = (
+                f'<div style="display:flex;align-items:center;gap:4px;">'
+                f'<div style="background:#f3f4f6;border-radius:3px;height:6px;width:60px;flex-shrink:0;overflow:hidden;">'
+                f'<div style="background:{_bc_col};width:{_bw}%;height:100%;border-radius:3px;"></div></div>'
+                f'<span style="font-size:0.75rem;font-weight:700;color:{_bc_col};">{_ovpct:.0f} %</span>'
+                f'</div>'
+            )
+            _ovonl_cell = (
+                f'<span style="color:#eb4d79;font-weight:700;font-size:0.8rem;">+{_ovonl:,}</span>'
+                if _ovonl > 0 else
+                '<span style="color:#ccc;font-size:0.72rem;">—</span>'
+            )
+            _ov_rows += (
+                f'<tr style="border-bottom:1px solid #f0f2f8;">'
+                f'<td style="padding:5px 8px;font-size:0.8rem;font-weight:600;white-space:nowrap;">{_ovn}</td>'
+                f'<td style="padding:5px 8px;font-size:0.72rem;color:#666;">{_ovreg}</td>'
+                f'<td style="padding:5px 8px;font-size:0.72rem;color:#888;">{_ovfmt}</td>'
+                f'<td style="padding:5px 8px;text-align:right;font-size:0.8rem;">{_ovdc:,}</td>'
+                f'<td style="padding:5px 8px;text-align:right;font-size:0.8rem;color:#6b7280;">{_ovcap:,}</td>'
+                f'<td style="padding:5px 8px;">{_pct_bar}</td>'
+                f'<td style="padding:5px 8px;text-align:right;">{_ovonl_cell}</td>'
+                f'</tr>'
+            )
+        _n_overflow = int((_over['_online_overflow'] > 0).sum())
+        _n_near     = len(_over) - _n_overflow
+        _ov_legend  = ''
+        if _n_overflow:
+            _ov_legend += f'<span style="color:#eb4d79;font-weight:700;">{_n_overflow}× přetok → online</span>'
+        if _n_near:
+            _ov_legend += ((' &nbsp;·&nbsp; ' if _ov_legend else '') +
+                           f'<span style="color:#f59e0b;font-weight:700;">{_n_near}× ≥90 % kapacity</span>')
+        _overload_html = (
+            f'<div style="margin-bottom:16px;border:1px solid #fecaca;border-radius:8px;overflow:hidden;">'
+            f'<div style="background:#fff5f5;padding:8px 14px;display:flex;align-items:center;gap:8px;'
+            f'border-bottom:1px solid #fecaca;">'
+            f'<span style="font-size:0.85rem;font-weight:700;color:#eb4d79;">⚠ Přetížené pobočky po přesunu klientů</span>'
+            f'<span style="font-size:0.72rem;color:#888;margin-left:auto;">{_ov_legend}</span>'
+            f'</div>'
+            f'<div style="overflow-x:auto;">'
+            f'<table style="width:100%;border-collapse:collapse;">'
+            f'<thead><tr style="background:#fef2f2;">'
+            f'<th style="padding:5px 8px;font-size:0.72rem;font-weight:700;color:#9b1c1c;text-align:left;">Pobočka</th>'
+            f'<th style="padding:5px 8px;font-size:0.72rem;font-weight:700;color:#9b1c1c;text-align:left;">Region</th>'
+            f'<th style="padding:5px 8px;font-size:0.72rem;font-weight:700;color:#9b1c1c;text-align:left;">Formát</th>'
+            f'<th style="padding:5px 8px;font-size:0.72rem;font-weight:700;color:#9b1c1c;text-align:right;white-space:nowrap;">Příchozí klienti</th>'
+            f'<th style="padding:5px 8px;font-size:0.72rem;font-weight:700;color:#9b1c1c;text-align:right;white-space:nowrap;">Max. kapacita</th>'
+            f'<th style="padding:5px 8px;font-size:0.72rem;font-weight:700;color:#9b1c1c;">Využití kap.</th>'
+            f'<th style="padding:5px 8px;font-size:0.72rem;font-weight:700;color:#9b1c1c;text-align:right;white-space:nowrap;">→ online přetok</th>'
+            f'</tr></thead>'
+            f'<tbody>{_ov_rows}</tbody>'
+            f'</table></div>'
+            f'<div style="padding:5px 14px 7px;font-size:0.68rem;color:#aaa;">'
+            f'Příchozí klienti = fyzicky absorbovaní ze zavřených poboček · '
+            f'Max. kapacita = {" / ".join(f"{int(FORMAT_CAP[f]*100)}% pro {f}" for f in FORMAT_CAP)} formát klientů pobočky · '
+            f'Přetok → online = klienti nad fyzickou kapacitou přesměrovaní do online</div>'
+            f'</div>'
+        )
+
+    # ── 12. HTML výstup ───────────────────────────────────────────
     return f"""
 <div style="background:#fff;border-radius:10px;padding:16px 18px;
             border:1px solid #e8edf5;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
@@ -5124,6 +5207,9 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
 
   <!-- Konkrétní příklad výpočtu -->
   {_example_html}
+
+  <!-- Přetížené pobočky -->
+  {_overload_html}
 
   <!-- Vyhledávač -->
   <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
