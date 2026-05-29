@@ -647,18 +647,21 @@ NOVE_NAZVY = {
     "CASH_OUT_NEPREVODITELNA_POCET":  "Cash OUT nepřevod. počet",
 
     # ── 🔀 Spádová oblast ─────────────────────────────────────────
-    "SP_NAZEV_1":  "Spádová pobočka 1",
-    "SP_VISITS_1": "Spád. návštěvy 1",
-    "SP_PCT_1":    "Spád. podíl 1",
-    "SP_DIST_1":   "Vzdálenost km 1",
-    "SP_NAZEV_2":  "Spádová pobočka 2",
-    "SP_VISITS_2": "Spád. návštěvy 2",
-    "SP_PCT_2":    "Spád. podíl 2",
-    "SP_DIST_2":   "Vzdálenost km 2",
-    "SP_NAZEV_3":  "Spádová pobočka 3",
-    "SP_VISITS_3": "Spád. návštěvy 3",
-    "SP_PCT_3":    "Spád. podíl 3",
-    "SP_DIST_3":   "Vzdálenost km 3",
+    "SP_NAZEV_1":       "Spádová pobočka 1",
+    "SP_VISITS_1":      "Spád. návštěvy 1",
+    "SP_PCT_1":         "Spád. podíl 1",
+    "SP_DIST_1":        "Vzdálenost km 1",
+    "SP_PRESUN_PCT_1":  "Odhad přesunu % 1",
+    "SP_NAZEV_2":       "Spádová pobočka 2",
+    "SP_VISITS_2":      "Spád. návštěvy 2",
+    "SP_PCT_2":         "Spád. podíl 2",
+    "SP_DIST_2":        "Vzdálenost km 2",
+    "SP_PRESUN_PCT_2":  "Odhad přesunu % 2",
+    "SP_NAZEV_3":       "Spádová pobočka 3",
+    "SP_VISITS_3":      "Spád. návštěvy 3",
+    "SP_PCT_3":         "Spád. podíl 3",
+    "SP_DIST_3":        "Vzdálenost km 3",
+    "SP_PRESUN_PCT_3":  "Odhad přesunu % 3",
 
     # ── 👷 FTE ────────────────────────────────────────────────────
     "FTE":                 "Celková FTE controlling",
@@ -4442,6 +4445,7 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
         _sp = spadovky_df.copy()
         _sp.columns = [c.strip().upper() for c in _sp.columns]
         _sp['BRANCH_ID'] = pd.to_numeric(_sp['BRANCH_ID'], errors='coerce')
+        _has_presun_pct = all(f'ODHADOVANY_PRESUN_PCT_{i}' in _sp.columns for i in [1, 2, 3])
 
         for _, crow in d_close.iterrows():
             bc      = int(crow['BRANCH_CODE'])
@@ -4451,24 +4455,43 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
                 continue
             sp_r = sp_r.iloc[0]
 
-            # Celkové spádové návštěvy → váhy
-            total_vis = sum(
-                float(sp_r.get(f'TOP_POBOCKA_VISITS_{i}', 0) or 0)
-                for i in [1, 2, 3]
-            )
-            if total_vis <= 0:
-                continue
-
             candidates = []
-            for _i in [1, 2, 3]:
-                _tid  = sp_r.get(f'TOP_POBOCKA_ID_{_i}')
-                _tvis = sp_r.get(f'TOP_POBOCKA_VISITS_{_i}', 0)
-                if pd.isna(_tid) or pd.isna(_tvis): continue
-                try: _tid = int(float(_tid)); _tvis = float(_tvis)
-                except: continue
-                if _tid not in d_remain.index or _tvis <= 0: continue
-                _weight = _tvis / total_vis
-                candidates.append((_tid, _weight))
+            if _has_presun_pct:
+                # Použij přímé % odhadovaného přesunu (součet ≈ 95 %, 5 % klientů zmizí)
+                for _i in [1, 2, 3]:
+                    _tid = sp_r.get(f'TOP_POBOCKA_ID_{_i}')
+                    _pct = sp_r.get(f'ODHADOVANY_PRESUN_PCT_{_i}', 0)
+                    if pd.isna(_tid) or pd.isna(_pct):
+                        continue
+                    try:
+                        _tid = int(float(_tid))
+                        _pct = float(_pct)
+                    except (ValueError, TypeError):
+                        continue
+                    if _tid not in d_remain.index or _pct <= 0:
+                        continue
+                    candidates.append((_tid, _pct / 100.0))
+            else:
+                # Fallback: váhy z počtu návštěv (100 % klientů přesunuto)
+                total_vis = sum(
+                    float(sp_r.get(f'TOP_POBOCKA_VISITS_{i}', 0) or 0)
+                    for i in [1, 2, 3]
+                )
+                if total_vis <= 0:
+                    continue
+                for _i in [1, 2, 3]:
+                    _tid  = sp_r.get(f'TOP_POBOCKA_ID_{_i}')
+                    _tvis = sp_r.get(f'TOP_POBOCKA_VISITS_{_i}', 0)
+                    if pd.isna(_tid) or pd.isna(_tvis):
+                        continue
+                    try:
+                        _tid = int(float(_tid))
+                        _tvis = float(_tvis)
+                    except (ValueError, TypeError):
+                        continue
+                    if _tid not in d_remain.index or _tvis <= 0:
+                        continue
+                    candidates.append((_tid, _tvis / total_vis))
 
             if not candidates:
                 continue
@@ -7890,6 +7913,21 @@ def _apply_common_formatting(d, cols_to_show):
                 lambda x: (f'<span style="font-size:0.8rem;color:#555;">{float(x):.1f} km</span>'
                            if pd.notna(x) and str(x).strip() not in ('', 'nan', '0.0', '0') else '—')
             )
+        _ppc = f'SP_PRESUN_PCT_{_i}'
+        if _ppc in cols_to_show and _ppc in d.columns:
+            def _fmt_presun(v, _c=_ppc):
+                try:
+                    pct = float(v)
+                    if pct <= 0 or pct != pct: return '—'
+                    clr = '#2770f0' if pct >= 30 else ('#6b7fe8' if pct >= 15 else '#a5b4fc')
+                    bw  = min(int(pct), 100)
+                    return (f'<div style="min-width:65px">'
+                            f'<div style="background:#eef0f8;border-radius:3px;height:5px;margin-bottom:2px;">'
+                            f'<div style="background:{clr};width:{bw}%;height:5px;border-radius:3px;"></div></div>'
+                            f'<span style="color:{clr};font-weight:600;font-size:0.83rem;">{pct:.1f} %</span>'
+                            f'</div>')
+                except: return '—'
+            d[_ppc] = d[_ppc].apply(_fmt_presun)
 
     # Performance zone badge — barvy sladěné s kvintily Q1–Q5, Zone 6 tmavě červená
     _PZ_STYLE = {
@@ -8366,9 +8404,9 @@ COL_GROUPS = [
         "Návštěvy / ot. hod.",
     ], "#f8d2e0"),
     ("🔀 Spádová oblast",     [
-        "Spádová pobočka 1", "Spád. návštěvy 1", "Spád. podíl 1", "Vzdálenost km 1",
-        "Spádová pobočka 2", "Spád. návštěvy 2", "Spád. podíl 2", "Vzdálenost km 2",
-        "Spádová pobočka 3", "Spád. návštěvy 3", "Spád. podíl 3", "Vzdálenost km 3",
+        "Spádová pobočka 1", "Spád. návštěvy 1", "Spád. podíl 1", "Vzdálenost km 1", "Odhad přesunu % 1",
+        "Spádová pobočka 2", "Spád. návštěvy 2", "Spád. podíl 2", "Vzdálenost km 2", "Odhad přesunu % 2",
+        "Spádová pobočka 3", "Spád. návštěvy 3", "Spád. podíl 3", "Vzdálenost km 3", "Odhad přesunu % 3",
     ], "#f3bcd0"),
     # ── 🏠 Majetek ────────────────────────────────────────────────────────────
     ("🏠 Nájemné",             ["Vlastnictví", "Roční nájemné", "Nájemné kvintil", "Začátek smlouvy", "Konec smlouvy", "Výpovědní lhůta"], "#f3e5f5"),
@@ -11246,11 +11284,15 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
                 _dist_src = f'TOP_POBOCKA_DISTANCE_KM_{_i}'
                 if _dist_src in _sp.columns:
                     _sp[f'SP_DIST_{_i}'] = pd.to_numeric(_sp[_dist_src], errors='coerce').round(1)
+                _presun_src = f'ODHADOVANY_PRESUN_PCT_{_i}'
+                if _presun_src in _sp.columns:
+                    _sp[f'SP_PRESUN_PCT_{_i}'] = pd.to_numeric(_sp[_presun_src], errors='coerce').round(1)
             _sp_cols = (['BRANCH_ID']
                         + [f'SP_NAZEV_{i}' for i in [1,2,3]]
                         + [f'SP_VISITS_{i}' for i in [1,2,3]]
                         + [f'SP_PCT_{i}' for i in [1,2,3]]
-                        + [f'SP_DIST_{i}' for i in [1,2,3] if f'SP_DIST_{i}' in _sp.columns])
+                        + [f'SP_DIST_{i}' for i in [1,2,3] if f'SP_DIST_{i}' in _sp.columns]
+                        + [f'SP_PRESUN_PCT_{i}' for i in [1,2,3] if f'SP_PRESUN_PCT_{i}' in _sp.columns])
             _sp_merge = _sp[[c for c in _sp_cols if c in _sp.columns]].copy()
             # Odstraň staré spádové sloupce pokud existují, pak merguj
             _drop = [c for c in _sp_merge.columns if c != 'BRANCH_ID' and c in rating_status.columns]
