@@ -7,6 +7,7 @@ Analýza návštěvnosti a kapacity poboček 2025.
 Vstupy : ../in/tables/VISITS_2025.csv
          kpis_grouped_2026.pkl
          export_specialiste.pkl
+         ../vypocet_ir_2026/zdroje/Pobockova_profitabilita_4Q2025.xlsx
          ../vypocet_ir_2026/zdroje/report_od_pobocky_dbs_04_2026.xlsx
 Výstup : report_navstevnost.html
 """
@@ -16,20 +17,20 @@ import pandas as pd
 import numpy as np
 
 for _pkg in ['openpyxl']:
-    try:
-        __import__(_pkg)
+    try: __import__(_pkg)
     except ImportError:
         print(f"Instaluji {_pkg}…")
         subprocess.check_call([sys.executable, "-m", "pip", "install", _pkg])
 
 # ─── Paths ─────────────────────────────────────────────────────────────────────
-VISITS_PATH = '../in/tables/VISITS_2025.csv'
-KPIS_PATH   = 'kpis_grouped_2026.pkl'
-SPEC_PATH   = 'export_specialiste.pkl'
-OD_PATH     = '../vypocet_ir_2026/zdroje/report_od_pobocky_dbs_04_2026.xlsx'
-OUTPUT_FILE = 'report_navstevnost.html'
+VISITS_PATH  = '../in/tables/VISITS_2025.csv'
+KPIS_PATH    = 'kpis_grouped_2026.pkl'
+SPEC_PATH    = 'export_specialiste.pkl'
+PROF_PATH    = '../vypocet_ir_2026/zdroje/Pobockova_profitabilita_4Q2025.xlsx'
+OD_PATH      = '../vypocet_ir_2026/zdroje/report_od_pobocky_dbs_04_2026.xlsx'
+OUTPUT_FILE  = 'report_navstevnost.html'
 
-# ─── Color palette (shades of blue) ────────────────────────────────────────────
+# ─── Colors (shades of blue) ────────────────────────────────────────────────────
 VISIT_TYPES = [
     ('online',   'Online schůzky',    '#1d4ed8', '#eff6ff'),
     ('fyzicka',  'Fyzické schůzky',   '#3b82f6', '#dbeafe'),
@@ -43,6 +44,7 @@ TYPE_BG    = {t[0]: t[3] for t in VISIT_TYPES}
 
 MONTH_NAMES = ['Led','Úno','Bře','Dub','Kvě','Čvn','Čvc','Srp','Zář','Říj','Lis','Pro']
 WD_NAMES    = ['Po','Út','St','Čt','Pá','So','Ne']
+MC_HOURS    = list(range(6, 22))   # 6..21 (16 hourly slots)
 
 _OD_DAYS = [
     ('PONDELI','PO','Pondělí',False), ('UTERY','UT','Úterý',False),
@@ -54,19 +56,20 @@ _OD_DAYS = [
 # ─── Capacity constants ─────────────────────────────────────────────────────────
 WORKING_DAYS        = 252
 WORK_MINS_DAY       = 450   # 7.5 h
-TARGET_PORTFOLIO    = 1500  # clients per banker
+TARGET_PORTFOLIO    = 1500
 TARGET_MTGS_MIN     = 4
 TARGET_MTGS_MAX     = 5
 MEETING_MINS        = 45
 WALKIN_SHORT_PCT    = 0.80; WALKIN_SHORT_MINS = 15
 WALKIN_LONG_PCT     = 0.20; WALKIN_LONG_MINS  = 30
-WALKIN_CONVERT_PCT  = 0.10  # 10 % walkin → schůzka 45 min
-WALKIN_AVG_MINS     = WALKIN_SHORT_PCT * WALKIN_SHORT_MINS + WALKIN_LONG_PCT * WALKIN_LONG_MINS  # 18
+WALKIN_CONVERT_PCT  = 0.10   # % walkinů přeroste ve schůzku 45 min
+WALKIN_AVG_MINS     = WALKIN_SHORT_PCT * WALKIN_SHORT_MINS + WALKIN_LONG_PCT * WALKIN_LONG_MINS  # = 18
 
-# Staff positions (normalized uppercase key)
+MC_ITERATIONS       = 1000   # počet Monte Carlo iterací
+
+# ─── Staff position keys (normalized) ──────────────────────────────────────────
 BANKER_COLS = {'OSOBNI_BANKER_-_JUNIOR', 'OSOBNI_BANKER_-_MEDIOR', 'OSOBNI_BANKER_-_SENIOR'}
-SERVICE_COL   = 'BANKER_KLIENTSKE_PECE_-_MEDIOR'
-SVC_FALLBACK  = 'OSOBNI_BANKER_-_JUNIOR'   # fallback when no BKP-medior
+SERVICE_COL = 'BANKER_KLIENTSKE_PECE_-_MEDIOR'
 POSITION_LABELS = {
     'OSOBNI_BANKER_-_JUNIOR':          'OB Junior',
     'OSOBNI_BANKER_-_MEDIOR':          'OB Medior',
@@ -77,6 +80,7 @@ POSITION_LABELS = {
     'PREMIER_BANKAR_-_SENIOR':         'Premier Senior',
     'HYPOTECNI_SPECIALISTA_-_MEDIOR':  'Hypoteční spec.',
     'INVESTICNI_SPECIALISTA_-_MEDIOR': 'Investiční spec.',
+    'POJISTOVACI_SPECIALISTA_-_MEDIOR':'Pojišťovací spec.',
 }
 
 
@@ -92,10 +96,10 @@ def _map_type(val):
     if not isinstance(val, str): return None
     v = ''.join(c for c in unicodedata.normalize('NFD', val.lower().replace('-',''))
                 if unicodedata.category(c) != 'Mn')
-    if 'online' in v:        return 'online'
-    if 'bezhot' in v:        return 'bezhot'
-    if 'hotov' in v:         return 'hotovost'
-    if any(x in v for x in ('schuzk','fyzick','schu')): return 'fyzicka'
+    if 'online' in v:                                       return 'online'
+    if 'bezhot' in v:                                       return 'bezhot'
+    if 'hotov' in v:                                        return 'hotovost'
+    if any(x in v for x in ('schuzk','fyzick','schu')):    return 'fyzicka'
     return None
 
 def _odv(row, key): return str(row.get(key,'') or '').strip()
@@ -104,33 +108,23 @@ def _od_closed(v): return v in ('00:00','0:00','','nan','None','0')
 
 # ─── Capacity calculation ───────────────────────────────────────────────────────
 
-def _cap_model(online, fyzicka, bezhot, bankers, service_fte, n_days):
-    """Return capacity metrics dict for a given visit scenario."""
-    if bankers <= 0:
-        return None
+def _cap_model(online, fyzicka, bezhot, bankers, svc_fte, n_days):
+    """Annual capacity metrics dict for given visit counts and staffing."""
+    if bankers <= 0: return None
+    avail_ob  = bankers * n_days * WORK_MINS_DAY
+    avail_svc = svc_fte * n_days * WORK_MINS_DAY
 
-    avail_ob  = bankers   * n_days * WORK_MINS_DAY
-    avail_svc = service_fte * n_days * WORK_MINS_DAY
+    online_mins  = online   * MEETING_MINS
+    fyzicka_mins = fyzicka  * MEETING_MINS
+    bezhot_base  = bezhot   * WALKIN_AVG_MINS
+    bezhot_conv  = bezhot   * WALKIN_CONVERT_PCT * MEETING_MINS
 
-    # Time used
-    online_mins   = online   * MEETING_MINS
-    fyzicka_mins  = fyzicka  * MEETING_MINS
-    bezhot_base   = bezhot   * WALKIN_AVG_MINS
-    bezhot_conv   = bezhot   * WALKIN_CONVERT_PCT * MEETING_MINS  # 10 % → schůzka
-
-    # Allocation
-    if service_fte > 0:
-        # OB handles: online + fyzicka + converted walkin
-        # BKP handles: bezhot base time
+    if svc_fte > 0:
         ob_used  = online_mins + fyzicka_mins + bezhot_conv
         svc_used = bezhot_base
     else:
-        # OB handles everything (junior handles bezhot in addition)
         ob_used  = online_mins + fyzicka_mins + bezhot_base + bezhot_conv
-        svc_used = 0
-
-    util_ob  = ob_used  / avail_ob  * 100 if avail_ob  > 0 else 0
-    util_svc = svc_used / avail_svc * 100 if avail_svc > 0 else 0
+        svc_used = 0.0
 
     return {
         'online_mins':  round(online_mins),
@@ -139,10 +133,95 @@ def _cap_model(online, fyzicka, bezhot, bankers, service_fte, n_days):
         'bezhot_conv':  round(bezhot_conv),
         'ob_used':      round(ob_used),
         'avail_ob':     round(avail_ob),
-        'util_ob':      round(util_ob, 1),
+        'util_ob':      round(ob_used / avail_ob * 100, 1) if avail_ob > 0 else 0,
         'svc_used':     round(svc_used),
         'avail_svc':    round(avail_svc),
-        'util_svc':     round(util_svc, 1) if service_fte > 0 else None,
+        'util_svc':     round(svc_used / avail_svc * 100, 1) if avail_svc > 0 else None,
+        'n_days':       n_days,
+        'bankers':      bankers,
+        'svc_fte':      svc_fte,
+    }
+
+
+# ─── Monte Carlo ───────────────────────────────────────────────────────────────
+
+def run_monte_carlo(by_hour, bankers, svc_fte, n_iter=MC_ITERATIONS, seed=42):
+    """
+    Simulate n_iter random working days using Poisson hourly visit counts.
+
+    For each hour slot (6–21), visits per type are drawn from Poisson(λ)
+    where λ = recorded average visits per day in that hour.
+    Capacity per hour: bankers × 60 min (OB), svc_fte × 60 min (service).
+
+    Returns dict with per-hour overload probability, P50/P95 utilization,
+    overall coverage %, and minimum bankers needed for 95 % coverage.
+    """
+    if bankers <= 0:
+        return None
+
+    # Lambda matrix: (16 hours, 3 types) = [online, fyzicka, bezhot]
+    lam = np.array([
+        [max(float(by_hour.get('online',  [0]*24)[h] or 0), 0),
+         max(float(by_hour.get('fyzicka', [0]*24)[h] or 0), 0),
+         max(float(by_hour.get('bezhot',  [0]*24)[h] or 0), 0)]
+        for h in MC_HOURS
+    ])  # (16, 3)
+
+    rng = np.random.default_rng(seed)
+    # Sample once: (n_iter, 16 hours, 3 types)
+    samples = rng.poisson(lam[None, :, :].clip(0), size=(n_iter, len(MC_HOURS), 3))
+
+    # Minutes of OB work per (iteration, hour)
+    #   online: 45 min fully blocks 1 banker slot
+    #   fyzicka: 45 min
+    #   bezhot converted (10%): 45 min  → contribution = 0.1 × 45 = 4.5 min per walkin
+    ob_needed  = (45 * samples[:, :, 0] +
+                  45 * samples[:, :, 1] +
+                  WALKIN_CONVERT_PCT * MEETING_MINS * samples[:, :, 2])  # (n_iter, 16)
+    svc_needed = WALKIN_AVG_MINS * samples[:, :, 2]   # (n_iter, 16)
+
+    if svc_fte <= 0:
+        ob_needed = ob_needed + svc_needed   # OB-junior handles bezhot
+        svc_overload = np.zeros((n_iter, len(MC_HOURS)), dtype=bool)
+    else:
+        svc_overload = svc_needed > svc_fte * 60
+
+    # Utilization of OB team at current bankers
+    ob_cap = bankers * 60.0
+    util   = ob_needed / ob_cap           # (n_iter, 16)   can be > 1 = overloaded
+    ob_overload = ob_needed > ob_cap
+    any_overload = ob_overload | svc_overload   # (n_iter, 16)
+    day_overload = any_overload.any(axis=1)     # (n_iter,)
+
+    coverage_pct  = round(float(1.0 - day_overload.mean()) * 100, 1)
+    overload_prob = [round(float(any_overload[:, i].mean()) * 100, 1)
+                     for i in range(len(MC_HOURS))]
+    p50_util = [round(float(np.percentile(util[:, i], 50)) * 100, 1)
+                for i in range(len(MC_HOURS))]
+    p95_util = [round(float(np.percentile(util[:, i], 95)) * 100, 1)
+                for i in range(len(MC_HOURS))]
+
+    # Find minimum bankers for 95 % day-coverage (try increments of 0.5)
+    bankers_for_95 = None
+    for extra in [0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]:
+        b = bankers + extra
+        ov = (ob_needed > b * 60) | svc_overload
+        cov = 1.0 - ov.any(axis=1).mean()
+        if cov >= 0.95:
+            bankers_for_95 = round(b, 1)
+            break
+
+    return {
+        'coverage_pct':    coverage_pct,
+        'overload_prob':   overload_prob,   # per hour [6..21]
+        'p50_util':        p50_util,        # median utilization % per hour
+        'p95_util':        p95_util,        # 95th-pct utilization % per hour
+        'bankers_for_95':  bankers_for_95,
+        'current_bankers': round(bankers, 1),
+        'n_iter':          n_iter,
+        'lam_online':      [round(lam[i, 0], 2) for i in range(len(MC_HOURS))],
+        'lam_fyzicka':     [round(lam[i, 1], 2) for i in range(len(MC_HOURS))],
+        'lam_bezhot':      [round(lam[i, 2], 2) for i in range(len(MC_HOURS))],
     }
 
 
@@ -159,46 +238,70 @@ def load_visits():
 
 
 def load_kpis():
-    """branch_id → {pocet_klientu, fte, name?}"""
+    """branch_id → {fte, pocet_klientu?, name?}"""
     out = {}
-    if not os.path.exists(KPIS_PATH): print(f"⚠️  kpis nenalezen: {KPIS_PATH}"); return out
+    if not os.path.exists(KPIS_PATH): print(f"⚠️  kpis nenalezen"); return out
     try:
         kp = pd.read_pickle(KPIS_PATH)
         kp.columns = [_nc(c) for c in kp.columns]
         id_c  = next((c for c in ['POBOCKA_ID','BRANCH_CODE','ID_POBOCKY'] if c in kp.columns), None)
         nm_c  = next((c for c in ['POBOCKA_NAZEV','BRANCH_NAME','NAZEV'] if c in kp.columns), None)
         fte_c = next((c for c in ['FTE','POCET_BANKERU'] if c in kp.columns), None)
-        cli_c = next((c for c in ['POCET_KLIENTU','PRIMARNI_KLIENTI','AKTIVNI_KLIENTI'] if c in kp.columns), None)
-        if id_c is None: print("⚠️  kpis: ID sloupec nenalezen"); return out
+        cli_c = next((c for c in ['POCET_KLIENTU','PRIMARNI_KLIENTI','AKTIVNI_KLIENTI']
+                      if c in kp.columns), None)
+        if id_c is None: return out
         for _, row in kp.iterrows():
             bid = pd.to_numeric(row[id_c], errors='coerce')
             if pd.isna(bid): continue
             bid = int(bid)
             out[bid] = {
                 'name': str(row[nm_c]) if nm_c else None,
-                'fte':  float(row[fte_c]) if fte_c and pd.notna(row[fte_c]) else None,
-                'pocet_klientu': int(row[cli_c]) if cli_c and pd.notna(row[cli_c]) else None,
+                'fte':  float(row[fte_c]) if fte_c and pd.notna(row.get(fte_c)) else None,
+                'pocet_klientu': (int(row[cli_c]) if cli_c and pd.notna(row.get(cli_c))
+                                  and float(row[cli_c]) > 0 else None),
             }
-        print(f"   kpis: {len(out)} poboček")
+        print(f"   kpis: {len(out)} poboček · fte={'✓' if fte_c else '✗'} · "
+              f"klienti={'✓' if cli_c else '✗'}")
     except Exception as e:
-        print(f"⚠️  kpis chyba: {e}")
+        print(f"⚠️  kpis: {e}")
+    return out
+
+
+def load_profitabilita():
+    """branch_id → pocet_klientu (from profitabilita xlsx)."""
+    out = {}
+    if not os.path.exists(PROF_PATH): print(f"⚠️  Profitabilita nenalezena"); return out
+    try:
+        pf = pd.read_excel(PROF_PATH, header=2, usecols='A:AB')
+        pf.columns = [_nc(c) for c in pf.columns]
+        id_c  = next((c for c in ['ID_POBOCKY','BRANCH_CODE','ID'] if c in pf.columns), None)
+        cli_c = next((c for c in ['POCET_KLIENTU','PRIMARNI_KLIENTI','AKTIVNI_KLIENTI']
+                      if c in pf.columns), None)
+        if id_c and cli_c:
+            for _, row in pf.iterrows():
+                bid = pd.to_numeric(row[id_c], errors='coerce')
+                if pd.isna(bid): continue
+                v = pd.to_numeric(row[cli_c], errors='coerce')
+                if pd.notna(v) and v > 0:
+                    out[int(bid)] = int(v)
+        print(f"   Profitabilita: {len(out)} poboček · klienti={'✓' if cli_c else '✗'}")
+    except Exception as e:
+        print(f"⚠️  Profitabilita: {e}")
     return out
 
 
 def load_specialiste():
-    """branch_id → {name, bankers, service_fte, positions}"""
+    """branch_id → {name, bankers, svc_fte, has_svc, positions}"""
     out = {}
-    if not os.path.exists(SPEC_PATH): print(f"⚠️  Specialisté nenalezeni: {SPEC_PATH}"); return out
+    if not os.path.exists(SPEC_PATH): print(f"⚠️  Specialisté nenalezeni"); return out
     try:
         sp = pd.read_pickle(SPEC_PATH)
-        # Normalize: main script renames to lowercase, we normalize to UPPER
         sp.columns = [_nc(c) for c in sp.columns]
-        bid_c  = next((c for c in ['BRANCH_ID','BRANCH_CODE','ID'] if c in sp.columns), None)
-        nm_c   = next((c for c in ['BRANCH_NAME','POBOCKA_NAZEV','NAZEV'] if c in sp.columns), None)
+        bid_c = next((c for c in ['BRANCH_ID','BRANCH_CODE','ID'] if c in sp.columns), None)
+        nm_c  = next((c for c in ['BRANCH_NAME','POBOCKA_NAZEV','NAZEV'] if c in sp.columns), None)
         id_cols = {'BRANCH_ID','BRANCH_CODE','BRANCH_NAME','POBOCKA_NAZEV',
                    'GPS_X','GPS_Y','EVIDENCNI_STAV','ID','NAZEV'}
         pos_cols = [c for c in sp.columns if c not in id_cols]
-        # numeric
         for c in pos_cols:
             sp[c] = pd.to_numeric(sp[c], errors='coerce').fillna(0)
 
@@ -206,34 +309,30 @@ def load_specialiste():
             bid = pd.to_numeric(row[bid_c] if bid_c else None, errors='coerce')
             if pd.isna(bid): continue
             bid = int(bid)
-
             bankers = sum(float(row.get(c, 0) or 0) for c in pos_cols if c in BANKER_COLS)
             svc_fte = float(row.get(SERVICE_COL, 0) or 0)
-            has_svc = svc_fte > 0
-
             positions = {}
             for c in pos_cols:
                 v = float(row.get(c, 0) or 0)
                 if v > 0:
                     lbl = POSITION_LABELS.get(c, c.replace('_',' ').title())
-                    positions[lbl] = v
-
+                    positions[lbl] = round(v, 1)
             out[bid] = {
-                'name':        str(row[nm_c]) if nm_c and pd.notna(row.get(nm_c,'')) else None,
-                'bankers':     round(bankers, 1),
-                'service_fte': round(svc_fte, 1),
-                'has_svc':     has_svc,
-                'positions':   positions,
+                'name':     str(row[nm_c]) if nm_c and pd.notna(row.get(nm_c,'')) else None,
+                'bankers':  round(bankers, 1),
+                'svc_fte':  round(svc_fte, 1),
+                'has_svc':  svc_fte > 0,
+                'positions': positions,
             }
-        print(f"   Specialisté: {len(out)} poboček, {len(pos_cols)} pozic")
+        print(f"   Specialisté: {len(out)} poboček")
     except Exception as e:
-        print(f"⚠️  Specialisté chyba: {e}")
+        print(f"⚠️  Specialisté: {e}")
     return out
 
 
 def load_oteviraci():
     out = {}
-    if not os.path.exists(OD_PATH): print(f"⚠️  Ot.doba nenalezena: {OD_PATH}"); return out
+    if not os.path.exists(OD_PATH): print(f"⚠️  Ot.doba nenalezena"); return out
     try:
         od = pd.read_excel(OD_PATH, dtype=str)
         if 'KOD_POBOCKY' not in od.columns: print("⚠️  OD: chybí KOD_POBOCKY"); return out
@@ -249,20 +348,20 @@ def load_oteviraci():
                 odp = (f"{_odv(row,f'{dn}_ODP._OD')}–{_odv(row,f'{dn}_ODP._DO')}"
                        if not _od_closed(_odv(row,f'{dn}_ODP._OD')) else '')
                 if wknd and not closed: is_vikend = True
-                days.append({'lbl':dcz,'wknd':wknd,'closed':closed,'dop':dop,'odp':odp,
-                             'tot':tot if not closed else ''})
+                days.append({'lbl':dcz,'wknd':wknd,'closed':closed,
+                             'dop':dop,'odp':odp,'tot':tot if not closed else ''})
             try: ph = float(str(row.get('PH',0) or 0).replace(',','.'))
             except: ph = 0.0
             out[bid] = {'is_vikend':is_vikend,'ph_tyden':ph,'od_days':days}
         print(f"   Ot.doba: {len(out)} poboček")
     except Exception as e:
-        print(f"⚠️  Ot.doba chyba: {e}")
+        print(f"⚠️  Ot.doba: {e}")
     return out
 
 
-# ─── Aggregation ───────────────────────────────────────────────────────────────
+# ─── Build data ────────────────────────────────────────────────────────────────
 
-def build_data(df, kpis, spec, od):
+def build_data(df, kpis, prof_kli, spec, od):
     bid_c  = next((c for c in ['BRANCH_ID','BRANCH_CODE','POBOCKA'] if c in df.columns), None)
     bname_c= next((c for c in ['BRANCH_NAME','POBOCKA_NAZEV'] if c in df.columns), None)
     att_c  = next((c for c in ['ATTENDANCE_TYPE','VISIT_TYPE','TYP_NAVSTEVY'] if c in df.columns), None)
@@ -295,17 +394,18 @@ def build_data(df, kpis, spec, od):
     else:
         df['_hr'] = None
 
-    result  = {}
-    for bid in sorted(df[bid_c].unique()):
-        vb  = df[df[bid_c] == bid]
-        k   = kpis.get(bid, {})
-        s   = spec.get(bid, {})
-        o   = od.get(bid, {})
+    result = {}
+    branches = sorted(df[bid_c].unique())
+    print(f"   {len(branches)} poboček — počítám statistiky + Monte Carlo…")
 
-        # Branch name — specialiste first (most reliable), then kpis, then visits CSV
+    for bid in branches:
+        vb = df[df[bid_c] == bid]
+        k  = kpis.get(bid, {})
+        s  = spec.get(bid, {})
+        o  = od.get(bid, {})
+
         name = (s.get('name') or k.get('name') or
-                (str(vb[bname_c].iloc[0]) if bname_c and bname_c in vb.columns else None) or
-                f"Pobočka {bid}")
+                (str(vb[bname_c].iloc[0]) if bname_c else None) or f"Pobočka {bid}")
 
         total   = len(vb)
         by_type = {k2: int((vb['_t'] == k2).sum()) for k2 in TYPE_KEYS}
@@ -314,65 +414,66 @@ def build_data(df, kpis, spec, od):
         by_month   = {k2: [0]*12 for k2 in TYPE_KEYS}
         by_weekday = {k2: [0]*7  for k2 in TYPE_KEYS}
         by_hour    = {k2: [0]*24 for k2 in TYPE_KEYS}
-        heatmap    = [[0]*24 for _ in range(7)]  # [weekday][hour]
-
+        heatmap    = [[0]*24 for _ in range(7)]
         n_days = 1
+
         if has_date:
             n_days = max(int(vb['_dt'].dt.date.nunique()), 1)
             for k2 in TYPE_KEYS:
                 sub = vb[vb['_t'] == k2]
                 if not sub.empty:
-                    m  = sub['_mon'].value_counts().reindex(range(1,13), fill_value=0)
-                    wd = sub['_wd'].value_counts().reindex(range(7),  fill_value=0)
-                    by_month[k2]   = [int(v) for v in m]
-                    by_weekday[k2] = [int(v) for v in wd]
+                    by_month[k2]   = [int(v) for v in sub['_mon'].value_counts()
+                                      .reindex(range(1,13), fill_value=0)]
+                    by_weekday[k2] = [int(v) for v in sub['_wd'].value_counts()
+                                      .reindex(range(7), fill_value=0)]
 
         if has_time and has_date:
             for k2 in TYPE_KEYS:
                 sub = vb[vb['_t'] == k2]
                 if not sub.empty:
-                    h  = sub['_hr'].dropna().astype(int)
-                    hc = h.value_counts().reindex(range(24), fill_value=0)
-                    by_hour[k2] = [round(float(v)/n_days, 1) for v in hc]
-
-            # Heatmap: ALL types combined, wd × hour (totals, not averages)
-            valid = vb.dropna(subset=['_wd','_hr'])
+                    hc = sub['_hr'].dropna().astype(int).value_counts().reindex(range(24), fill_value=0)
+                    by_hour[k2] = [round(float(v)/n_days, 2) for v in hc]
+            # Heatmap (all types combined)
+            valid = vb.dropna(subset=['_wd','_hr']).copy()
             if not valid.empty:
-                valid = valid.copy()
-                valid['_wd'] = valid['_wd'].astype(int)
-                valid['_hr'] = valid['_hr'].astype(int)
-                hm = (valid.groupby(['_wd','_hr']).size()
-                      .unstack(fill_value=0)
+                valid['_wd'] = valid['_wd'].astype(int); valid['_hr'] = valid['_hr'].astype(int)
+                hm = (valid.groupby(['_wd','_hr']).size().unstack(fill_value=0)
                       .reindex(index=range(7), columns=range(24), fill_value=0))
                 heatmap = [[int(hm.loc[wd2, hr]) for hr in range(24)] for wd2 in range(7)]
 
         # Staff
-        bankers   = float(s.get('bankers', 0) or 0)
-        svc_fte   = float(s.get('service_fte', 0) or 0)
-        has_svc   = bool(s.get('has_svc', False))
+        bankers = float(s.get('bankers', 0) or 0)
+        svc_fte = float(s.get('svc_fte', 0) or 0)
+        has_svc = bool(s.get('has_svc', False))
         positions = s.get('positions', {})
-        poc_kli   = k.get('pocet_klientu') or 0
-        fte       = k.get('fte') or s.get('total_fte')
+        fte = k.get('fte')
+
+        # Client count: profitabilita first, then kpis fallback
+        poc_kli = prof_kli.get(bid) or k.get('pocet_klientu') or 0
 
         # Metrics
-        portfolio_per_banker = round(poc_kli / bankers, 0) if bankers > 0 and poc_kli > 0 else None
-        online_yearly  = by_type['online']
-        fyzicka_yearly = by_type['fyzicka']
-        total_mtgs     = online_yearly + fyzicka_yearly
-        mtgs_pb_day    = round(total_mtgs / bankers / n_days, 1) if bankers > 0 and n_days > 0 else None
+        portfolio_pb = round(poc_kli / bankers) if bankers > 0 and poc_kli > 0 else None
+        total_mtgs   = by_type['online'] + by_type['fyzicka']
+        mtgs_pb_day  = round(total_mtgs / bankers / n_days, 1) if bankers > 0 and n_days > 0 else None
 
-        # Capacity models
-        cap1 = _cap_model(online_yearly, fyzicka_yearly, by_type['bezhot'],
+        # Capacity Model 1 (real visits)
+        cap1 = _cap_model(by_type['online'], by_type['fyzicka'], by_type['bezhot'],
                           bankers, svc_fte, n_days)
-        # Model 2: scale visit counts to pocet_klientu using actual type ratios
+
+        # Capacity Model 2 (client-based)
         cap2 = None
         total_excl_hot = sum(by_type[k2] for k2 in ['online','fyzicka','bezhot'])
         if poc_kli > 0 and total_excl_hot > 0 and bankers > 0:
-            r_onl = by_type['online']  / total_excl_hot
+            r_on  = by_type['online']  / total_excl_hot
             r_fyz = by_type['fyzicka'] / total_excl_hot
             r_beh = by_type['bezhot']  / total_excl_hot
-            cap2 = _cap_model(poc_kli * r_onl, poc_kli * r_fyz, poc_kli * r_beh,
-                              bankers, svc_fte, WORKING_DAYS)
+            cap2  = _cap_model(poc_kli * r_on, poc_kli * r_fyz, poc_kli * r_beh,
+                               bankers, svc_fte, WORKING_DAYS)
+
+        # Monte Carlo (only when hourly data is available)
+        mc = None
+        if has_time and has_date and bankers > 0:
+            mc = run_monte_carlo(by_hour, bankers, svc_fte)
 
         result[str(bid)] = {
             'name':       name,
@@ -381,7 +482,7 @@ def build_data(df, kpis, spec, od):
             'svc_fte':    svc_fte,
             'has_svc':    has_svc,
             'positions':  positions,
-            'pocet_klientu': poc_kli,
+            'poc_kli':    poc_kli,
             'total':      total,
             'by_type':    by_type,
             'unknown':    unknown,
@@ -391,10 +492,11 @@ def build_data(df, kpis, spec, od):
             'heatmap':    heatmap,
             'has_time':   has_time and has_date,
             'n_days':     n_days,
-            'portfolio_per_banker': portfolio_per_banker,
+            'portfolio_pb': portfolio_pb,
             'mtgs_pb_day':  mtgs_pb_day,
             'cap1':       cap1,
             'cap2':       cap2,
+            'mc':         mc,
             'is_vikend':  o.get('is_vikend', False),
             'ph_tyden':   o.get('ph_tyden',  0.0),
             'od_days':    o.get('od_days',   []),
@@ -412,95 +514,96 @@ def render_html(data, order, has_type_col):
     types_js = json.dumps(
         [{'key':k,'label':TYPE_LABEL[k],'color':TYPE_COLOR[k]} for k in TYPE_KEYS],
         ensure_ascii=False)
+    mc_hours_js = json.dumps(MC_HOURS)
     consts_js = json.dumps({
         'TARGET_PORTFOLIO': TARGET_PORTFOLIO,
         'TARGET_MTGS_MIN':  TARGET_MTGS_MIN,
         'TARGET_MTGS_MAX':  TARGET_MTGS_MAX,
         'MEETING_MINS':     MEETING_MINS,
+        'WALKIN_SHORT_PCT': WALKIN_SHORT_PCT,
+        'WALKIN_SHORT_MINS':WALKIN_SHORT_MINS,
+        'WALKIN_LONG_PCT':  WALKIN_LONG_PCT,
+        'WALKIN_LONG_MINS': WALKIN_LONG_MINS,
         'WALKIN_AVG_MINS':  WALKIN_AVG_MINS,
         'WALKIN_CONVERT_PCT': WALKIN_CONVERT_PCT,
         'WORK_MINS_DAY':    WORK_MINS_DAY,
+        'WORKING_DAYS':     WORKING_DAYS,
+        'MC_ITERATIONS':    MC_ITERATIONS,
     })
-
     no_type_warn = ('' if has_type_col else
         '<div class="warn">⚠️ Sloupec ATTENDANCE_TYPE nenalezen — typové grafy nejsou dostupné.</div>')
 
     return f"""<!DOCTYPE html>
 <html lang="cs">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Analýza návštěvnosti 2025</title>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 body{{font-family:'Inter',system-ui,sans-serif;background:#f0f4ff;color:#1e293b;font-size:15px;line-height:1.5;}}
 .wrap{{max-width:1100px;margin:0 auto;padding:20px 16px;}}
-h1{{font-size:1.45rem;font-weight:800;color:#1e3a8a;margin-bottom:3px;}}
+h1{{font-size:1.4rem;font-weight:800;color:#1e3a8a;margin-bottom:3px;}}
 .subtitle{{font-size:.82rem;color:#94a3b8;margin-bottom:20px;}}
-.warn{{background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px 14px;
-       font-size:.82rem;color:#713f12;margin-bottom:14px;}}
-/* Search */
+.warn{{background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px 14px;font-size:.82rem;color:#713f12;margin-bottom:14px;}}
 .sw{{position:relative;margin-bottom:20px;}}
-.sw input{{width:100%;padding:11px 14px 11px 40px;border:1.5px solid #bfdbfe;border-radius:10px;
-           font-size:16px;background:#fff;outline:none;transition:border .15s;
-           -webkit-tap-highlight-color:transparent;}}
+.sw input{{width:100%;padding:11px 14px 11px 40px;border:1.5px solid #bfdbfe;border-radius:10px;font-size:16px;background:#fff;outline:none;transition:border .15s;-webkit-tap-highlight-color:transparent;}}
 .sw input:focus{{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.15);}}
 .sw .ico{{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#93c5fd;pointer-events:none;}}
-.bl{{display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;
-     border:1.5px solid #bfdbfe;border-radius:10px;max-height:280px;overflow-y:auto;
-     z-index:100;box-shadow:0 8px 32px rgba(30,58,138,.12);-webkit-overflow-scrolling:touch;}}
+.bl{{display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #bfdbfe;border-radius:10px;max-height:280px;overflow-y:auto;z-index:100;box-shadow:0 8px 32px rgba(30,58,138,.12);-webkit-overflow-scrolling:touch;}}
 .bl.open{{display:block;}}
 .bi{{padding:9px 14px;cursor:pointer;font-size:.88rem;border-bottom:1px solid #eff6ff;}}
 .bi:hover,.bi.sel{{background:#eff6ff;color:#1d4ed8;font-weight:600;}}
-/* Layout */
 .grid2{{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;}}
-.grid3{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px;}}
-@media(max-width:700px){{.grid2,.grid3{{grid-template-columns:1fr 1fr;}} }}
-@media(max-width:400px){{.grid2,.grid3{{grid-template-columns:1fr;}} }}
-/* Cards */
-.card{{background:#fff;border-radius:12px;border:1.5px solid #dbeafe;padding:14px 16px;}}
-.card.warn-card{{border-color:#fca5a5;background:#fff5f5;}}
-.card.ok-card{{border-color:#bbf7d0;background:#f0fdf4;}}
-.cl{{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#64748b;margin-bottom:3px;}}
-.cv{{font-size:1.4rem;font-weight:800;line-height:1.1;color:#1e3a8a;}}
-.cs{{font-size:.73rem;color:#94a3b8;margin-top:2px;}}
-/* Section */
+.grid3{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;}}
+.grid4{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}}
+@media(max-width:700px){{.grid3,.grid4{{grid-template-columns:1fr 1fr;}}}}
+@media(max-width:420px){{.grid2,.grid3,.grid4{{grid-template-columns:1fr;}}}}
+.card{{background:#fff;border-radius:12px;border:1.5px solid #dbeafe;padding:13px 15px;}}
+.card.ok{{border-color:#bbf7d0;background:#f0fdf4;}}
+.card.warn-c{{border-color:#fca5a5;background:#fff5f5;}}
+.cl{{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#64748b;margin-bottom:3px;}}
+.cv{{font-size:1.35rem;font-weight:800;line-height:1.1;color:#1e3a8a;}}
+.cs{{font-size:.72rem;color:#94a3b8;margin-top:2px;}}
 .sec{{background:#fff;border-radius:12px;border:1.5px solid #dbeafe;padding:16px;margin-bottom:14px;}}
-.st{{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#475569;margin-bottom:14px;}}
-/* Bar charts */
-.bars{{display:flex;gap:4px;align-items:flex-end;}}
+.st{{font-size:.76rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#475569;margin-bottom:12px;}}
+/* bars */
+.bars{{display:flex;gap:3px;align-items:flex-end;}}
 .bw{{display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;min-width:0;}}
 .bs{{display:flex;flex-direction:column-reverse;width:100%;border-radius:4px 4px 0 0;overflow:hidden;}}
 .bseg{{width:100%;flex-shrink:0;}}
-.blbl{{font-size:.6rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-       max-width:100%;text-align:center;}}
-.bnum{{font-size:.6rem;color:#475569;font-weight:600;text-align:center;}}
-/* Legend */
-.leg{{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;}}
-.li{{display:flex;align-items:center;gap:5px;font-size:.75rem;color:#475569;}}
+.blbl{{font-size:.58rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-align:center;}}
+.bnum{{font-size:.58rem;color:#475569;font-weight:600;text-align:center;}}
+.leg{{display:flex;flex-wrap:wrap;gap:9px;margin-top:10px;}}
+.li{{display:flex;align-items:center;gap:5px;font-size:.74rem;color:#475569;}}
 .ld{{width:10px;height:10px;border-radius:3px;flex-shrink:0;}}
-/* Heatmap */
-.hm-table{{border-collapse:collapse;width:100%;font-size:.65rem;}}
-.hm-table td,.hm-table th{{padding:2px 3px;text-align:center;border-radius:3px;}}
-.hm-table th{{color:#94a3b8;font-weight:600;font-size:.62rem;}}
-/* Capacity bar */
-.cap-bar-wrap{{position:relative;height:28px;border-radius:6px;overflow:hidden;
-               background:#e0e7ef;margin:8px 0;}}
-.cap-bar-fill{{height:100%;border-radius:6px;transition:width .4s ease;
-               display:flex;align-items:center;padding:0 8px;
-               font-size:.72rem;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;}}
-.cap-zone{{position:absolute;top:0;height:100%;opacity:.18;pointer-events:none;}}
+/* heatmap */
+.hmt{{border-collapse:collapse;width:100%;font-size:.63rem;}}
+.hmt td,.hmt th{{padding:2px 2px;text-align:center;border-radius:2px;min-width:20px;}}
+.hmt th{{color:#94a3b8;font-weight:600;font-size:.6rem;}}
+/* capacity bar */
+.cbwrap{{position:relative;height:26px;border-radius:6px;overflow:hidden;background:#e0e7ef;margin:6px 0 2px;}}
+.cbfill{{height:100%;border-radius:6px;display:flex;align-items:center;padding:0 7px;font-size:.7rem;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;min-width:40px;}}
+/* MC bars */
+.mcbar-wrap{{display:flex;gap:3px;align-items:flex-end;margin-bottom:8px;}}
+.mcbar-col{{display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;min-width:0;}}
+.mcbar-inner{{width:100%;border-radius:3px 3px 0 0;overflow:hidden;position:relative;}}
 /* OD table */
-.od-t{{width:100%;border-collapse:collapse;font-size:.84rem;}}
-.od-t td,.od-t th{{padding:5px 10px;}}
-.od-t th{{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
-           color:#94a3b8;border-bottom:1px solid #dbeafe;text-align:left;}}
+.odt{{width:100%;border-collapse:collapse;font-size:.83rem;}}
+.odt td,.odt th{{padding:5px 9px;}}
+.odt th{{font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#94a3b8;border-bottom:1px solid #dbeafe;text-align:left;}}
 .od-wknd{{background:#fffbf0!important;}}
-/* Positions table */
-.pos-t{{width:100%;border-collapse:collapse;font-size:.82rem;}}
-.pos-t td{{padding:4px 10px;border-bottom:1px solid #f0f4ff;}}
-.pos-t tr:last-child td{{border-bottom:none;}}
-.badge{{display:inline-block;border-radius:10px;padding:2px 9px;font-size:.7rem;font-weight:700;}}
+/* positions table */
+.post{{width:100%;border-collapse:collapse;font-size:.82rem;}}
+.post td{{padding:4px 9px;border-bottom:1px solid #f0f4ff;}}
+.post tr:last-child td{{border-bottom:none;}}
+.badge{{display:inline-block;border-radius:10px;padding:2px 8px;font-size:.68rem;font-weight:700;}}
+/* methodology */
+.meth{{background:#f8faff;border:1px solid #dbeafe;border-radius:10px;padding:14px 16px;font-size:.8rem;color:#475569;}}
+.meth h4{{font-size:.78rem;font-weight:700;color:#1e3a8a;margin:10px 0 4px;}}
+.meth h4:first-child{{margin-top:0;}}
+.meth ul{{padding-left:18px;}}
+.meth li{{margin-bottom:3px;}}
+details summary{{cursor:pointer;font-size:.76rem;font-weight:700;color:#2563eb;padding:8px 0;user-select:none;}}
 .placeholder{{text-align:center;color:#94a3b8;padding:50px 0;font-size:.9rem;}}
 </style>
 </head>
@@ -509,36 +612,32 @@ h1{{font-size:1.45rem;font-weight:800;color:#1e3a8a;margin-bottom:3px;}}
   <h1>Analýza návštěvnosti poboček 2025</h1>
   <div class="subtitle">Zdroj: {VISITS_PATH}</div>
   {no_type_warn}
-
   <div class="sw" id="sw">
-    <svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none"
-         stroke="currentColor" stroke-width="2.5">
-      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-    </svg>
-    <input type="text" id="si" placeholder="Vyhledat pobočku…"
-           autocomplete="off" autocorrect="off" spellcheck="false">
+    <svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" id="si" placeholder="Vyhledat pobočku…" autocomplete="off" autocorrect="off" spellcheck="false">
     <div class="bl" id="bl"></div>
   </div>
   <div id="mc"><div class="placeholder">← Vyberte pobočku výše</div></div>
 </div>
 
 <script>
-const DATA   = {data_js};
-const ORDER  = {order_js};
-const TYPES  = {types_js};
-const C      = {consts_js};
-const WD     = ['Po','Út','St','Čt','Pá','So','Ne'];
-const MON    = ['Led','Úno','Bře','Dub','Kvě','Čvn','Čvc','Srp','Zář','Říj','Lis','Pro'];
-const HM_HOURS = Array.from({{length:16}},(_,i)=>i+6);  // 6..21
+const DATA  = {data_js};
+const ORDER = {order_js};
+const TYPES = {types_js};
+const MCH   = {mc_hours_js};
+const C     = {consts_js};
+const WD    = ['Po','Út','St','Čt','Pá','So','Ne'];
+const MON   = ['Led','Úno','Bře','Dub','Kvě','Čvn','Čvc','Srp','Zář','Říj','Lis','Pro'];
 
 let cur=null;
 const si=document.getElementById('si'),bl=document.getElementById('bl'),sw=document.getElementById('sw');
 
-function renderList(q) {{
+function renderList(q){{
   q=q.toLowerCase();
-  const hits=ORDER.filter(id=>DATA[id].name.toLowerCase().includes(q)||id.includes(q)).slice(0,100);
+  const hits=ORDER.filter(id=>DATA[id].name.toLowerCase().includes(q)||id.includes(q)).slice(0,120);
   bl.innerHTML=hits.map(id=>`<div class="bi${{id===cur?' sel':''}}" data-id="${{id}}">
-    ${{DATA[id].name}} <span style="color:#bbb;font-size:.78em">#${{id}}</span></div>`).join('');
+    ${{DATA[id].name}} <span style="color:#bbb;font-size:.77em">#${{id}}</span></div>`).join('');
   bl.classList.toggle('open',hits.length>0);
 }}
 si.addEventListener('input',()=>renderList(si.value));
@@ -550,244 +649,355 @@ bl.addEventListener('click',e=>{{
 }});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function fmt1(n){{return typeof n==='number'?n.toLocaleString('cs',{{minimumFractionDigits:n%1?1:0,maximumFractionDigits:1}}):'—';}}
-function fmtI(n){{return typeof n==='number'?Math.round(n).toLocaleString('cs'):'—';}}
-function fmtN(n){{if(!n)return'0';if(n>=1000)return(n/1000).toFixed(1).replace('.0','')+'k';return String(Math.round(n));}}
+function fmt1(n){{if(n==null||isNaN(n))return'—';const f=parseFloat(n);
+  return f.toLocaleString('cs',{{minimumFractionDigits:f%1?1:0,maximumFractionDigits:1}});}}
+function fmtI(n){{return n==null?'—':Math.round(n).toLocaleString('cs');}}
+function fmtN(n){{if(!n&&n!==0)return'0';n=Math.round(n);
+  if(n>=1000000)return(n/1000000).toFixed(1).replace('.0','')+'M';
+  if(n>=1000)return(n/1000).toFixed(1).replace('.0','')+'k';return String(n);}}
+function fmtH(mins){{if(!mins)return'0h';const h=mins/60;
+  return h>=1?Math.round(h)+'h':Math.round(mins)+'min';}}
 
-function stackedBars(labels, typeArr, maxH) {{
+function stackedBars(labels,typeArr,maxH){{
   const totals=labels.map((_,i)=>typeArr.reduce((s,t)=>s+(t.values[i]||0),0));
-  const maxVal=Math.max(...totals,1);
+  const maxV=Math.max(...totals,1);
   return labels.map((lbl,i)=>{{
     const tot=totals[i];
     const segs=typeArr.filter(t=>(t.values[i]||0)>0).map(t=>{{
-      const h=(t.values[i]/maxVal*maxH).toFixed(1);
-      return `<div class="bseg" style="height:${{h}}px;background:${{t.color}};"
-                   title="${{t.label}}: ${{fmtI(t.values[i])}}"></div>`;
+      const h=(t.values[i]/maxV*maxH).toFixed(1);
+      return`<div class="bseg" style="height:${{h}}px;background:${{t.color}};"
+                  title="${{t.label}}: ${{fmtI(t.values[i])}}"></div>`;
     }}).join('');
-    return `<div class="bw">
+    return`<div class="bw">
       <div class="bnum">${{tot>0?fmtN(tot):''}}</div>
-      <div class="bs" style="height:${{(tot/maxVal*maxH).toFixed(1)}}px;max-height:${{maxH}}px;">${{segs}}</div>
+      <div class="bs" style="height:${{(tot/maxV*maxH).toFixed(1)}}px;max-height:${{maxH}}px;">${{segs}}</div>
       <div class="blbl">${{lbl}}</div></div>`;
   }}).join('');
 }}
-
-function legend(){{
-  return`<div class="leg">${{TYPES.map(t=>`<div class="li">
-    <div class="ld" style="background:${{t.color}}"></div>${{t.label}}</div>`).join('')}}</div>`;
-}}
+function legend(){{return`<div class="leg">${{TYPES.map(t=>`<div class="li">
+  <div class="ld" style="background:${{t.color}}"></div>${{t.label}}</div>`).join('')}}</div>`;}}
 
 // ── Heatmap ───────────────────────────────────────────────────────────────────
-function heatmapHtml(d, isVikend) {{
-  if(!d.has_time||!d.heatmap) return '';
-  const rows=(isVikend?[0,1,2,3,4,5,6]:[0,1,2,3,4]);
-  const maxV=Math.max(...rows.flatMap(wd=>HM_HOURS.map(h=>d.heatmap[wd]?.[h]||0)),1);
-  const th='<th></th>'+HM_HOURS.map(h=>`<th>${{h}}h</th>`).join('');
-  const trs=rows.map(wd=>{{
-    const wknd=wd>=5;
-    const tds=HM_HOURS.map(h=>{{
-      const v=d.heatmap[wd]?.[h]||0;
-      const p=v/maxV;
-      const r=Math.round(239-(239-29)*p),g=Math.round(246-(246-78)*p),b=Math.round(255-(255-216)*p);
-      const clr=v>0?`rgb(${{r}},${{g}},${{b}})`:'#f8faff';
-      const txt=v>maxV*.5?'#1e3a8a':'#94a3b8';
-      return `<td style="background:${{clr}};color:${{txt}};min-width:22px;"
-                   title="${{WD[wd]}} ${{h}}h: ${{fmtI(v)}}">${{v>0?fmtN(v):''}}</td>`;
+function heatmapSec(d){{
+  if(!d.has_time||!d.heatmap)return'';
+  const rows=d.is_vikend?[0,1,2,3,4,5,6]:[0,1,2,3,4];
+  const cols=MCH;
+  const maxV=Math.max(...rows.flatMap(w=>cols.map(h=>d.heatmap[w]?.[h]||0)),1);
+  const th='<th></th>'+cols.map(h=>`<th>${{h}}h</th>`).join('');
+  const trs=rows.map(w=>{{
+    const tds=cols.map(h=>{{
+      const v=d.heatmap[w]?.[h]||0,p=v/maxV;
+      const r=Math.round(239-(239-29)*p),g=Math.round(246-(246-78)*p),b2=Math.round(255-(255-216)*p);
+      const clr=v>0?`rgb(${{r}},${{g}},${{b2}})`:'#f8faff';
+      const txt=p>.5?'#1e3a8a':'#94a3b8';
+      return`<td style="background:${{clr}};color:${{txt}};"
+                  title="${{WD[w]}} ${{h}}h: ${{fmtI(v)}}">${{v>0?fmtN(v):''}}</td>`;
     }}).join('');
-    return `<tr style="${{wknd?'background:#fffbf0':''}}"><td style="font-size:.68rem;font-weight:600;
-      color:${{wknd?'#d97706':'#475569'}};white-space:nowrap;padding:2px 6px;">${{WD[wd]}}</td>${{tds}}</tr>`;
+    return`<tr style="${{w>=5?'background:#fffbf0':''}}">
+      <td style="font-size:.66rem;font-weight:600;color:${{w>=5?'#d97706':'#475569'}};
+          white-space:nowrap;padding:2px 5px;">${{WD[w]}}</td>${{tds}}</tr>`;
   }}).join('');
-  return`<div class="sec"><div class="st">🗓️ Heatmapa den × hodina (počty návštěv)</div>
-    <div style="overflow-x:auto;">
-    <table class="hm-table"><thead><tr>${{th}}</tr></thead><tbody>${{trs}}</tbody></table>
-    </div></div>`;
+  return`<div class="sec"><div class="st">🗓️ Heatmapa den × hodina (celkové počty návštěv)</div>
+    <div style="overflow-x:auto;"><table class="hmt">
+      <thead><tr>${{th}}</tr></thead><tbody>${{trs}}</tbody></table></div></div>`;
 }}
 
 // ── Capacity bar ──────────────────────────────────────────────────────────────
-function capBar(pct, label) {{
-  if(pct==null) return '';
-  const p=Math.min(pct,150);
+function capBar(pct,label){{
+  if(pct==null)return'';
   const clr=pct<70?'#2563eb':pct<90?'#f59e0b':'#ef4444';
-  const bg=pct<70?'#dbeafe':pct<90?'#fef3c7':'#fee2e2';
-  return `<div style="margin-bottom:6px;">
-    <div style="font-size:.72rem;color:#64748b;margin-bottom:3px;">${{label}}</div>
-    <div class="cap-bar-wrap" style="background:${{bg}};">
-      <div class="cap-bar-fill" style="width:${{Math.min(p,100)}}%;background:${{clr}};">
-        ${{pct.toFixed(1)}}%</div>
+  const bg =pct<70?'#dbeafe':pct<90?'#fef3c7':'#fee2e2';
+  const ico=pct<70?'✅':pct<90?'⚠️':'🔴';
+  return`<div style="margin-bottom:8px;">
+    <div style="font-size:.7rem;color:#64748b;margin-bottom:2px;">${{label}}</div>
+    <div class="cbwrap" style="background:${{bg}};">
+      <div class="cbfill" style="width:${{Math.min(pct,100)}}%;background:${{clr}};">${{pct.toFixed(1)}}%</div>
     </div>
-    <div style="font-size:.68rem;color:#94a3b8;text-align:right;">${{
-      pct<70?'✅ v normě':pct<90?'⚠️ blíží se limitě':'🔴 přetíženo'}}</div>
-  </div>`;
+    <div style="font-size:.67rem;color:#94a3b8;text-align:right;">${{ico}} ${{
+      pct<70?'kapacita postačuje':pct<90?'blíží se limitu':'přetíženo'}}</div></div>`;
 }}
 
-function capSection(d) {{
-  const c1=d.cap1, c2=d.cap2;
-  if(!c1&&!c2) return '';
-  let html='<div class="sec"><div class="st">⚡ Kapacitní analýza</div>';
+function capDetails(cap,title){{
+  if(!cap)return'';
+  const svc=cap.util_svc!=null?capBar(cap.util_svc,'Servisní bankéř — bezhotovostní walkin'):'';
+  return`<div style="margin-bottom:14px;">
+    <b style="font-size:.85rem;color:#1e3a8a;">${{title}}</b>
+    <div style="margin-top:8px;">${{capBar(cap.util_ob,'OB tým — schůzky + online + konverze walkin')}}${{svc}}</div>
+    <div style="font-size:.7rem;color:#64748b;margin-top:6px;display:flex;flex-wrap:wrap;gap:12px;">
+      <span>📅 Dnů: <b>${{cap.n_days}}</b></span>
+      <span>👤 OB bankéři: <b>${{fmt1(cap.bankers)}}</b></span>
+      <span>⏱️ OB dostupné: <b>${{fmtH(cap.avail_ob)}}</b></span>
+      <span>🔵 Online: <b>${{fmtH(cap.online_mins)}}</b></span>
+      <span>🤝 Fyzické: <b>${{fmtH(cap.fyzicka_mins)}}</b></span>
+      <span>🚶 Walkin základ: <b>${{fmtH(cap.bezhot_base)}}</b></span>
+      <span>🔄 Walkin → schůzka: <b>${{fmtH(cap.bezhot_conv)}}</b></span>
+    </div></div>`;
+}}
 
-  function capDetail(cap, title, n_days) {{
-    if(!cap) return '';
-    const ob_h=(cap.ob_used/60).toFixed(1), avail_h=(cap.avail_ob/60).toFixed(1);
-    const svc = cap.util_svc!=null
-      ? capBar(cap.util_svc,`BKP Medior (servisní návštěvy)`):'';
-    return `<div style="margin-bottom:14px;">
-      <div style="font-size:.82rem;font-weight:700;color:#1e3a8a;margin-bottom:8px;">${{title}}</div>
-      ${{capBar(cap.util_ob,'OB tým (schůzky + online + walkin konverze)')}}
-      ${{svc}}
-      <div style="font-size:.72rem;color:#64748b;margin-top:6px;display:flex;gap:16px;flex-wrap:wrap;">
-        <span>⏱️ OB využito: <b>${{ob_h}}h</b> / ${{avail_h}}h</span>
-        <span>📅 Dnů v datech: <b>${{n_days}}</b></span>
-        <span>🕐 Online: <b>${{fmtI(cap.online_mins/60)}}h</b></span>
-        <span>🤝 Fyzické: <b>${{fmtI(cap.fyzicka_mins/60)}}h</b></span>
-        <span>🚶 Walkin základ: <b>${{fmtI(cap.bezhot_base/60)}}h</b>
-              + konverze <b>${{fmtI(cap.bezhot_conv/60)}}h</b></span>
-      </div></div>`;
-  }}
-  html+=capDetail(c1,'Model 1 — reálná data (skutečné návštěvy)',d.n_days);
-  html+=capDetail(c2,'Model 2 — klientský model ('+fmtI(d.pocet_klientu)+' klientů → přepočet)',240);
-  html+='</div>';
-  return html;
+function capSec(d){{
+  if(!d.cap1&&!d.cap2)return'';
+  return`<div class="sec"><div class="st">⚡ Kapacitní analýza</div>
+    ${{capDetails(d.cap1,'Model 1 — reálná data (skutečné návštěvy '+fmtI(d.n_days)+' dnů)')}}
+    ${{d.cap2
+        ? capDetails(d.cap2,'Model 2 — klientský model ('+fmtI(d.poc_kli)+' klientů × poměry typů návštěv)')
+        : d.poc_kli===0
+          ? '<div style="font-size:.78rem;color:#94a3b8;padding:8px 0;">'+
+            '⚠️ Model 2 není dostupný — data o počtu klientů nebyla načtena (profitabilita.xlsx).</div>'
+          : ''}}
+    </div>`;
+}}
+
+// ── Monte Carlo ───────────────────────────────────────────────────────────────
+function mcSec(d){{
+  if(!d.mc)return'';
+  const mc=d.mc;
+  const hours=MCH;
+  const n=hours.length;
+
+  // Coverage card color
+  const cov=mc.coverage_pct;
+  const covClr=cov>=95?'#15803d':cov>=80?'#d97706':'#b91c1c';
+  const covBg =cov>=95?'#f0fdf4':cov>=80?'#fffbeb':'#fff5f5';
+
+  // Per-hour bar: overload probability
+  const maxProb=Math.max(...mc.overload_prob,1);
+  const bars=hours.map((h,i)=>{{
+    const prob=mc.overload_prob[i]||0;
+    const p50 =mc.p50_util[i]||0;
+    const p95 =mc.p95_util[i]||0;
+    const barClr=prob>25?'#ef4444':prob>10?'#f59e0b':prob>2?'#3b82f6':'#93c5fd';
+    const h_bar=Math.max(prob/Math.max(maxProb,1)*80,1).toFixed(1);
+    return`<div class="mcbar-col">
+      <div style="font-size:.57rem;color:#94a3b8;text-align:center;">${{prob>0?prob.toFixed(0)+'%':''}}</div>
+      <div class="mcbar-inner" style="height:${{h_bar}}px;background:${{barClr}};border-radius:3px 3px 0 0;"
+           title="${{h}}h — přetížení: ${{prob}}% | P50 využití: ${{p50}}% | P95: ${{p95}}%"></div>
+      <div style="font-size:.58rem;color:#64748b;">${{h}}h</div>
+    </div>`;
+  }}).join('');
+
+  // P95 utilization line chart as inline bar
+  const maxP95=Math.max(...mc.p95_util,1);
+  const p95bars=hours.map((h,i)=>{{
+    const v=mc.p95_util[i]||0;
+    const clr=v>100?'#ef4444':v>80?'#f59e0b':'#2563eb';
+    const hw=Math.max(v/Math.max(maxP95,1)*80,1).toFixed(1);
+    const border=v>100?' outline:2px solid #1e3a8a;outline-offset:-2px;':'';
+    return`<div class="mcbar-col">
+      <div style="font-size:.57rem;color:#94a3b8;text-align:center;">${{v>0?Math.round(v)+'%':''}}</div>
+      <div style="height:${{hw}}px;background:${{clr}};border-radius:3px 3px 0 0;width:100%;${{border}}"
+           title="${{h}}h — P95 využití: ${{v}}%"></div>
+      <div style="font-size:.58rem;color:#64748b;">${{h}}h</div>
+    </div>`;
+  }}).join('');
+
+  const b95note = mc.bankers_for_95!=null
+    ? (mc.bankers_for_95===mc.current_bankers
+        ? `✅ Současný počet bankéřů (${{fmt1(mc.current_bankers)}}) postačuje pro 95% pokrytí.`
+        : `Doporučení: <b>${{fmt1(mc.bankers_for_95)}} bankéřů</b> pro 95% pokrytí (nyní ${{fmt1(mc.current_bankers)}})`)
+    : `Ani s +3 bankéři nedosaženo 95 % pokrytí.`;
+
+  return`<div class="sec"><div class="st">🎲 Monte Carlo simulace průměrného dne (n=${{mc.n_iter}})</div>
+    <div class="grid3" style="margin-bottom:14px;">
+      <div class="card" style="background:${{covBg}};border-color:${{covClr}}30;">
+        <div class="cl">Pokrytí dne</div>
+        <div class="cv" style="color:${{covClr}};font-size:1.8rem;">${{cov}}%</div>
+        <div class="cs">dnů bez přetížení / ${{mc.n_iter}} simulací</div>
+      </div>
+      <div class="card"><div class="cl">P95 využití (špička)</div>
+        <div class="cv">${{fmt1(Math.max(...mc.p95_util))}}%</div>
+        <div class="cs">max. P95 využití v hodině</div></div>
+      <div class="card"><div class="cl">Staffing pro 95 %</div>
+        <div class="cv">${{mc.bankers_for_95!=null?fmt1(mc.bankers_for_95):'> +3'}}</div>
+        <div class="cs">bankéřů OB</div></div>
+    </div>
+
+    <div style="font-size:.76rem;color:#475569;margin-bottom:6px;font-weight:600;">
+      📊 Pravděpodobnost přetížení pobočky v dané hodině</div>
+    <div class="mcbar-wrap" style="height:90px;align-items:flex-end;">${{bars}}</div>
+    <div style="font-size:.68rem;color:#94a3b8;margin-bottom:14px;">
+      🔴 &gt;25%  🟡 10–25%  🔵 2–10%  <span style="color:#93c5fd;">■</span> &lt;2%  —
+      výška = P(přetížení) v dané hodině</div>
+
+    <div style="font-size:.76rem;color:#475569;margin-bottom:6px;font-weight:600;">
+      📈 P95 využití OB kapacity v dané hodině</div>
+    <div class="mcbar-wrap" style="height:90px;align-items:flex-end;">${{p95bars}}</div>
+    <div style="font-size:.68rem;color:#94a3b8;margin-bottom:14px;">
+      🔴 &gt;100 % (přetíženo)  🟡 80–100 %  🔵 &lt;80 % —
+      výška = 95. percentil využití za ${{mc.n_iter}} simulovaných dnů</div>
+
+    <div style="font-size:.75rem;color:#475569;padding:8px 12px;background:#f0f4ff;
+                border-radius:8px;">${{b95note}}</div>
+  </div>`;
 }}
 
 // ── Staff section ─────────────────────────────────────────────────────────────
-function staffSection(d) {{
-  if(!d.bankers&&!Object.keys(d.positions||{{}}).length) return '';
-  const posBadges=Object.entries(d.positions||{{}}).map(([lbl,cnt])=>
-    `<tr><td style="color:#475569;">${{lbl}}</td>
-     <td style="font-weight:700;color:#1d4ed8;text-align:right;">${{fmt1(cnt)}}</td></tr>`
+function staffSec(d){{
+  if(!d.bankers&&!Object.keys(d.positions||{{}}).length)return'';
+  const rows=Object.entries(d.positions||{{}}).map(([l,v])=>
+    `<tr><td style="color:#475569;">${{l}}</td>
+     <td style="font-weight:700;color:#1d4ed8;text-align:right;min-width:40px;">${{fmt1(v)}}</td></tr>`
   ).join('');
-  const svcNote=d.has_svc
+  const svcN=d.has_svc
     ?`<span class="badge" style="background:#dbeafe;color:#1d4ed8;">BKP Medior (servis)</span>`
-    :`<span class="badge" style="background:#fef9c3;color:#854d0e;">OB Junior (servis — fallback)</span>`;
-  return `<div class="sec"><div class="st">👤 Personální obsazení</div>
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
-      <div class="card" style="flex:0 0 auto;">
-        <div class="cl">Bankéři (OB j/m/s)</div>
+    :`<span class="badge" style="background:#fef9c3;color:#854d0e;">OB Junior — fallback servis</span>`;
+  return`<div class="sec"><div class="st">👤 Personální obsazení</div>
+    <div class="grid2" style="margin-bottom:10px;">
+      <div class="card"><div class="cl">Bankéři OB</div>
         <div class="cv" style="color:#1d4ed8;">${{fmt1(d.bankers)}}</div>
-        <div class="cs">osobní bankéř junior/medior/senior</div>
-      </div>
-      <div class="card" style="flex:0 0 auto;">
-        <div class="cl">Servisní bankéř</div>
-        <div class="cv" style="font-size:1rem;">${{svcNote}}</div>
-      </div>
+        <div class="cs">OB junior / medior / senior</div></div>
+      <div class="card"><div class="cl">Servisní bankéř</div>
+        <div style="margin-top:4px;">${{svcN}}</div>
+        ${{d.svc_fte>0?`<div class="cs">${{fmt1(d.svc_fte)}} FTE</div>`:''}}</div>
     </div>
-    ${{posBadges?`<table class="pos-t"><tbody>${{posBadges}}</tbody></table>`:''}}
+    ${{rows?`<table class="post"><tbody>${{rows}}</tbody></table>`:''}}
   </div>`;
 }}
 
-// ── Metrics cards ─────────────────────────────────────────────────────────────
-function metricsSection(d) {{
-  const por=d.portfolio_per_banker, mtg=d.mtgs_pb_day;
-  if(por==null&&mtg==null) return '';
-
-  let porCard='', mtgCard='';
-  if(por!=null) {{
-    const ok=por<=C.TARGET_PORTFOLIO;
-    const diff=Math.abs(por-C.TARGET_PORTFOLIO);
-    porCard=`<div class="card ${{ok?'ok-card':'warn-card'}}">
-      <div class="cl">Portfolio / bankéř</div>
-      <div class="cv" style="color:${{ok?'#15803d':'#b91c1c'}}">${{fmtI(por)}}</div>
-      <div class="cs">cíl ≤ ${{C.TARGET_PORTFOLIO}} · ${{ok
-        ?'✅ kapacita volná '+fmtI(diff)+' kl.'
-        :'⚠️ převyšuje o '+fmtI(diff)+' kl.'}}</div>
-    </div>`;
-  }}
-  if(mtg!=null) {{
-    const ok=mtg>=C.TARGET_MTGS_MIN&&mtg<=C.TARGET_MTGS_MAX;
-    const under=mtg<C.TARGET_MTGS_MIN;
-    mtgCard=`<div class="card ${{ok?'ok-card':''}}">
-      <div class="cl">Schůzky / bankéř / den</div>
-      <div class="cv" style="color:${{ok?'#15803d':under?'#64748b':'#b91c1c'}}">${{fmt1(mtg)}}</div>
-      <div class="cs">cíl ${{C.TARGET_MTGS_MIN}}–${{C.TARGET_MTGS_MAX}} · ${{ok
-        ?'✅ v normě':under
-        ?'⬇️ pod cílem':'⬆️ nad cílem'}}</div>
-    </div>`;
-  }}
+// ── Metrics ───────────────────────────────────────────────────────────────────
+function metricsSec(d){{
+  const por=d.portfolio_pb, mtg=d.mtgs_pb_day;
+  if(por==null&&mtg==null)return'';
+  const porCard=por!=null?`<div class="card ${{por<=C.TARGET_PORTFOLIO?'ok':'warn-c'}}">
+    <div class="cl">Portfolio / bankéř</div>
+    <div class="cv" style="color:${{por<=C.TARGET_PORTFOLIO?'#15803d':'#b91c1c'}}">${{fmtI(por)}}</div>
+    <div class="cs">cíl ≤${{C.TARGET_PORTFOLIO}} kl. · ${{por<=C.TARGET_PORTFOLIO
+      ?'✅ volná kap. '+(C.TARGET_PORTFOLIO-por)+' kl.'
+      :'⚠️ překračuje o '+(por-C.TARGET_PORTFOLIO)+' kl.'}}</div></div>`:'';
+  const mtgCard=mtg!=null?`<div class="card ${{mtg>=C.TARGET_MTGS_MIN&&mtg<=C.TARGET_MTGS_MAX?'ok':''}}">
+    <div class="cl">Schůzky / bankéř / den</div>
+    <div class="cv" style="color:${{mtg>=C.TARGET_MTGS_MIN&&mtg<=C.TARGET_MTGS_MAX?'#15803d':
+      mtg<C.TARGET_MTGS_MIN?'#64748b':'#b91c1c'}}">${{fmt1(mtg)}}</div>
+    <div class="cs">cíl ${{C.TARGET_MTGS_MIN}}–${{C.TARGET_MTGS_MAX}} · ${{
+      mtg>=C.TARGET_MTGS_MIN&&mtg<=C.TARGET_MTGS_MAX?'✅ v normě':
+      mtg<C.TARGET_MTGS_MIN?'⬇️ pod cílem':'⬆️ nad cílem'}}</div></div>`:'';
   return`<div class="grid2">${{porCard}}${{mtgCard}}</div>`;
 }}
 
 // ── Opening hours ─────────────────────────────────────────────────────────────
-function odSection(d) {{
-  if(!d.od_days||!d.od_days.length) return '';
-  const vBadge=d.is_vikend?`<span class="badge" style="background:#d97706;color:#fff;margin-bottom:8px;">🌅 Víkendová pobočka</span>`:'';
+function odSec(d){{
+  if(!d.od_days||!d.od_days.length)return'';
+  const vBadge=d.is_vikend?`<span class="badge" style="background:#d97706;color:#fff;margin-bottom:8px;
+    display:inline-block;">🌅 Víkendová pobočka</span><br>`:'';
   const rows=d.od_days.map(day=>day.closed
     ?`<tr class="${{day.wknd?'od-wknd':''}}">
        <td style="color:#cbd5e1;font-weight:600;">${{day.wknd?'🌅 ':''}}${{day.lbl}}</td>
        <td colspan="3" style="color:#cbd5e1;font-style:italic;text-align:center;">Zavřeno</td></tr>`
     :`<tr class="${{day.wknd?'od-wknd':''}}">
-       <td style="font-weight:600;color:${{day.wknd?'#d97706':'#334155'}};white-space:nowrap;">${{day.wknd?'🌅 ':''}}${{day.lbl}}</td>
+       <td style="font-weight:600;color:${{day.wknd?'#d97706':'#334155'}};white-space:nowrap;">
+         ${{day.wknd?'🌅 ':''}}${{day.lbl}}</td>
        <td style="color:#475569;text-align:center;">${{day.dop||'—'}}</td>
        <td style="color:#475569;text-align:center;">${{day.odp||'—'}}</td>
        <td style="font-weight:700;color:#2563eb;text-align:center;">${{day.tot?day.tot+'h':''}}</td></tr>`
   ).join('');
   return`<div class="sec"><div class="st">🕐 Otevírací doba</div>
     ${{vBadge}}
-    <table class="od-t">
+    <table class="odt">
       <thead><tr><th>Den</th><th>Dopoledne</th><th>Odpoledne</th><th>Celkem</th></tr></thead>
-      <tbody>${{rows}}</tbody>
-    </table>
-    ${{d.ph_tyden>0?`<div style="font-size:.78rem;color:#64748b;margin-top:8px;">
+      <tbody>${{rows}}</tbody></table>
+    ${{d.ph_tyden>0?`<div style="font-size:.76rem;color:#64748b;margin-top:7px;">
       Týdenní ot. hodiny: <b style="color:#2563eb;">${{d.ph_tyden}}h</b></div>`:''}}</div>`;
 }}
 
-// ── Main render ───────────────────────────────────────────────────────────────
-function render(id) {{
-  cur=id; const d=DATA[id]; const total=d.total;
-  const wdLen=d.is_vikend?7:5;
-  const wdLabels=WD.slice(0,wdLen);
+// ── Methodology ───────────────────────────────────────────────────────────────
+function methSec(d){{
+  const ob=fmt1(d.bankers), svc=d.has_svc?`BKP Medior (${{fmt1(d.svc_fte)}} FTE)`:'OB Junior (fallback)';
+  return`<div class="sec"><div class="st">📐 Metodika výpočtu</div>
+  <div class="meth">
+    <h4>Staffing použitý ve výpočtu</h4>
+    <ul>
+      <li><b>OB bankéři:</b> ${{ob}} FTE (osobní bankéř junior + medior + senior)</li>
+      <li><b>Servisní bankéř:</b> ${{svc}}</li>
+      <li><b>Pracovní kapacita:</b> ${{C.WORK_MINS_DAY/60}}h = ${{C.WORK_MINS_DAY}} min/den/bankéř</li>
+    </ul>
+    <h4>Konverze návštěv na čas</h4>
+    <ul>
+      <li><b>Online schůzka:</b> ${{C.MEETING_MINS}} min — bankéř plně obsazen, nemůže obsluhovat walk-iny</li>
+      <li><b>Fyzická schůzka:</b> ${{C.MEETING_MINS}} min — totéž</li>
+      <li><b>Bezhotovostní walkin:</b> ${{C.WALKIN_SHORT_PCT*100}}% × ${{C.WALKIN_SHORT_MINS}} min
+        + ${{C.WALKIN_LONG_PCT*100}}% × ${{C.WALKIN_LONG_MINS}} min = průměr ${{C.WALKIN_AVG_MINS}} min;
+        ${{C.WALKIN_CONVERT_PCT*100}}% se přemění na schůzku (${{C.MEETING_MINS}} min)</li>
+      <li><b>Hotovostní walkin:</b> nezahrnut do kapacitního výpočtu</li>
+    </ul>
+    <h4>Model 1 — reálná data</h4>
+    <ul>
+      <li>Vstup: skutečné roční počty návštěv z dat (${{fmtI(d.n_days)}} dnů)</li>
+      <li>Dostupné OB hodiny: ${{ob}} bankéřů × ${{fmtI(d.n_days)}} dnů × ${{C.WORK_MINS_DAY/60}}h
+        = ${{d.cap1?fmtH(d.cap1.avail_ob):'N/A'}}</li>
+    </ul>
+    <h4>Model 2 — klientský model</h4>
+    <ul>
+      <li>Vstup: ${{fmtI(d.poc_kli)}} klientů (ze zdrojů profitabilita/kpis)</li>
+      <li>Distribuce typů návštěv: poměr online/fyzické/bezhot. z reálných dat</li>
+      <li>Počítá se s ${{C.WORKING_DAYS}} pracovními dny ročně</li>
+      <li>Interpretace: každý klient = 1 návštěva/rok, rozdělená dle reálných poměrů</li>
+    </ul>
+    <h4>Monte Carlo simulace</h4>
+    <ul>
+      <li>${{C.MC_ITERATIONS}} simulací průměrného pracovního dne</li>
+      <li>Pro každou hodinu (6–21h): počet příchozích ~ Poisson(λ), kde λ = průměrný denní počet</li>
+      <li>Pokrytí: % simulací, kdy v žádné hodině nebyla překročena kapacita</li>
+      <li>P95: v 95 % simulovaných dnů bylo využití ≤ P95 hodnota</li>
+    </ul>
+  </div></div>`;
+}}
 
-  // KPI row
+// ── Main render ───────────────────────────────────────────────────────────────
+function render(id){{
+  cur=id; const d=DATA[id];
+  const wdLen=d.is_vikend?7:5, wdLabels=WD.slice(0,wdLen);
+
   const totCard=`<div class="card"><div class="cl">Celkem návštěv</div>
-    <div class="cv">${{fmtI(total)}}</div><div class="cs">rok 2025 · ${{d.n_days}} dnů</div></div>`;
+    <div class="cv">${{fmtI(d.total)}}</div><div class="cs">rok 2025 · ${{d.n_days}} dnů</div></div>`;
   const fteCard=d.fte!=null?`<div class="card"><div class="cl">FTE celkem</div>
     <div class="cv">${{fmt1(d.fte)}}</div><div class="cs">přepočtené úvazky</div></div>`:'';
+  const cliCard=d.poc_kli>0?`<div class="card"><div class="cl">Počet klientů</div>
+    <div class="cv">${{fmtI(d.poc_kli)}}</div><div class="cs">portfoliová data</div></div>`:'';
   const typeCards=TYPES.map(t=>{{
-    const v=d.by_type[t.key]||0, pct=total>0?(v/total*100).toFixed(1):'0.0';
+    const v=d.by_type[t.key]||0,pct=d.total>0?(v/d.total*100).toFixed(1):'0.0';
     return`<div class="card" style="border-color:${{t.color}}50;background:${{t.color}}0a;">
       <div class="cl" style="color:${{t.color}};">${{t.label}}</div>
       <div class="cv" style="color:${{t.color}};">${{fmtI(v)}}</div>
       <div class="cs">${{pct}} %</div></div>`;
   }}).join('');
 
-  // Charts
   const tArr=TYPES.map(t=>({{label:t.label,color:t.color,values:d.by_month[t.key]||Array(12).fill(0)}}));
   const wdArr=TYPES.map(t=>({{label:t.label,color:t.color,
     values:(d.by_weekday[t.key]||Array(7).fill(0)).slice(0,wdLen)}}));
-
   let hrSec='';
   if(d.has_time){{
-    const hrs=HM_HOURS;
+    const hrs=MCH;
     const hArr=TYPES.map(t=>({{label:t.label,color:t.color,
       values:hrs.map(h=>d.by_hour[t.key]?.[h]||0)}}));
-    hrSec=`<div class="sec"><div class="st">⏱️ Průměrný den — návštěv/hod (6–21h)</div>
-      <div class="bars" style="height:100px;">${{stackedBars(hrs.map(h=>h+'h'),hArr,90)}}</div>
+    hrSec=`<div class="sec"><div class="st">⏱️ Průměrný den — avg návštěv/hodinu (6–21h)</div>
+      <div class="bars" style="height:90px;">${{stackedBars(hrs.map(h=>h+'h'),hArr,80)}}</div>
       ${{legend()}}</div>`;
   }}
-
   const unkNote=d.unknown>0
-    ?`<div style="font-size:.72rem;color:#94a3b8;margin:4px 0 10px;">
+    ?`<div style="font-size:.7rem;color:#94a3b8;margin:3px 0 10px;">
        ${{fmtI(d.unknown)}} návštěv bez určeného typu</div>`:'';
   const wdNote=!d.is_vikend
-    ?`<div style="font-size:.7rem;color:#cbd5e1;margin-top:5px;">So/Ne skryty — nevíkendová pobočka</div>`:'';
+    ?`<div style="font-size:.68rem;color:#cbd5e1;margin-top:4px;">So/Ne skryty — nevíkendová pobočka</div>`:'';
 
   document.getElementById('mc').innerHTML=`
 <div style="font-size:1.05rem;font-weight:700;color:#1e3a8a;margin-bottom:12px;">
-  ${{d.name}} <span style="font-size:.78rem;font-weight:400;color:#94a3b8;">#${{id}}</span>
-</div>
-<div class="grid3">${{totCard}}${{fteCard}}${{typeCards}}</div>
+  ${{d.name}} <span style="font-size:.78rem;font-weight:400;color:#94a3b8;">#${{id}}</span></div>
+<div class="grid4">${{totCard}}${{fteCard}}${{cliCard}}${{typeCards}}</div>
 ${{unkNote}}
-${{metricsSection(d)}}
-${{staffSection(d)}}
-${{capSection(d)}}
+${{metricsSec(d)}}
+${{staffSec(d)}}
+${{capSec(d)}}
+${{mcSec(d)}}
 <div class="sec"><div class="st">📅 Návštěvy dle měsíce</div>
-  <div class="bars" style="height:120px;">${{stackedBars(MON,tArr,110)}}</div>
-  ${{legend()}}</div>
+  <div class="bars" style="height:110px;">${{stackedBars(MON,tArr,100)}}</div>${{legend()}}</div>
 <div class="sec"><div class="st">📆 Návštěvy dle dne v týdnu</div>
-  <div class="bars" style="height:110px;">${{stackedBars(wdLabels,wdArr,100)}}</div>
+  <div class="bars" style="height:100px;">${{stackedBars(wdLabels,wdArr,90)}}</div>
   ${{legend()}}${{wdNote}}</div>
 ${{hrSec}}
-${{heatmapHtml(d,d.is_vikend)}}
-${{odSection(d)}}
-`; }}
+${{heatmapSec(d)}}
+${{odSec(d)}}
+<details style="margin-bottom:14px;"><summary>📐 Metodika výpočtu (rozbalit)</summary>
+  ${{methSec(d)}}</details>
+`;}}
 </script>
 </body>
 </html>"""
@@ -797,17 +1007,20 @@ ${{odSection(d)}}
 
 _df_visits = load_visits()
 _kpis      = load_kpis()
+_prof_kli  = load_profitabilita()
 _spec      = load_specialiste()
 _od        = load_oteviraci()
 
-_visit_data, _order, _has_type = build_data(_df_visits, _kpis, _spec, _od)
+_visit_data, _order, _has_type = build_data(_df_visits, _kpis, _prof_kli, _spec, _od)
 _html = render_html(_visit_data, _order, _has_type)
 
 with open(OUTPUT_FILE, 'w', encoding='utf-8') as _f:
     _f.write(_html)
 
-_n_with_names = sum(1 for v in _visit_data.values() if not v['name'].startswith('Pobočka'))
+_n_names = sum(1 for v in _visit_data.values() if not v['name'].startswith('Pobočka'))
+_n_cap2  = sum(1 for v in _visit_data.values() if v.get('cap2') is not None)
+_n_mc    = sum(1 for v in _visit_data.values() if v.get('mc') is not None)
 print(f"\n✅ Report uložen: {OUTPUT_FILE}")
-print(f"   {len(_visit_data)} poboček · {_n_with_names} s názvem · "
-      f"{'typy ✓' if _has_type else 'typy ✗'} · "
-      f"spec={'✓' if _spec else '✗'} · od={'✓' if _od else '✗'}")
+print(f"   {len(_visit_data)} poboček · {_n_names} s názvem · "
+      f"Model 2: {_n_cap2} · Monte Carlo: {_n_mc} · "
+      f"typy={'✓' if _has_type else '✗'}")
