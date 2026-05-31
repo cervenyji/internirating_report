@@ -475,7 +475,7 @@ def main():
     data, order, has_type = build_data(df)
     html = render_html(data, order, has_type)
 
-    out_path = os.path.join(os.path.dirname(__file__) or '.', OUTPUT_FILE)
+    out_path = os.path.join(os.path.dirname(globals().get('__file__', '') or ''), OUTPUT_FILE) or OUTPUT_FILE
     with open(out_path, 'w', encoding='utf-8') as f:
         f.write(html)
     print(f"\n✅ Report uložen: {out_path}")
