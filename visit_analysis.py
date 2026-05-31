@@ -468,19 +468,14 @@ ${{hourSection}}
 </html>"""
 
 
-# ─── Entry point ───────────────────────────────────────────────────────────────
+# ─── Generování ────────────────────────────────────────────────────────────────
 
-def main():
-    df = load_visits()
-    data, order, has_type = build_data(df)
-    html = render_html(data, order, has_type)
+_df_visits            = load_visits()
+_visit_data, _order, _has_type = build_data(_df_visits)
+_html                 = render_html(_visit_data, _order, _has_type)
 
-    out_path = os.path.join(os.path.dirname(globals().get('__file__', '') or ''), OUTPUT_FILE) or OUTPUT_FILE
-    with open(out_path, 'w', encoding='utf-8') as f:
-        f.write(html)
-    print(f"\n✅ Report uložen: {out_path}")
-    print(f"   {len(data)} poboček, {'s' if has_type else 'bez'} rozlišením typu návštěvy")
+with open(OUTPUT_FILE, 'w', encoding='utf-8') as _f:
+    _f.write(_html)
 
-
-if __name__ == '__main__':
-    main()
+print(f"\n✅ Report uložen: {OUTPUT_FILE}")
+print(f"   {len(_visit_data)} poboček, {'s' if _has_type else 'bez'} rozlišením typu návštěvy")
