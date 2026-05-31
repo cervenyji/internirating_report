@@ -310,26 +310,32 @@ def load_kpis():
 
 
 def load_profitabilita():
-    """branch_id → pocet_klientu (from profitabilita xlsx)."""
-    out = {}
-    if not os.path.exists(PROF_PATH): print(f"⚠️  Profitabilita nenalezena"); return out
+    """branch_id → pocet_klientu; also returns branch_id → fte as second dict."""
+    poc_kli, fte_map = {}, {}
+    if not os.path.exists(PROF_PATH): print(f"⚠️  Profitabilita nenalezena"); return poc_kli, fte_map
     try:
         pf = pd.read_excel(PROF_PATH, header=2, usecols='A:AB')
         pf.columns = [_nc(c) for c in pf.columns]
         id_c  = next((c for c in ['ID_POBOCKY','BRANCH_CODE','ID'] if c in pf.columns), None)
         cli_c = next((c for c in ['POCET_KLIENTU','PRIMARNI_KLIENTI','AKTIVNI_KLIENTI']
                       if c in pf.columns), None)
-        if id_c and cli_c:
+        fte_c = next((c for c in ['FTE','CELKOVA_FTE','TOTAL_FTE'] if c in pf.columns), None)
+        if id_c:
             for _, row in pf.iterrows():
                 bid = pd.to_numeric(row[id_c], errors='coerce')
                 if pd.isna(bid): continue
-                v = pd.to_numeric(row[cli_c], errors='coerce')
-                if pd.notna(v) and v > 0:
-                    out[int(bid)] = int(v)
-        print(f"   Profitabilita: {len(out)} poboček · klienti={'✓' if cli_c else '✗'}")
+                bid = int(bid)
+                if cli_c:
+                    v = pd.to_numeric(row[cli_c], errors='coerce')
+                    if pd.notna(v) and v > 0: poc_kli[bid] = int(v)
+                if fte_c:
+                    f = pd.to_numeric(row[fte_c], errors='coerce')
+                    if pd.notna(f) and f > 0: fte_map[bid] = round(float(f), 1)
+        print(f"   Profitabilita: {len(poc_kli)} poboček · "
+              f"klienti={'✓' if cli_c else '✗'} · FTE={'✓' if fte_c else '✗'}")
     except Exception as e:
         print(f"⚠️  Profitabilita: {e}")
-    return out
+    return poc_kli, fte_map
 
 
 def load_specialiste():
@@ -359,12 +365,14 @@ def load_specialiste():
                 if v > 0:
                     lbl = POSITION_LABELS.get(c, c.replace('_',' ').title())
                     positions[lbl] = round(v, 1)
+            total_fte = sum(float(row.get(c, 0) or 0) for c in pos_cols)
             out[bid] = {
-                'name':     str(row[nm_c]) if nm_c and pd.notna(row.get(nm_c,'')) else None,
-                'bankers':  round(bankers, 1),
-                'svc_fte':  round(svc_fte, 1),
-                'has_svc':  svc_fte > 0,
+                'name':      str(row[nm_c]) if nm_c and pd.notna(row.get(nm_c,'')) else None,
+                'bankers':   round(bankers, 1),
+                'svc_fte':   round(svc_fte, 1),
+                'has_svc':   svc_fte > 0,
                 'positions': positions,
+                'total_fte': round(total_fte, 1),
             }
         print(f"   Specialisté: {len(out)} poboček")
     except Exception as e:
@@ -403,7 +411,7 @@ def load_oteviraci():
 
 # ─── Build data ────────────────────────────────────────────────────────────────
 
-def build_data(df, kpis, prof_kli, spec, od):
+def build_data(df, kpis, prof_kli, prof_fte, spec, od):
     bid_c  = next((c for c in ['BRANCH_ID','BRANCH_CODE','POBOCKA'] if c in df.columns), None)
     bname_c= next((c for c in ['BRANCH_NAME','POBOCKA_NAZEV'] if c in df.columns), None)
     att_c  = next((c for c in ['ATTENDANCE_TYPE','VISIT_TYPE','TYP_NAVSTEVY'] if c in df.columns), None)
@@ -488,7 +496,8 @@ def build_data(df, kpis, prof_kli, spec, od):
         svc_fte = float(s.get('svc_fte', 0) or 0)
         has_svc = bool(s.get('has_svc', False))
         positions = s.get('positions', {})
-        fte = k.get('fte')
+        # FTE priority: profitabilita xlsx → kpis pkl → specialiste total (fallback)
+        fte = prof_fte.get(bid) or k.get('fte') or s.get('total_fte')
 
         # Client count: profitabilita first, then kpis fallback
         poc_kli = prof_kli.get(bid) or k.get('pocet_klientu') or 0
@@ -1190,11 +1199,11 @@ ${{odSec(d)}}
 
 _df_visits = load_visits()
 _kpis      = load_kpis()
-_prof_kli  = load_profitabilita()
+_prof_kli, _prof_fte = load_profitabilita()
 _spec      = load_specialiste()
 _od        = load_oteviraci()
 
-_visit_data, _order, _has_type = build_data(_df_visits, _kpis, _prof_kli, _spec, _od)
+_visit_data, _order, _has_type = build_data(_df_visits, _kpis, _prof_kli, _prof_fte, _spec, _od)
 _visit_data = compute_benchmarks(_visit_data)
 _html = render_html(_visit_data, _order, _has_type)
 
