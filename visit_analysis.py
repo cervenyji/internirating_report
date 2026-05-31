@@ -12,7 +12,7 @@ Vstupy : ../in/tables/VISITS_2025.csv
 Výstup : report_navstevnost.html
 """
 
-import os, sys, json, unicodedata, re, subprocess
+import os, sys, json, math, unicodedata, re, subprocess
 import pandas as pd
 import numpy as np
 
@@ -66,6 +66,21 @@ WALKIN_CONVERT_PCT  = 0.10   # % walkinů přeroste ve schůzku 45 min
 WALKIN_AVG_MINS     = WALKIN_SHORT_PCT * WALKIN_SHORT_MINS + WALKIN_LONG_PCT * WALKIN_LONG_MINS  # = 18
 
 MC_ITERATIONS       = 1000   # počet Monte Carlo iterací
+
+# ─── Branch format thresholds (same logic as main script) ──────────────────────
+FORMAT_ORDER = ['flagship', 'medium', 'medium economy', 'small']
+FORMAT_LABEL_PY = {
+    'flagship':       'Flagship ≥25 FTE',
+    'medium':         'Střední 10–25 FTE',
+    'medium economy': 'Economy 5–10 FTE',
+    'small':          'Malá <5 FTE',
+}
+FORMAT_BG_PY = {
+    'flagship':       '#1e3a8a',
+    'medium':         '#2563eb',
+    'medium economy': '#7c3aed',
+    'small':          '#64748b',
+}
 
 # ─── Staff position keys (normalized) ──────────────────────────────────────────
 BANKER_COLS = {'OSOBNI_BANKER_-_JUNIOR', 'OSOBNI_BANKER_-_MEDIOR', 'OSOBNI_BANKER_-_SENIOR'}
@@ -222,6 +237,33 @@ def run_monte_carlo(by_hour, bankers, svc_fte, n_iter=MC_ITERATIONS, seed=42):
         'lam_online':      [round(lam[i, 0], 2) for i in range(len(MC_HOURS))],
         'lam_fyzicka':     [round(lam[i, 1], 2) for i in range(len(MC_HOURS))],
         'lam_bezhot':      [round(lam[i, 2], 2) for i in range(len(MC_HOURS))],
+    }
+
+
+# ─── Format & rooms ────────────────────────────────────────────────────────────
+
+def compute_format(fte):
+    if fte is None or fte <= 0: return None
+    if fte >= 25: return 'flagship'
+    if fte >= 10: return 'medium'
+    if fte >= 5:  return 'medium economy'
+    return 'small'
+
+def compute_rooms(mc):
+    """Recommend meeting rooms and service desks using P95 Poisson peak-hour estimate."""
+    if mc is None: return None
+    mtg_lam  = [mc['lam_online'][i] + mc['lam_fyzicka'][i] for i in range(len(MC_HOURS))]
+    peak_mtg = max(mtg_lam) if mtg_lam else 0
+    peak_beh = max(mc.get('lam_bezhot', [0])) if mc.get('lam_bezhot') else 0
+    def p95(lam): return lam + 1.645 * math.sqrt(lam) if lam > 0 else 0
+    pm = p95(peak_mtg); pb = p95(peak_beh)
+    return {
+        'meeting_rooms':   math.ceil(pm * 45 / 60) if pm > 0 else 0,
+        'service_desks':   math.ceil(pb * 18 / 60) if pb > 0 else 0,
+        'peak_mtg_lam':    round(peak_mtg, 2),
+        'p95_mtg':         round(pm, 1),
+        'peak_bezhot_lam': round(peak_beh, 2),
+        'p95_bezhot':      round(pb, 1),
     }
 
 
@@ -475,6 +517,9 @@ def build_data(df, kpis, prof_kli, spec, od):
         if has_time and has_date and bankers > 0:
             mc = run_monte_carlo(by_hour, bankers, svc_fte)
 
+        branch_format = compute_format(fte)
+        rooms         = compute_rooms(mc)
+
         result[str(bid)] = {
             'name':       name,
             'fte':        fte,
@@ -496,7 +541,9 @@ def build_data(df, kpis, prof_kli, spec, od):
             'mtgs_pb_day':  mtgs_pb_day,
             'cap1':       cap1,
             'cap2':       cap2,
-            'mc':         mc,
+            'mc':           mc,
+            'branch_format': branch_format,
+            'rooms':         rooms,
             'is_vikend':  o.get('is_vikend', False),
             'ph_tyden':   o.get('ph_tyden',  0.0),
             'od_days':    o.get('od_days',   []),
@@ -504,6 +551,50 @@ def build_data(df, kpis, prof_kli, spec, od):
 
     order = sorted(result.keys(), key=lambda x: result[x]['name'])
     return result, order, att_c is not None
+
+
+# ─── Benchmarks ────────────────────────────────────────────────────────────────
+
+def compute_benchmarks(result):
+    """Add benchmark comparisons (network + same-format medians) to each branch."""
+    def _med(vals):
+        vals = sorted(float(v) for v in vals if v is not None and not math.isnan(float(v)))
+        if not vals: return None
+        n = len(vals)
+        return round((vals[n//2-1]+vals[n//2])/2 if n%2==0 else vals[n//2], 1)
+
+    def _own(d):
+        tot = d['total']; nd = max(d['n_days'], 1); bt = d['by_type']
+        cap_util = d['cap1']['util_ob'] if d.get('cap1') else None
+        return {
+            'visits_pd':    round(tot / nd, 1),
+            'mtgs_pb_day':  d.get('mtgs_pb_day'),
+            'cap_util_ob':  cap_util,
+            'online_pct':   round(bt.get('online',   0) / max(tot, 1) * 100, 1),
+            'fyzicka_pct':  round(bt.get('fyzicka',  0) / max(tot, 1) * 100, 1),
+            'bezhot_pct':   round(bt.get('bezhot',   0) / max(tot, 1) * 100, 1),
+            'hotovost_pct': round(bt.get('hotovost', 0) / max(tot, 1) * 100, 1),
+        }
+
+    BKEYS = ['visits_pd', 'mtgs_pb_day', 'cap_util_ob',
+             'online_pct', 'fyzicka_pct', 'bezhot_pct', 'hotovost_pct']
+    own = {bid: _own(d) for bid, d in result.items()}
+    network = {k: _med([m[k] for m in own.values()]) for k in BKEYS}
+
+    fmt_groups = {}
+    for bid, d in result.items():
+        f = d.get('branch_format')
+        if f: fmt_groups.setdefault(f, []).append(bid)
+    fmt_medians = {f: {k: _med([own[bid][k] for bid in ids]) for k in BKEYS}
+                   for f, ids in fmt_groups.items()}
+
+    for bid, d in result.items():
+        d['benchmark'] = {
+            'own':     own[bid],
+            'network': network,
+            'format':  fmt_medians.get(d.get('branch_format')),
+        }
+    return result
 
 
 # ─── HTML ───────────────────────────────────────────────────────────────────────
@@ -941,6 +1032,95 @@ function methSec(d){{
   </div></div>`;
 }}
 
+// ── Format badge ─────────────────────────────────────────────────────────────
+function formatBadge(d){{
+  if(!d.branch_format)return'';
+  const FM={{'flagship':{{bg:'#1e3a8a',lbl:'Flagship ≥25 FTE'}},
+    'medium':{{bg:'#2563eb',lbl:'Střední 10–25 FTE'}},
+    'medium economy':{{bg:'#7c3aed',lbl:'Economy 5–10 FTE'}},
+    'small':{{bg:'#64748b',lbl:'Malá <5 FTE'}}}};
+  const f=FM[d.branch_format]||{{bg:'#94a3b8',lbl:d.branch_format}};
+  return`<span class="badge" style="background:${{f.bg}};color:#fff;font-size:.7rem;
+      vertical-align:middle;margin-left:6px;">${{f.lbl}}</span>`;
+}}
+
+// ── Rooms recommendation ──────────────────────────────────────────────────────
+function roomSec(d){{
+  if(!d.rooms)return'';
+  const r=d.rooms;
+  return`<div class="sec"><div class="st">🏢 Doporučení prostor</div>
+    <div class="grid2" style="margin-bottom:10px;">
+      <div class="card">
+        <div class="cl">Zasedací místnosti</div>
+        <div class="cv" style="color:#1d4ed8;">${{r.meeting_rooms}}</div>
+        <div class="cs">P95 špička: ${{fmt1(r.p95_mtg)}} schůzek/hod · peak λ ${{fmt1(r.peak_mtg_lam)}}</div>
+      </div>
+      <div class="card">
+        <div class="cl">Servisní místa</div>
+        <div class="cv" style="color:#0891b2;">${{r.service_desks}}</div>
+        <div class="cs">P95 špička: ${{fmt1(r.p95_bezhot)}} walkinů/hod · peak λ ${{fmt1(r.peak_bezhot_lam)}}</div>
+      </div>
+    </div>
+    <div style="font-size:.72rem;color:#64748b;padding:8px 12px;background:#f0f4ff;border-radius:8px;">
+      <b>Metodika:</b> místnosti = ⌈P95 schůzek/hod × 45&thinsp;min ÷ 60&thinsp;min⌉,
+      servis = ⌈P95 walkinů/hod × 18&thinsp;min ÷ 60&thinsp;min⌉ &nbsp;|&nbsp;
+      P95 ≈ λ + 1,645·√λ (Poissonovo 95. percentil v nejfrekventovanější hodině)
+    </div></div>`;
+}}
+
+// ── Benchmark ─────────────────────────────────────────────────────────────────
+function benchmarkSec(d){{
+  if(!d.benchmark)return'';
+  const bm=d.benchmark,own=bm.own,net=bm.network,fmtM=bm.format;
+  function bRow(lbl,key,unit,hiGood){{
+    const v=own[key],vn=net[key],vf=fmtM?fmtM[key]:null;
+    const f=x=>x!=null?fmt1(x)+(unit?' '+unit:''):'—';
+    function dir(a,b){{
+      if(a==null||b==null||hiGood==null)return'';
+      const diff=a-b;if(Math.abs(diff)<0.5)return'<span style="color:#94a3b8">≈</span>';
+      return(hiGood?diff>0:diff<0)?'<span style="color:#16a34a;font-size:.82em">▲</span>'
+                                  :'<span style="color:#dc2626;font-size:.82em">▼</span>';
+    }}
+    return`<tr>
+      <td style="color:#475569;font-size:.82rem;padding:5px 9px;border-bottom:1px solid #f0f4ff;">${{lbl}}</td>
+      <td style="font-weight:700;color:#1e3a8a;text-align:right;padding:5px 9px;border-bottom:1px solid #f0f4ff;">${{f(v)}}</td>
+      <td style="text-align:right;padding:5px 9px;font-size:.82rem;color:#475569;border-bottom:1px solid #f0f4ff;">
+        ${{f(vn)}} ${{dir(v,vn)}}</td>
+      <td style="text-align:right;padding:5px 9px;font-size:.82rem;color:#7c3aed;border-bottom:1px solid #f0f4ff;">
+        ${{vf!=null?f(vf)+' '+dir(v,vf):'—'}}</td></tr>`;
+  }}
+  const fmtLbl=d.branch_format?' ('+d.branch_format+')':'';
+  return`<div class="sec"><div class="st">📊 Benchmark — porovnání s mediánem sítě</div>
+    <table style="width:100%;border-collapse:collapse;">
+      <thead><tr>
+        <th style="text-align:left;font-size:.66rem;font-weight:700;text-transform:uppercase;
+            letter-spacing:.4px;color:#94a3b8;border-bottom:1.5px solid #dbeafe;
+            padding:4px 9px;">Metrika</th>
+        <th style="text-align:right;font-size:.66rem;font-weight:700;text-transform:uppercase;
+            letter-spacing:.4px;color:#1e3a8a;border-bottom:1.5px solid #dbeafe;
+            padding:4px 9px;">Tato pobočka</th>
+        <th style="text-align:right;font-size:.66rem;font-weight:700;text-transform:uppercase;
+            letter-spacing:.4px;color:#64748b;border-bottom:1.5px solid #dbeafe;
+            padding:4px 9px;">Síť (medián)</th>
+        <th style="text-align:right;font-size:.66rem;font-weight:700;text-transform:uppercase;
+            letter-spacing:.4px;color:#7c3aed;border-bottom:1.5px solid #dbeafe;
+            padding:4px 9px;">Formát${{fmtLbl}}</th>
+      </tr></thead>
+      <tbody>
+        ${{bRow('Návštěvy / den','visits_pd','',true)}}
+        ${{bRow('Schůzky / bankéř / den','mtgs_pb_day','',true)}}
+        ${{bRow('Kapacita OB','cap_util_ob','%',false)}}
+        ${{bRow('Online schůzky','online_pct','%',null)}}
+        ${{bRow('Fyzické schůzky','fyzicka_pct','%',null)}}
+        ${{bRow('Bezhot. walkin','bezhot_pct','%',null)}}
+        ${{bRow('Hotovostní walkin','hotovost_pct','%',null)}}
+      </tbody>
+    </table>
+    <div style="font-size:.67rem;color:#94a3b8;margin-top:6px;">
+      ▲ lepší než medián &nbsp;▼ horší &nbsp;≈ blízko mediánu (±0,5)
+    </div></div>`;
+}}
+
 // ── Main render ───────────────────────────────────────────────────────────────
 function render(id){{
   cur=id; const d=DATA[id];
@@ -980,13 +1160,16 @@ function render(id){{
 
   document.getElementById('mc').innerHTML=`
 <div style="font-size:1.05rem;font-weight:700;color:#1e3a8a;margin-bottom:12px;">
-  ${{d.name}} <span style="font-size:.78rem;font-weight:400;color:#94a3b8;">#${{id}}</span></div>
+  ${{d.name}} <span style="font-size:.78rem;font-weight:400;color:#94a3b8;">#${{id}}</span>
+  ${{formatBadge(d)}}</div>
 <div class="grid4">${{totCard}}${{fteCard}}${{cliCard}}${{typeCards}}</div>
 ${{unkNote}}
 ${{metricsSec(d)}}
 ${{staffSec(d)}}
+${{benchmarkSec(d)}}
 ${{capSec(d)}}
 ${{mcSec(d)}}
+${{roomSec(d)}}
 <div class="sec"><div class="st">📅 Návštěvy dle měsíce</div>
   <div class="bars" style="height:110px;">${{stackedBars(MON,tArr,100)}}</div>${{legend()}}</div>
 <div class="sec"><div class="st">📆 Návštěvy dle dne v týdnu</div>
@@ -1012,15 +1195,17 @@ _spec      = load_specialiste()
 _od        = load_oteviraci()
 
 _visit_data, _order, _has_type = build_data(_df_visits, _kpis, _prof_kli, _spec, _od)
+_visit_data = compute_benchmarks(_visit_data)
 _html = render_html(_visit_data, _order, _has_type)
 
 with open(OUTPUT_FILE, 'w', encoding='utf-8') as _f:
     _f.write(_html)
 
-_n_names = sum(1 for v in _visit_data.values() if not v['name'].startswith('Pobočka'))
-_n_cap2  = sum(1 for v in _visit_data.values() if v.get('cap2') is not None)
-_n_mc    = sum(1 for v in _visit_data.values() if v.get('mc') is not None)
+_n_names  = sum(1 for v in _visit_data.values() if not v['name'].startswith('Pobočka'))
+_n_cap2   = sum(1 for v in _visit_data.values() if v.get('cap2') is not None)
+_n_mc     = sum(1 for v in _visit_data.values() if v.get('mc') is not None)
+_n_fmt    = sum(1 for v in _visit_data.values() if v.get('branch_format'))
+_n_rooms  = sum(1 for v in _visit_data.values() if v.get('rooms'))
 print(f"\n✅ Report uložen: {OUTPUT_FILE}")
-print(f"   {len(_visit_data)} poboček · {_n_names} s názvem · "
-      f"Model 2: {_n_cap2} · Monte Carlo: {_n_mc} · "
-      f"typy={'✓' if _has_type else '✗'}")
+print(f"   {len(_visit_data)} poboček · {_n_names} s názvem · typy={'✓' if _has_type else '✗'}")
+print(f"   Formát: {_n_fmt} · MC: {_n_mc} · Místnosti: {_n_rooms} · Model 2: {_n_cap2}")
