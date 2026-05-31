@@ -15,8 +15,16 @@ import sys
 import json
 import unicodedata
 import re
+import subprocess
 import pandas as pd
 import numpy as np
+
+try:
+    import openpyxl
+except ImportError:
+    print("Instaluji openpyxl…")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl"])
+    import openpyxl
 
 # ─── Paths ─────────────────────────────────────────────────────────────────────
 VISITS_PATH = '../in/tables/VISITS_2025.csv'
