@@ -64,6 +64,7 @@ WALKIN_SHORT_PCT    = 0.80; WALKIN_SHORT_MINS = 15
 WALKIN_LONG_PCT     = 0.20; WALKIN_LONG_MINS  = 30
 WALKIN_CONVERT_PCT  = 0.10   # % walkinů přeroste ve schůzku 45 min
 WALKIN_AVG_MINS     = WALKIN_SHORT_PCT * WALKIN_SHORT_MINS + WALKIN_LONG_PCT * WALKIN_LONG_MINS  # = 18
+ABSENCE_RATE        = 0.229   # 22,9 % — nemoci, dovolená, školení (bankéři + BKP)
 
 MC_ITERATIONS       = 1000   # počet Monte Carlo iterací
 
@@ -126,8 +127,9 @@ def _od_closed(v): return v in ('00:00','0:00','','nan','None','0')
 def _cap_model(online, fyzicka, bezhot, bankers, svc_fte, n_days):
     """Annual capacity metrics dict for given visit counts and staffing."""
     if bankers <= 0: return None
-    avail_ob  = bankers * n_days * WORK_MINS_DAY
-    avail_svc = svc_fte * n_days * WORK_MINS_DAY
+    eff       = 1.0 - ABSENCE_RATE          # effective presence factor (0.771)
+    avail_ob  = bankers * n_days * WORK_MINS_DAY * eff
+    avail_svc = svc_fte * n_days * WORK_MINS_DAY * eff
 
     online_mins  = online   * MEETING_MINS
     fyzicka_mins = fyzicka  * MEETING_MINS
@@ -195,14 +197,16 @@ def run_monte_carlo(by_hour, bankers, svc_fte, n_iter=MC_ITERATIONS, seed=42):
                   WALKIN_CONVERT_PCT * MEETING_MINS * samples[:, :, 2])  # (n_iter, 16)
     svc_needed = WALKIN_AVG_MINS * samples[:, :, 2]   # (n_iter, 16)
 
+    eff = 1.0 - ABSENCE_RATE   # 0.771 — effective presence per hour
+
     if svc_fte <= 0:
         ob_needed = ob_needed + svc_needed   # OB-junior handles bezhot
         svc_overload = np.zeros((n_iter, len(MC_HOURS)), dtype=bool)
     else:
-        svc_overload = svc_needed > svc_fte * 60
+        svc_overload = svc_needed > svc_fte * 60 * eff
 
-    # Utilization of OB team at current bankers
-    ob_cap = bankers * 60.0
+    # Utilization of OB team at current bankers (absence-adjusted)
+    ob_cap = bankers * 60.0 * eff
     util   = ob_needed / ob_cap           # (n_iter, 16)   can be > 1 = overloaded
     ob_overload = ob_needed > ob_cap
     any_overload = ob_overload | svc_overload   # (n_iter, 16)
@@ -220,7 +224,7 @@ def run_monte_carlo(by_hour, bankers, svc_fte, n_iter=MC_ITERATIONS, seed=42):
     bankers_for_95 = None
     for extra in [0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]:
         b = bankers + extra
-        ov = (ob_needed > b * 60) | svc_overload
+        ov = (ob_needed > b * 60 * eff) | svc_overload
         cov = 1.0 - ov.any(axis=1).mean()
         if cov >= 0.95:
             bankers_for_95 = round(b, 1)
@@ -262,8 +266,10 @@ def compute_rooms(mc):
         'service_desks':   math.ceil(pb * 18 / 60) if pb > 0 else 0,
         'peak_mtg_lam':    round(peak_mtg, 2),
         'p95_mtg':         round(pm, 1),
+        'delta_mtg':       round(pm - peak_mtg, 1),   # bezpečnostní rezerva nad λ
         'peak_bezhot_lam': round(peak_beh, 2),
         'p95_bezhot':      round(pb, 1),
+        'delta_bezhot':    round(pb - peak_beh, 1),
     }
 
 
@@ -521,6 +527,22 @@ def build_data(df, kpis, prof_kli, prof_fte, spec, od):
             cap2  = _cap_model(poc_kli * r_on, poc_kli * r_fyz, poc_kli * r_beh,
                                bankers, svc_fte, WORKING_DAYS)
 
+        # Annual "1x per client" scenario: every client needs 1 meeting/year
+        annual_1x = None
+        if poc_kli > 0 and bankers > 0:
+            eff = 1.0 - ABSENCE_RATE
+            avail_ob_yr = bankers * WORKING_DAYS * WORK_MINS_DAY * eff
+            mins_needed = poc_kli * MEETING_MINS
+            annual_1x = {
+                'poc_kli':        poc_kli,
+                'mins_needed':    round(mins_needed),
+                'avail_ob':       round(avail_ob_yr),
+                'util_ob':        round(mins_needed / avail_ob_yr * 100, 1) if avail_ob_yr > 0 else 0,
+                'mtgs_pb_day':    round(poc_kli / bankers / WORKING_DAYS, 1),
+                'bankers':        round(bankers, 1),
+                'bankers_needed': round(mins_needed / (WORKING_DAYS * WORK_MINS_DAY * eff), 1),
+            }
+
         # Monte Carlo (only when hourly data is available)
         mc = None
         if has_time and has_date and bankers > 0:
@@ -550,6 +572,7 @@ def build_data(df, kpis, prof_kli, prof_fte, spec, od):
             'mtgs_pb_day':  mtgs_pb_day,
             'cap1':       cap1,
             'cap2':       cap2,
+            'annual_1x':  annual_1x,
             'mc':           mc,
             'branch_format': branch_format,
             'rooms':         rooms,
@@ -629,6 +652,7 @@ def render_html(data, order, has_type_col):
         'WORK_MINS_DAY':    WORK_MINS_DAY,
         'WORKING_DAYS':     WORKING_DAYS,
         'MC_ITERATIONS':    MC_ITERATIONS,
+        'ABSENCE_RATE':     ABSENCE_RATE,
     })
     no_type_warn = ('' if has_type_col else
         '<div class="warn">⚠️ Sloupec ATTENDANCE_TYPE nenalezen — typové grafy nejsou dostupné.</div>')
@@ -1007,7 +1031,10 @@ function methSec(d){{
     <ul>
       <li><b>OB bankéři:</b> ${{ob}} FTE (osobní bankéř junior + medior + senior)</li>
       <li><b>Servisní bankéř:</b> ${{svc}}</li>
-      <li><b>Pracovní kapacita:</b> ${{C.WORK_MINS_DAY/60}}h = ${{C.WORK_MINS_DAY}} min/den/bankéř</li>
+      <li><b>Nominální kapacita:</b> ${{C.WORK_MINS_DAY/60}}h = ${{C.WORK_MINS_DAY}} min/den/bankéř</li>
+      <li><b>Absence (nemoci, dovolená, školení):</b> ${{Math.round(C.ABSENCE_RATE*100)}}% → efektivní přítomnost
+        ${{Math.round((1-C.ABSENCE_RATE)*100)}}% → efektivní kapacita = ${{C.WORK_MINS_DAY}} × ${{(1-C.ABSENCE_RATE).toFixed(3)}}
+        = <b>${{Math.round(C.WORK_MINS_DAY*(1-C.ABSENCE_RATE))}} min/den/bankéř</b></li>
     </ul>
     <h4>Konverze návštěv na čas</h4>
     <ul>
@@ -1035,8 +1062,15 @@ function methSec(d){{
     <ul>
       <li>${{C.MC_ITERATIONS}} simulací průměrného pracovního dne</li>
       <li>Pro každou hodinu (6–21h): počet příchozích ~ Poisson(λ), kde λ = průměrný denní počet</li>
+      <li>Hodinová kapacita OB = počet bankéřů × 60 min × ${{(1-C.ABSENCE_RATE).toFixed(3)}} (efektivní přítomnost)</li>
       <li>Pokrytí: % simulací, kdy v žádné hodině nebyla překročena kapacita</li>
       <li>P95: v 95 % simulovaných dnů bylo využití ≤ P95 hodnota</li>
+    </ul>
+    <h4>Scénář 1× ročně s každým klientem</h4>
+    <ul>
+      <li>Každý klient portfolia = 1 schůzka × ${{C.MEETING_MINS}} min ročně</li>
+      <li>Dostupné OB hodiny = bankéři × ${{C.WORKING_DAYS}} dnů × ${{C.WORK_MINS_DAY}} min × ${{(1-C.ABSENCE_RATE).toFixed(3)}}</li>
+      <li>Potřební bankéři = (klienti × ${{C.MEETING_MINS}} min) ÷ (${{C.WORKING_DAYS}} × ${{C.WORK_MINS_DAY}} × ${{(1-C.ABSENCE_RATE).toFixed(3)}})</li>
     </ul>
   </div></div>`;
 }}
@@ -1057,24 +1091,76 @@ function formatBadge(d){{
 function roomSec(d){{
   if(!d.rooms)return'';
   const r=d.rooms;
+  // λ = průměr příchodů v nejfrekventovanější hodině (z MC dat)
+  // P95 = λ + 1,645·√λ  (95. percentil Poissonova rozdělení)
+  // Δ   = P95 − λ        (bezpečnostní rezerva nad průměrem, pokrývá poptávkové špičky)
+  const mtgNote=r.peak_mtg_lam>0
+    ?`λ = ${{fmt1(r.peak_mtg_lam)}}/hod → P95 = ${{fmt1(r.p95_mtg)}} (+Δ ${{fmt1(r.delta_mtg)}}) → ⌈${{fmt1(r.p95_mtg)}}×45/60⌉`:'';
+  const behNote=r.peak_bezhot_lam>0
+    ?`λ = ${{fmt1(r.peak_bezhot_lam)}}/hod → P95 = ${{fmt1(r.p95_bezhot)}} (+Δ ${{fmt1(r.delta_bezhot)}}) → ⌈${{fmt1(r.p95_bezhot)}}×18/60⌉`:'';
   return`<div class="sec"><div class="st">🏢 Doporučení prostor</div>
     <div class="grid2" style="margin-bottom:10px;">
       <div class="card">
         <div class="cl">Zasedací místnosti</div>
         <div class="cv" style="color:#1d4ed8;">${{r.meeting_rooms}}</div>
-        <div class="cs">P95 špička: ${{fmt1(r.p95_mtg)}} schůzek/hod · peak λ ${{fmt1(r.peak_mtg_lam)}}</div>
+        <div class="cs" style="font-size:.68rem;">${{mtgNote}}</div>
       </div>
       <div class="card">
         <div class="cl">Servisní místa</div>
         <div class="cv" style="color:#0891b2;">${{r.service_desks}}</div>
-        <div class="cs">P95 špička: ${{fmt1(r.p95_bezhot)}} walkinů/hod · peak λ ${{fmt1(r.peak_bezhot_lam)}}</div>
+        <div class="cs" style="font-size:.68rem;">${{behNote}}</div>
       </div>
     </div>
-    <div style="font-size:.72rem;color:#64748b;padding:8px 12px;background:#f0f4ff;border-radius:8px;">
-      <b>Metodika:</b> místnosti = ⌈P95 schůzek/hod × 45&thinsp;min ÷ 60&thinsp;min⌉,
-      servis = ⌈P95 walkinů/hod × 18&thinsp;min ÷ 60&thinsp;min⌉ &nbsp;|&nbsp;
-      P95 ≈ λ + 1,645·√λ (Poissonovo 95. percentil v nejfrekventovanější hodině)
+    <div style="font-size:.72rem;color:#64748b;padding:10px 12px;background:#f0f4ff;border-radius:8px;line-height:1.6;">
+      <b>Jak číst výpočet:</b><br>
+      <b>λ</b> (lambda) = průměrný počet příchodů v <i>nejfrekventovanější</i> hodině dne (z Monte Carlo dat).<br>
+      <b>P95</b> = λ + 1,645·√λ — 95. percentil Poissonova rozdělení. V 95 % dnů přijde nejvýše P95 klientů za tuto hodinu.<br>
+      <b>Δ = P95 − λ</b> = bezpečnostní rezerva nad průměrem (pokrývá náhodné špičky v poptávce).<br>
+      <b>Místnosti</b> = ⌈P95 × 45 min ÷ 60 min⌉ — kolik místností musí být souběžně dostupných.<br>
+      <b>Servisní místa</b> = ⌈P95 × 18 min ÷ 60 min⌉ — analogicky pro bezhot. walkin.
     </div></div>`;
+}}
+
+// ── Annual 1× per client ──────────────────────────────────────────────────────
+function annualMtgSec(d){{
+  if(!d.annual_1x)return'';
+  const a=d.annual_1x, eff=1-C.ABSENCE_RATE;
+  const clr=a.util_ob<70?'#2563eb':a.util_ob<90?'#f59e0b':'#ef4444';
+  const bg =a.util_ob<70?'#dbeafe':a.util_ob<90?'#fef3c7':'#fee2e2';
+  const ico=a.util_ob<70?'✅':a.util_ob<90?'⚠️':'🔴';
+  const suffix=a.util_ob<70?'kapacita postačuje':a.util_ob<90?'blíží se limitu':'přetíženo';
+  return`<div class="sec">
+    <div class="st">📋 Scénář — 1 schůzka ročně s každým klientem</div>
+    <div style="font-size:.78rem;color:#475569;margin-bottom:10px;">
+      Pokud by se každý z <b>${{fmtI(a.poc_kli)}}</b> klientů setkal s bankéřem právě 1× ročně
+      na ${{C.MEETING_MINS}}&thinsp;min, jakou kapacitu OB týmu by to vyžadovalo?
+    </div>
+    <div class="grid3" style="margin-bottom:12px;">
+      <div class="card">
+        <div class="cl">Schůzky / bankéř / den</div>
+        <div class="cv" style="color:${{a.mtgs_pb_day>=C.TARGET_MTGS_MIN&&a.mtgs_pb_day<=C.TARGET_MTGS_MAX?'#15803d':a.mtgs_pb_day>C.TARGET_MTGS_MAX?'#b91c1c':'#64748b'}};">${{fmt1(a.mtgs_pb_day)}}</div>
+        <div class="cs">cíl ${{C.TARGET_MTGS_MIN}}–${{C.TARGET_MTGS_MAX}}/den · ${{C.WORKING_DAYS}} prac. dnů</div>
+      </div>
+      <div class="card">
+        <div class="cl">Potřebný čas OB</div>
+        <div class="cv">${{fmtH(a.mins_needed)}}</div>
+        <div class="cs">${{fmtI(a.poc_kli)}} kl. × ${{C.MEETING_MINS}} min</div>
+      </div>
+      <div class="card">
+        <div class="cl">Bankéři potřební</div>
+        <div class="cv" style="color:${{a.bankers_needed<=a.bankers?'#15803d':'#b91c1c'}};">${{fmt1(a.bankers_needed)}}</div>
+        <div class="cs">k dispozici ${{fmt1(a.bankers)}} · efekt. přítomnost ${{Math.round(eff*100)}}%</div>
+      </div>
+    </div>
+    <div style="margin-bottom:6px;font-size:.7rem;color:#64748b;">Využití OB kapacity pro 1×/rok scénář</div>
+    <div class="cbwrap" style="background:${{bg}};">
+      <div class="cbfill" style="width:${{Math.min(a.util_ob,100)}}%;background:${{clr}};">${{a.util_ob.toFixed(1)}}%</div>
+    </div>
+    <div style="font-size:.67rem;color:#94a3b8;text-align:right;margin-top:2px;">
+      ${{ico}} ${{suffix}} &nbsp;·&nbsp; dostupné OB hodiny: ${{fmtH(a.avail_ob)}}
+      (s ${{Math.round(C.ABSENCE_RATE*100)}}% absencí)
+    </div>
+  </div>`;
 }}
 
 // ── Benchmark ─────────────────────────────────────────────────────────────────
@@ -1177,6 +1263,7 @@ ${{metricsSec(d)}}
 ${{staffSec(d)}}
 ${{benchmarkSec(d)}}
 ${{capSec(d)}}
+${{annualMtgSec(d)}}
 ${{mcSec(d)}}
 ${{roomSec(d)}}
 <div class="sec"><div class="st">📅 Návštěvy dle měsíce</div>
