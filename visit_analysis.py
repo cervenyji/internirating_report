@@ -771,6 +771,11 @@ details summary{{cursor:pointer;font-size:.76rem;font-weight:700;color:#2563eb;p
 .v-card{{border:1.5px solid #1e3a8a;border-radius:14px;overflow:hidden;margin-bottom:14px;}}
 .v-title{{background:#1e3a8a;color:#fff;padding:10px 16px;font-size:.8rem;font-weight:700;}}
 .v-body{{padding:14px;}}
+/* Capacity gauge ring */
+.cap-ring{{width:76px;height:76px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}}
+.cap-ring-in{{width:52px;height:52px;border-radius:50%;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1;}}
+.cap-gauge-row{{display:flex;align-items:flex-start;gap:14px;margin-bottom:10px;}}
+.cap-gauge-meta{{flex:1;min-width:0;}}
 </style>
 </head>
 <body>
@@ -1094,100 +1099,144 @@ function mixSec(d){{
   </div>`;
 }}
 
-// ── Kapacitní modely (Models 1–4) ─────────────────────────────────────────────
-function model1Sec(d){{
-  if(!d.cap1||!d.bankers)return'';
-  const cap=d.cap1,b=d.bankers,nd=d.n_days,eff=1-C.ABSENCE_RATE;
-  const effM=C.WORK_MINS_DAY*eff;
-  const o_pd=(d.by_type?.online||0)/b/nd, f_pd=(d.by_type?.fyzicka||0)/b/nd;
-  const beh_pd=(d.by_type?.bezhot||0)/b/nd;
-  const oM=o_pd*45,fM=f_pd*45;
-  const bConvM=beh_pd*C.WALKIN_CONVERT_PCT*45;
-  const bSvcM=d.has_svc?0:beh_pd*C.WALKIN_AVG_MINS;
-  const usedM=oM+fM+bConvM+bSvcM;
-  const freeM=Math.max(effM-usedM,0);
+// ── Shared capacity panel (Models 1 & 2) ──────────────────────────────────────
+function _capPanel(cap,nd,b,has_svc,title,subtitle){{
+  const eff=1-C.ABSENCE_RATE,effM=C.WORK_MINS_DAY*eff;
+  const oM=cap.online_mins/b/nd,fM=cap.fyzicka_mins/b/nd;
+  const bCnv=cap.bezhot_conv/b/nd,bSvc=has_svc?0:cap.bezhot_base/b/nd;
+  const usedM=oM+fM+bCnv+bSvc,freeM=Math.max(effM-usedM,0);
   const segs=[
-    {{m:oM,bg:'#1d4ed8',clr:'#fff',lbl:'Online'}},
-    {{m:fM,bg:'#3b82f6',clr:'#fff',lbl:'Fyzické'}},
-    {{m:bConvM,bg:'#7dd3fc',clr:'#1e3a8a',lbl:'WI→mtg'}},
-    {{m:bSvcM,bg:'#bae6fd',clr:'#1e3a8a',lbl:'WI servis'}},
+    {{m:oM,   bg:'#1d4ed8',clr:'#fff',   lbl:'Online'}},
+    {{m:fM,   bg:'#3b82f6',clr:'#fff',   lbl:'Fyzické'}},
+    {{m:bCnv, bg:'#7dd3fc',clr:'#1e3a8a',lbl:'WI→mtg'}},
+    {{m:bSvc, bg:'#bae6fd',clr:'#1e3a8a',lbl:'WI servis'}},
     {{m:freeM,bg:'#e2e8f0',clr:'#64748b',lbl:'Volný čas'}},
   ].filter(s=>s.m>=1);
   const dayBar=segs.map(s=>{{
-    const w=(s.m/effM*100).toFixed(1);
-    const lbl=s.m>18?`${{Math.round(s.m)}}m`:'';
+    const w=(s.m/effM*100).toFixed(1),lbl=s.m>18?`${{Math.round(s.m)}}m`:'';
     return`<div class="daybar-seg" style="width:${{w}}%;background:${{s.bg}};color:${{s.clr}};"
-      title="${{s.lbl}}: ${{Math.round(s.m)}} min (${{w}})%">${{lbl}}</div>`;
+      title="${{s.lbl}}: ${{Math.round(s.m)}} min (${{w}}%)">${{lbl}}</div>`;
   }}).join('');
-  const legItems=segs.map(s=>`<span style="font-size:.67rem;display:inline-flex;align-items:center;gap:3px;margin-right:8px;">
-    <span style="width:8px;height:8px;background:${{s.bg}};border-radius:2px;display:inline-block;border:1px solid #ddd;flex-shrink:0;"></span>
+  const legItems=segs.map(s=>`<span style="font-size:.66rem;display:inline-flex;align-items:center;gap:3px;margin-right:8px;">
+    <span style="width:8px;height:8px;background:${{s.bg}};border-radius:2px;display:inline-block;flex-shrink:0;"></span>
     ${{s.lbl}} ${{Math.round(s.m)}}m</span>`).join('');
-  const mtgTot=o_pd+f_pd;
+  const util=cap.util_ob;
+  const utilClr=util<70?'#2563eb':util<90?'#f59e0b':'#ef4444';
+  const utilBg =util<70?'#dbeafe':util<90?'#fef3c7':'#fee2e2';
+  const statusTxt=util<70?'✅ kapacita OK':util<90?'⚠️ blíží se limitu':'🔴 přetíženo';
+  const deg=(Math.min(util,100)*3.6).toFixed(0);
+  const ringStyle=`background:conic-gradient(${{utilClr}} ${{deg}}deg,${{utilBg}} ${{deg}}deg)`;
+  const mtgTot=(cap.online_mins+cap.fyzicka_mins)/b/nd/C.MEETING_MINS;
   const mtgClr=mtgTot>=C.TARGET_MTGS_MIN&&mtgTot<=C.TARGET_MTGS_MAX?'#16a34a':mtgTot<C.TARGET_MTGS_MIN?'#64748b':'#dc2626';
-  const utilClr=cap.util_ob<70?'#2563eb':cap.util_ob<90?'#f59e0b':'#ef4444';
   return`<div class="kap-model">
-    <div class="kap-model-hd">Model 1 — Reálná data</div>
-    <div style="font-size:.72rem;color:#64748b;margin-bottom:6px;">
-      Skutečné návštěvy za ${{fmtI(nd)}} dnů · průměrný den pro 1 bankéře
-      (eff. kapacita ${{Math.round(effM)}} min = ${{C.WORK_MINS_DAY}} min × ${{Math.round(eff*100)}}%)
+    <div class="kap-model-hd">${{title}}</div>
+    <div style="font-size:.72rem;color:#64748b;margin-bottom:10px;">${{subtitle}}</div>
+    <div class="cap-gauge-row">
+      <div class="cap-ring" style="${{ringStyle}}">
+        <div class="cap-ring-in">
+          <span style="font-size:.88rem;font-weight:800;color:${{utilClr}};">${{util.toFixed(0)}}%</span>
+          <span style="font-size:.48rem;color:#64748b;line-height:1.2;text-align:center;">OB<br>kapc.</span>
+        </div>
+      </div>
+      <div class="cap-gauge-meta">
+        <div style="font-size:.67rem;color:#64748b;margin-bottom:3px;">
+          Průměrný den / 1 bankéř — efekt. kapacita ${{Math.round(effM)}} min
+          (${{C.WORK_MINS_DAY}}min × ${{Math.round(eff*100)}}%)
+        </div>
+        <div class="daybar">${{dayBar}}</div>
+        <div style="margin-top:3px;line-height:1.8;">${{legItems}}</div>
+      </div>
     </div>
-    <div class="daybar">${{dayBar}}</div>
-    <div style="margin-bottom:10px;">${{legItems}}</div>
-    <div class="grid3">
+    <div class="grid3" style="margin-top:8px;">
       <div class="card">
         <div class="cl">Schůzky / bankéř / den</div>
         <div class="cv" style="color:${{mtgClr}};">${{fmt1(mtgTot)}}</div>
-        <div class="cs">cíl ${{C.TARGET_MTGS_MIN}}–${{C.TARGET_MTGS_MAX}} · on: ${{fmt1(o_pd)}} fyz: ${{fmt1(f_pd)}}</div>
+        <div class="cs">cíl ${{C.TARGET_MTGS_MIN}}–${{C.TARGET_MTGS_MAX}} · on ${{fmt1(oM/C.MEETING_MINS)}} fyz ${{fmt1(fM/C.MEETING_MINS)}}</div>
       </div>
       <div class="card">
         <div class="cl">Obsazenost OB</div>
-        <div class="cv" style="color:${{utilClr}};">${{cap.util_ob.toFixed(1)}}%</div>
-        <div class="cs">${{cap.util_ob<70?'✅ kapacita OK':cap.util_ob<90?'⚠️ blíží se limitu':'🔴 přetíženo'}}</div>
+        <div class="cv" style="color:${{utilClr}};">${{util.toFixed(1)}}%</div>
+        <div class="cs">${{statusTxt}}</div>
       </div>
       <div class="card">
-        <div class="cl">Dostupné OB hod./rok</div>
+        <div class="cl">Dostupné OB / rok</div>
         <div class="cv">${{fmtH(cap.avail_ob)}}</div>
-        <div class="cs">${{fmt1(b)}} bank. × ${{nd}} dnů × ${{Math.round(eff*100)}}%</div>
+        <div class="cs">${{fmt1(b)}} bank. × ${{fmtI(nd)}}d × ${{Math.round(eff*100)}}%</div>
       </div>
     </div>
-    ${{cap.util_svc!=null?`<div style="margin-top:8px;">${{capBar(cap.util_svc,'BKP Medior — servisní kapacita')}}</div>`:''}}
+    ${{cap.util_svc!=null?`<div style="margin-top:6px;">${{capBar(cap.util_svc,'BKP Medior — servisní kapacita')}}</div>`:''}}
   </div>`;
+}}
+
+// ── Kapacitní modely (Models 1–4) ─────────────────────────────────────────────
+function model1Sec(d){{
+  if(!d.cap1||!d.bankers)return'';
+  return _capPanel(d.cap1,d.n_days,d.bankers,d.has_svc,
+    'Model 1 — Reálná data',
+    `Skutečné návštěvy za ${{fmtI(d.n_days)}} dnů · ${{fmtI(d.total)}} celkem`);
 }}
 
 function model2Sec(d){{
   if(!d.cap2)return d.poc_kli===0
     ?`<div class="kap-model"><div class="kap-model-hd">Model 2 — Klientský model</div>
-       <div style="font-size:.78rem;color:#94a3b8;">⚠️ Data o počtu klientů nejsou dostupná.</div></div>`:'' ;
-  const cap=d.cap2,aod=d.annual_open_days||252;
-  return`<div class="kap-model">
-    <div class="kap-model-hd">Model 2 — Klientský model</div>
-    <div style="font-size:.72rem;color:#64748b;margin-bottom:10px;">
-      ${{fmtI(d.poc_kli)}} klientů · ${{fmtI(aod)}} otevřených dnů/rok · distribuce typů z reálných dat
-    </div>
-    ${{capBar(cap.util_ob,'OB tým — schůzky + online + konverze walkin')}}
-    ${{cap.util_svc!=null?capBar(cap.util_svc,'BKP Medior — servisní kapacita'):''}}
-    <div style="display:flex;flex-wrap:wrap;gap:10px;font-size:.7rem;color:#64748b;margin-top:8px;">
-      <span>⏱️ OB dostupné: <b>${{fmtH(cap.avail_ob)}}</b></span>
-      <span>🔵 Online: <b>${{fmtH(cap.online_mins)}}</b></span>
-      <span>🤝 Fyzické: <b>${{fmtH(cap.fyzicka_mins)}}</b></span>
-      <span>🚶 Walkin: <b>${{fmtH(cap.bezhot_base)}}</b></span>
-      <span>🔄 WI→mtg: <b>${{fmtH(cap.bezhot_conv)}}</b></span>
-    </div>
-  </div>`;
+       <div style="font-size:.78rem;color:#94a3b8;">⚠️ Data o počtu klientů nejsou dostupná.</div></div>`:'';
+  const aod=d.annual_open_days||252;
+  return _capPanel(d.cap2,aod,d.cap2.bankers,d.has_svc,
+    'Model 2 — Klientský model',
+    `${{fmtI(d.poc_kli)}} klientů · ${{fmtI(aod)}} otevřených dnů/rok · typy návštěv z reálných dat`);
 }}
 
 function model3Sec(d){{
   if(!d.annual_1x)return'';
   const a=d.annual_1x,eff=1-C.ABSENCE_RATE;
   const clr=a.util_ob<70?'#2563eb':a.util_ob<90?'#f59e0b':'#ef4444';
+  const bg =a.util_ob<70?'#dbeafe':a.util_ob<90?'#fef3c7':'#fee2e2';
   const mtgClr=a.mtgs_pb_day>=C.TARGET_MTGS_MIN&&a.mtgs_pb_day<=C.TARGET_MTGS_MAX?'#15803d':a.mtgs_pb_day>C.TARGET_MTGS_MAX?'#b91c1c':'#64748b';
+  const ok=a.bankers_needed<=a.bankers;
+  const maxB=Math.max(a.bankers,a.bankers_needed)*1.1;
+  const availW=(a.bankers/maxB*100).toFixed(1);
+  const neededW=(a.bankers_needed/maxB*100).toFixed(1);
+  const deg=(Math.min(a.util_ob,100)*3.6).toFixed(0);
+  const ringStyle=`background:conic-gradient(${{clr}} ${{deg}}deg,${{bg}} ${{deg}}deg)`;
   return`<div class="kap-model">
     <div class="kap-model-hd">Model 3 — Scénář: 1× ročně s každým klientem</div>
     <div style="font-size:.72rem;color:#64748b;margin-bottom:10px;">
       Každý z ${{fmtI(a.poc_kli)}} klientů × 1 schůzka × ${{C.MEETING_MINS}} min ročně
       · ${{fmtI(a.open_days||C.WORKING_DAYS)}} otevřených dnů/rok
     </div>
-    <div class="grid3">
+    <div class="cap-gauge-row">
+      <div class="cap-ring" style="${{ringStyle}}">
+        <div class="cap-ring-in">
+          <span style="font-size:.88rem;font-weight:800;color:${{clr}};">${{a.util_ob.toFixed(0)}}%</span>
+          <span style="font-size:.48rem;color:#64748b;line-height:1.2;text-align:center;">OB<br>kapc.</span>
+        </div>
+      </div>
+      <div class="cap-gauge-meta">
+        <div style="font-size:.67rem;font-weight:700;color:#475569;margin-bottom:6px;">Bankéři: potřeba vs. dostupnost</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+          <div style="font-size:.65rem;color:#475569;width:68px;flex-shrink:0;">Dostupní</div>
+          <div style="flex:1;height:18px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
+            <div style="height:100%;width:${{availW}}%;background:#2563eb;border-radius:4px;
+                 display:flex;align-items:center;justify-content:flex-end;padding-right:4px;">
+              <span style="font-size:.65rem;font-weight:700;color:#fff;">${{fmt1(a.bankers)}}</span>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="font-size:.65rem;color:#475569;width:68px;flex-shrink:0;">Potřeba</div>
+          <div style="flex:1;height:18px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
+            <div style="height:100%;width:${{neededW}}%;background:${{ok?'#16a34a':'#dc2626'}};border-radius:4px;
+                 display:flex;align-items:center;justify-content:flex-end;padding-right:4px;">
+              <span style="font-size:.65rem;font-weight:700;color:#fff;">${{fmt1(a.bankers_needed)}}</span>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:.68rem;font-weight:700;color:${{ok?'#16a34a':'#dc2626'}};margin-top:5px;">
+          ${{ok?'✅ Aktuální tým kapacitu zvládne':`⚠️ Chybí ${{fmt1(a.bankers_needed-a.bankers)}} bankéřů`}}
+        </div>
+      </div>
+    </div>
+    <div class="grid3" style="margin-top:10px;">
       <div class="card">
         <div class="cl">Schůzky / bankéř / den</div>
         <div class="cv" style="color:${{mtgClr}};">${{fmt1(a.mtgs_pb_day)}}</div>
@@ -1195,16 +1244,15 @@ function model3Sec(d){{
       </div>
       <div class="card">
         <div class="cl">Bankéři potřební</div>
-        <div class="cv" style="color:${{a.bankers_needed<=a.bankers?'#15803d':'#b91c1c'}};">${{fmt1(a.bankers_needed)}}</div>
+        <div class="cv" style="color:${{ok?'#15803d':'#b91c1c'}};">${{fmt1(a.bankers_needed)}}</div>
         <div class="cs">k disp. ${{fmt1(a.bankers)}} · efekt. ${{Math.round(eff*100)}}%</div>
       </div>
       <div class="card">
         <div class="cl">Utilizace OB</div>
         <div class="cv" style="color:${{clr}};">${{a.util_ob.toFixed(1)}}%</div>
-        <div class="cs">${{fmtH(a.mins_needed)}} vs. ${{fmtH(a.avail_ob)}} dostupné</div>
+        <div class="cs">${{fmtH(a.mins_needed)}} vs. ${{fmtH(a.avail_ob)}}</div>
       </div>
     </div>
-    ${{capBar(a.util_ob,'Využití OB kapacity pro 1×/rok scénář')}}
   </div>`;
 }}
 
