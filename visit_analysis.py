@@ -28,6 +28,7 @@ KPIS_PATH    = 'kpis_grouped_2026.pkl'
 SPEC_PATH    = 'export_specialiste.pkl'
 PROF_PATH    = '../vypocet_ir_2026/zdroje/Pobockova_profitabilita_4Q2025.xlsx'
 OD_PATH      = '../vypocet_ir_2026/zdroje/report_od_pobocky_dbs_04_2026.xlsx'
+SALES_PATH   = '../in/tables/VYNOSY_NOVYCH_OBCHODU_BASED_ON_LTV.csv'
 OUTPUT_FILE  = 'report_navstevnost.html'
 
 # ─── Colors (shades of blue) ────────────────────────────────────────────────────
@@ -419,9 +420,58 @@ def load_oteviraci():
     return out
 
 
+def load_sales():
+    """branch_id → {products: [{name, pocet, objem}], total_pocet, total_objem}"""
+    out = {}
+    if not os.path.exists(SALES_PATH):
+        print(f"⚠️  Prodejní data nenalezena: {SALES_PATH}")
+        return out
+    try:
+        sl = pd.read_csv(SALES_PATH, low_memory=False)
+        sl.columns = [_nc(c) for c in sl.columns]
+        bid_c  = next((c for c in ['BRANCH_CODE', 'POBOCKA_ID', 'ID_POBOCKY'] if c in sl.columns), None)
+        prod_c = next((c for c in ['OKOPRODG_SOURCE_ID', 'PRODUKT', 'PRODUCT'] if c in sl.columns), None)
+        cnt_c  = next((c for c in ['POCET_PRODEJU', 'POCET'] if c in sl.columns), None)
+        vol_c  = next((c for c in ['OBJEM_VYNOSU_CZK', 'OBJEM', 'REVENUE'] if c in sl.columns), None)
+        if bid_c is None or prod_c is None:
+            print(f"⚠️  Prodejní data: nelze najít sloupce — nalezeno: {list(sl.columns[:10])}")
+            return out
+        sl[bid_c] = pd.to_numeric(sl[bid_c], errors='coerce')
+        sl = sl.dropna(subset=[bid_c])
+        sl[bid_c] = sl[bid_c].astype(int)
+        agg = {}
+        if cnt_c: agg[cnt_c] = 'sum'
+        if vol_c: agg[vol_c] = 'sum'
+        if agg:
+            grp = sl.groupby([bid_c, prod_c]).agg(agg).reset_index()
+        else:
+            grp = sl.groupby([bid_c, prod_c]).size().reset_index(name='_cnt')
+            cnt_c = '_cnt'
+        for bid, sub in grp.groupby(bid_c):
+            sort_col = cnt_c if cnt_c in sub.columns else prod_c
+            products = []
+            for _, row in sub.sort_values(sort_col, ascending=False).iterrows():
+                p = {'name': str(row[prod_c])}
+                if cnt_c and cnt_c in row.index:
+                    p['pocet'] = int(row[cnt_c]) if pd.notna(row[cnt_c]) else 0
+                if vol_c and vol_c in row.index:
+                    p['objem'] = int(round(float(row[vol_c]))) if pd.notna(row[vol_c]) else 0
+                products.append(p)
+            out[bid] = {
+                'products':    products,
+                'total_pocet': sum(p.get('pocet', 0) for p in products),
+                'total_objem': sum(p.get('objem', 0) for p in products),
+            }
+        print(f"   Prodeje: {len(out)} poboček · {len(sl)} řádků · "
+              f"produkt={prod_c} · počet={'✓' if cnt_c else '✗'} · objem={'✓' if vol_c else '✗'}")
+    except Exception as e:
+        print(f"⚠️  Prodejní data: {e}")
+    return out
+
+
 # ─── Build data ────────────────────────────────────────────────────────────────
 
-def build_data(df, kpis, prof_kli, prof_fte, spec, od):
+def build_data(df, kpis, prof_kli, prof_fte, spec, od, sales=None):
     bid_c  = next((c for c in ['BRANCH_ID','BRANCH_CODE','POBOCKA'] if c in df.columns), None)
     bname_c= next((c for c in ['BRANCH_NAME','POBOCKA_NAZEV'] if c in df.columns), None)
     att_c  = next((c for c in ['ATTENDANCE_TYPE','VISIT_TYPE','TYP_NAVSTEVY'] if c in df.columns), None)
@@ -463,6 +513,7 @@ def build_data(df, kpis, prof_kli, prof_fte, spec, od):
         k  = kpis.get(bid, {})
         s  = spec.get(bid, {})
         o  = od.get(bid, {})
+        sl = (sales or {}).get(bid)
 
         name = (s.get('name') or k.get('name') or
                 (str(vb[bname_c].iloc[0]) if bname_c else None) or f"Pobočka {bid}")
@@ -606,6 +657,7 @@ def build_data(df, kpis, prof_kli, prof_fte, spec, od):
             'is_vikend':  o.get('is_vikend', False),
             'ph_tyden':   o.get('ph_tyden',  0.0),
             'od_days':    o.get('od_days',   []),
+            'sales':      sl,
         }
 
     order = sorted(result.keys(), key=lambda x: result[x]['name'])
@@ -1469,6 +1521,66 @@ function benchmarkSec(d){{
     </div></div>`;
 }}
 
+// ── Sales section ─────────────────────────────────────────────────────────────
+function salesSec(d){{
+  if(!d.sales||!d.sales.products||!d.sales.products.length)return'';
+  const prods=d.sales.products;
+  const hasObjem=prods.some(p=>p.objem>0);
+  const maxPocet=Math.max(...prods.map(p=>p.pocet||0),1);
+  const rows=prods.map(p=>{{
+    const barW=((p.pocet||0)/maxPocet*100).toFixed(0);
+    return`<tr>
+      <td style="font-size:.78rem;color:#334155;padding:5px 8px;border-bottom:1px solid #f0f4ff;">${{p.name}}</td>
+      <td style="text-align:right;padding:5px 8px;font-weight:700;color:#1d4ed8;font-size:.82rem;
+          border-bottom:1px solid #f0f4ff;">${{fmtI(p.pocet||0)}}</td>
+      ${{hasObjem?`<td style="text-align:right;padding:5px 8px;color:#475569;font-size:.78rem;
+          border-bottom:1px solid #f0f4ff;white-space:nowrap;">
+          ${{p.objem>0?fmtI(p.objem)+' Kč':'—'}}</td>`:''}}
+      <td style="padding:5px 8px;width:32%;border-bottom:1px solid #f0f4ff;">
+        <div style="height:7px;background:#eff6ff;border-radius:4px;overflow:hidden;">
+          <div style="height:100%;width:${{barW}}%;background:#2563eb;border-radius:4px;"></div>
+        </div>
+      </td>
+    </tr>`;
+  }}).join('');
+  return`<div class="sec"><div class="st">💼 Prodejní výsledky — produkty</div>
+    <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+      <div class="card" style="flex:1;min-width:110px;">
+        <div class="cl">Produktů prodáno</div>
+        <div class="cv" style="color:#1d4ed8;">${{fmtI(d.sales.total_pocet)}}</div>
+        <div class="cs">${{prods.length}} kategorií</div>
+      </div>
+      ${{hasObjem?`<div class="card" style="flex:1;min-width:110px;">
+        <div class="cl">Výnosy LTV celkem</div>
+        <div class="cv" style="color:#0891b2;">${{fmtI(d.sales.total_objem)}}</div>
+        <div class="cs">Kč</div>
+      </div>`:''}}
+    </div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr>
+          <th style="text-align:left;font-size:.66rem;font-weight:700;text-transform:uppercase;
+              color:#94a3b8;border-bottom:1.5px solid #dbeafe;padding:4px 8px;">Produkt</th>
+          <th style="text-align:right;font-size:.66rem;font-weight:700;text-transform:uppercase;
+              color:#94a3b8;border-bottom:1.5px solid #dbeafe;padding:4px 8px;">Počet ks</th>
+          ${{hasObjem?`<th style="text-align:right;font-size:.66rem;font-weight:700;text-transform:uppercase;
+              color:#94a3b8;border-bottom:1.5px solid #dbeafe;padding:4px 8px;">Výnos Kč</th>`:''}}
+          <th style="border-bottom:1.5px solid #dbeafe;"></th>
+        </tr></thead>
+        <tbody>${{rows}}</tbody>
+        <tfoot><tr>
+          <td style="font-weight:700;font-size:.78rem;color:#1e3a8a;padding:6px 8px;border-top:2px solid #dbeafe;">Celkem</td>
+          <td style="text-align:right;font-weight:800;color:#1d4ed8;padding:6px 8px;border-top:2px solid #dbeafe;">
+            ${{fmtI(d.sales.total_pocet)}}</td>
+          ${{hasObjem?`<td style="text-align:right;font-weight:800;color:#0891b2;padding:6px 8px;
+              border-top:2px solid #dbeafe;">${{fmtI(d.sales.total_objem)}} Kč</td>`:''}}
+          <td style="border-top:2px solid #dbeafe;"></td>
+        </tr></tfoot>
+      </table>
+    </div>
+  </div>`;
+}}
+
 // ── Main render ───────────────────────────────────────────────────────────────
 function render(id){{
   cur=id; const d=DATA[id];
@@ -1499,6 +1611,7 @@ function render(id){{
 ${{unkNote}}
 ${{staffSec(d)}}
 ${{benchmarkSec(d)}}
+${{salesSec(d)}}
 ${{kapCard(d)}}
 ${{visitCard(d)}}
 ${{odSec(d)}}
@@ -1518,8 +1631,9 @@ _kpis      = load_kpis()
 _prof_kli, _prof_fte = load_profitabilita()
 _spec      = load_specialiste()
 _od        = load_oteviraci()
+_sales     = load_sales()
 
-_visit_data, _order, _has_type = build_data(_df_visits, _kpis, _prof_kli, _prof_fte, _spec, _od)
+_visit_data, _order, _has_type = build_data(_df_visits, _kpis, _prof_kli, _prof_fte, _spec, _od, _sales)
 _visit_data = compute_benchmarks(_visit_data)
 _html = render_html(_visit_data, _order, _has_type)
 
