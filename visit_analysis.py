@@ -408,7 +408,11 @@ def load_oteviraci():
                              'dop':dop,'odp':odp,'tot':tot if not closed else ''})
             try: ph = float(str(row.get('PH',0) or 0).replace(',','.'))
             except: ph = 0.0
-            out[bid] = {'is_vikend':is_vikend,'ph_tyden':ph,'od_days':days}
+            wd_open = sum(1 for d in days if not d['wknd'] and not d['closed'])
+            we_open = sum(1 for d in days if d['wknd']     and not d['closed'])
+            annual_open_days = wd_open * 52 + we_open * 52
+            out[bid] = {'is_vikend':is_vikend,'ph_tyden':ph,'od_days':days,
+                        'annual_open_days': annual_open_days}
         print(f"   Ot.doba: {len(out)} poboček")
     except Exception as e:
         print(f"⚠️  Ot.doba: {e}")
@@ -473,8 +477,13 @@ def build_data(df, kpis, prof_kli, prof_fte, spec, od):
         heatmap    = [[0]*24 for _ in range(7)]
         n_days = 1
 
+        n_days_wd = [0] * 7   # unique dates per weekday
         if has_date:
             n_days = max(int(vb['_dt'].dt.date.nunique()), 1)
+            for wd2 in range(7):
+                mask = vb['_wd'] == wd2
+                if mask.any():
+                    n_days_wd[wd2] = int(vb.loc[mask, '_dt'].dt.date.nunique())
             for k2 in TYPE_KEYS:
                 sub = vb[vb['_t'] == k2]
                 if not sub.empty:
@@ -497,6 +506,12 @@ def build_data(df, kpis, prof_kli, prof_fte, spec, od):
                       .reindex(index=range(7), columns=range(24), fill_value=0))
                 heatmap = [[int(hm.loc[wd2, hr]) for hr in range(24)] for wd2 in range(7)]
 
+        # Normalized heatmap: avg visits per day of week × hour
+        heatmap_avg = [
+            [round(heatmap[w][h] / max(n_days_wd[w], 1), 2) for h in range(24)]
+            for w in range(7)
+        ]
+
         # Staff
         bankers = float(s.get('bankers', 0) or 0)
         svc_fte = float(s.get('svc_fte', 0) or 0)
@@ -508,6 +523,9 @@ def build_data(df, kpis, prof_kli, prof_fte, spec, od):
         # Client count: profitabilita first, then kpis fallback
         poc_kli = prof_kli.get(bid) or k.get('pocet_klientu') or 0
 
+        # Annual open days for this branch (from opening hours; fallback = generic WORKING_DAYS)
+        annual_open_days = o.get('annual_open_days', WORKING_DAYS) or WORKING_DAYS
+
         # Metrics
         portfolio_pb = round(poc_kli / bankers) if bankers > 0 and poc_kli > 0 else None
         total_mtgs   = by_type['online'] + by_type['fyzicka']
@@ -517,7 +535,7 @@ def build_data(df, kpis, prof_kli, prof_fte, spec, od):
         cap1 = _cap_model(by_type['online'], by_type['fyzicka'], by_type['bezhot'],
                           bankers, svc_fte, n_days)
 
-        # Capacity Model 2 (client-based)
+        # Capacity Model 2 (client-based) — uses branch-specific annual open days
         cap2 = None
         total_excl_hot = sum(by_type[k2] for k2 in ['online','fyzicka','bezhot'])
         if poc_kli > 0 and total_excl_hot > 0 and bankers > 0:
@@ -525,22 +543,23 @@ def build_data(df, kpis, prof_kli, prof_fte, spec, od):
             r_fyz = by_type['fyzicka'] / total_excl_hot
             r_beh = by_type['bezhot']  / total_excl_hot
             cap2  = _cap_model(poc_kli * r_on, poc_kli * r_fyz, poc_kli * r_beh,
-                               bankers, svc_fte, WORKING_DAYS)
+                               bankers, svc_fte, annual_open_days)
 
-        # Annual "1x per client" scenario: every client needs 1 meeting/year
+        # Annual "1x per client" scenario — uses branch-specific annual open days
         annual_1x = None
         if poc_kli > 0 and bankers > 0:
             eff = 1.0 - ABSENCE_RATE
-            avail_ob_yr = bankers * WORKING_DAYS * WORK_MINS_DAY * eff
+            avail_ob_yr = bankers * annual_open_days * WORK_MINS_DAY * eff
             mins_needed = poc_kli * MEETING_MINS
             annual_1x = {
                 'poc_kli':        poc_kli,
                 'mins_needed':    round(mins_needed),
                 'avail_ob':       round(avail_ob_yr),
                 'util_ob':        round(mins_needed / avail_ob_yr * 100, 1) if avail_ob_yr > 0 else 0,
-                'mtgs_pb_day':    round(poc_kli / bankers / WORKING_DAYS, 1),
+                'mtgs_pb_day':    round(poc_kli / bankers / annual_open_days, 1),
                 'bankers':        round(bankers, 1),
-                'bankers_needed': round(mins_needed / (WORKING_DAYS * WORK_MINS_DAY * eff), 1),
+                'bankers_needed': round(mins_needed / (annual_open_days * WORK_MINS_DAY * eff), 1),
+                'open_days':      annual_open_days,
             }
 
         # Monte Carlo (only when hourly data is available)
@@ -564,10 +583,13 @@ def build_data(df, kpis, prof_kli, prof_fte, spec, od):
             'unknown':    unknown,
             'by_month':   by_month,
             'by_weekday': by_weekday,
-            'by_hour':    by_hour,
-            'heatmap':    heatmap,
-            'has_time':   has_time and has_date,
-            'n_days':     n_days,
+            'by_hour':       by_hour,
+            'heatmap':       heatmap,
+            'heatmap_avg':   heatmap_avg,
+            'n_days_wd':     n_days_wd,
+            'has_time':      has_time and has_date,
+            'n_days':        n_days,
+            'annual_open_days': annual_open_days,
             'portfolio_pb': portfolio_pb,
             'mtgs_pb_day':  mtgs_pb_day,
             'cap1':       cap1,
@@ -860,10 +882,11 @@ function capDetails(cap,title){{
 
 function capSec(d){{
   if(!d.cap1&&!d.cap2)return'';
+  const aod=d.annual_open_days||252;
   return`<div class="sec"><div class="st">⚡ Kapacitní analýza</div>
-    ${{capDetails(d.cap1,'Model 1 — reálná data (skutečné návštěvy '+fmtI(d.n_days)+' dnů)')}}
+    ${{capDetails(d.cap1,'Model 1 — reálná data (skutečné návštěvy · '+fmtI(d.n_days)+' dnů v datech)')}}
     ${{d.cap2
-        ? capDetails(d.cap2,'Model 2 — klientský model ('+fmtI(d.poc_kli)+' klientů × poměry typů návštěv)')
+        ? capDetails(d.cap2,'Model 2 — klientský model ('+fmtI(d.poc_kli)+' klientů · '+fmtI(aod)+' otevřených dnů/rok)')
         : d.poc_kli===0
           ? '<div style="font-size:.78rem;color:#94a3b8;padding:8px 0;">'+
             '⚠️ Model 2 není dostupný — data o počtu klientů nebyla načtena (profitabilita.xlsx).</div>'
@@ -1075,6 +1098,96 @@ function methSec(d){{
   </div></div>`;
 }}
 
+// ── MC avg heatmap day × hour ─────────────────────────────────────────────────
+function mcHeatmapSec(d){{
+  if(!d.has_time||!d.heatmap_avg)return'';
+  const rows=d.is_vikend?[0,1,2,3,4,5,6]:[0,1,2,3,4];
+  const cols=MCH;
+  const maxV=Math.max(...rows.flatMap(w=>cols.map(h=>d.heatmap_avg[w]?.[h]||0)),0.01);
+  const th='<th></th>'+cols.map(h=>`<th>${{h}}h</th>`).join('');
+  const trs=rows.map(w=>{{
+    const nd=d.n_days_wd?.[w]||0;
+    const tds=cols.map(h=>{{
+      const v=d.heatmap_avg[w]?.[h]||0,p=v/maxV;
+      const ri=Math.round(239-(239-29)*p),gi=Math.round(246-(246-78)*p),bi=Math.round(255-(255-216)*p);
+      const clr=v>0?`rgb(${{ri}},${{gi}},${{bi}})`:'#f8faff';
+      const txt=p>.5?'#1e3a8a':'#94a3b8';
+      return`<td style="background:${{clr}};color:${{txt}};"
+                  title="${{WD[w]}} ${{h}}h: ø ${{v.toFixed(1)}}/den (${{nd}} dnů)">${{v>=0.1?v.toFixed(1):''}}</td>`;
+    }}).join('');
+    const ndLbl=nd>0?`<span style="font-size:.56rem;color:#94a3b8;margin-left:2px;">(${{nd}}d)</span>`:'';
+    return`<tr style="${{w>=5?'background:#fffbf0':''}}">
+      <td style="font-size:.66rem;font-weight:600;color:${{w>=5?'#d97706':'#475569'}};
+          white-space:nowrap;padding:2px 5px;">${{WD[w]}}${{ndLbl}}</td>${{tds}}</tr>`;
+  }}).join('');
+  return`<div class="sec"><div class="st">🗓️ MC vstup — průměrné návštěvy den × hodina (ø/den)</div>
+    <div style="font-size:.72rem;color:#64748b;margin-bottom:6px;">
+      Základ pro Poisson λ v Monte Carlo simulaci.
+      Čísla = průměrný počet návštěv (všech typů) v dané hodině za daný den v týdnu.
+      Závorka = počet takových dnů v datasetu.
+    </div>
+    <div style="overflow-x:auto;"><table class="hmt">
+      <thead><tr>${{th}}</tr></thead><tbody>${{trs}}</tbody></table></div></div>`;
+}}
+
+// ── Meeting mix per hour (skladba schůzek) ────────────────────────────────────
+function mixSec(d){{
+  if(!d.has_time)return'';
+  const hrs=MCH;
+  // Filter to hours with any visits
+  const totals=hrs.map(h=>TYPES.reduce((s,t)=>s+(d.by_hour[t.key]?.[h]||0),0));
+  const active=hrs.filter((_,i)=>totals[i]>0);
+  if(!active.length)return'';
+
+  const maxV=Math.max(...active.map(h=>totals[hrs.indexOf(h)]),0.01);
+
+  // Stacked 100% bars (percentage composition)
+  const pctBars=active.map(h=>{{
+    const i=hrs.indexOf(h);
+    const tot=totals[i];
+    const segs=TYPES.map(t=>{{
+      const v=d.by_hour[t.key]?.[h]||0;
+      const pct=tot>0?v/tot*100:0;
+      return pct>0?`<div style="height:${{pct.toFixed(1)}}%;background:${{t.color}};flex-shrink:0;"
+                        title="${{t.label}} ${{h}}h: ${{pct.toFixed(0)}}% (ø ${{v.toFixed(2)}}/den)"></div>`:'';
+    }}).join('');
+    return`<div class="bw">
+      <div style="height:70px;display:flex;flex-direction:column-reverse;
+                  width:100%;border-radius:3px 3px 0 0;overflow:hidden;">${{segs}}</div>
+      <div class="blbl">${{h}}h</div>
+    </div>`;
+  }}).join('');
+
+  // Absolute avg bars (volume)
+  const absBars=active.map(h=>{{
+    const i=hrs.indexOf(h);
+    const tot=totals[i];
+    const ht=(tot/maxV*70).toFixed(1);
+    const segs=TYPES.map(t=>{{
+      const v=d.by_hour[t.key]?.[h]||0,pct=tot>0?v/tot*100:0;
+      return pct>0?`<div style="height:${{pct.toFixed(1)}}%;background:${{t.color}};flex-shrink:0;"
+                        title="${{t.label}} ${{h}}h: ø ${{v.toFixed(2)}}/den"></div>`:'';
+    }}).join('');
+    return`<div class="bw">
+      <div class="bnum">${{tot>0?tot.toFixed(1):''}}</div>
+      <div style="height:${{ht}}px;display:flex;flex-direction:column-reverse;
+                  width:100%;border-radius:3px 3px 0 0;overflow:hidden;">${{segs}}</div>
+      <div class="blbl">${{h}}h</div>
+    </div>`;
+  }}).join('');
+
+  return`<div class="sec"><div class="st">🔀 Skladba schůzek podle hodiny</div>
+    <div style="font-size:.72rem;color:#475569;margin-bottom:8px;font-weight:600;">
+      Procentuální složení (100 % = všechny typy v dané hodině)</div>
+    <div class="bars" style="height:80px;">${{pctBars}}</div>
+    ${{legend()}}
+    <div style="font-size:.72rem;color:#475569;margin:12px 0 8px;font-weight:600;">
+      Průměrný denní objem dle hodiny (abs. hodnoty)</div>
+    <div class="bars" style="height:80px;">${{absBars}}</div>
+    ${{legend()}}
+  </div>`;
+}}
+
 // ── Format badge ─────────────────────────────────────────────────────────────
 function formatBadge(d){{
   if(!d.branch_format)return'';
@@ -1265,6 +1378,8 @@ ${{benchmarkSec(d)}}
 ${{capSec(d)}}
 ${{annualMtgSec(d)}}
 ${{mcSec(d)}}
+${{mcHeatmapSec(d)}}
+${{mixSec(d)}}
 ${{roomSec(d)}}
 <div class="sec"><div class="st">📅 Návštěvy dle měsíce</div>
   <div class="bars" style="height:110px;">${{stackedBars(MON,tArr,100)}}</div>${{legend()}}</div>
