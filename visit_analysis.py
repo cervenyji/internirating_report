@@ -63,8 +63,8 @@ TARGET_MTGS_MAX     = 5
 MEETING_MINS        = 45
 WALKIN_SHORT_PCT    = 0.80; WALKIN_SHORT_MINS = 15
 WALKIN_LONG_PCT     = 0.20; WALKIN_LONG_MINS  = 30
-WALKIN_CONVERT_PCT  = 0.10   # % walkinů přeroste ve schůzku 45 min
-WALKIN_AVG_MINS     = WALKIN_SHORT_PCT * WALKIN_SHORT_MINS + WALKIN_LONG_PCT * WALKIN_LONG_MINS  # = 18
+WALKIN_CONVERT_PCT  = 0.20   # % walkinů přeroste ve schůzku 45 min
+WALKIN_AVG_MINS     = 15.0   # průměrná délka bezhotovostního walkin (min)
 ABSENCE_RATE        = 0.229   # 22,9 % — nemoci, dovolená, školení (bankéři + BKP)
 
 MC_ITERATIONS       = 1000   # počet Monte Carlo iterací
@@ -300,7 +300,7 @@ def compute_rooms(mc):
     pm = p95(peak_mtg); pb = p95(peak_beh)
     return {
         'meeting_rooms':   math.ceil(pm * 45 / 60) if pm > 0 else 0,
-        'service_desks':   math.ceil(pb * 18 / 60) if pb > 0 else 0,
+        'service_desks':   math.ceil(pb * WALKIN_AVG_MINS / 60) if pb > 0 else 0,
         'peak_mtg_lam':    round(peak_mtg, 2),
         'p95_mtg':         round(pm, 1),
         'delta_mtg':       round(pm - peak_mtg, 1),   # bezpečnostní rezerva nad λ
@@ -318,6 +318,11 @@ def load_visits():
         print(f"❌ Soubor nenalezen: {VISITS_PATH}", file=sys.stderr); sys.exit(1)
     df = pd.read_csv(VISITS_PATH, low_memory=False)
     df.columns = [_nc(c) for c in df.columns]
+    seg_c = next((c for c in df.columns if c == 'CLIENT_SEGMENT'), None)
+    if seg_c:
+        n_before = len(df)
+        df = df[df[seg_c].isin(['MM', 'MA'])]
+        print(f"   CLIENT_SEGMENT filter MM/MA: {len(df):,} z {n_before:,} řádků")
     print(f"   {len(df):,} řádků · sloupce: {list(df.columns)}")
     return df
 
@@ -1211,7 +1216,7 @@ function mixSec(d){{
 }}
 
 // ── Shared capacity panel (Models 1 & 2) ──────────────────────────────────────
-function _capPanel(cap,nd,b,has_svc,title,subtitle){{
+function _capPanel(cap,nd,b,has_svc,title,subtitle,extra){{
   const eff=1-C.ABSENCE_RATE,effM=C.WORK_MINS_DAY*eff;
   const oM=cap.online_mins/b/nd,fM=cap.fyzicka_mins/b/nd;
   const bCnv=cap.bezhot_conv/b/nd,bSvc=has_svc?0:cap.bezhot_base/b/nd;
@@ -1276,25 +1281,127 @@ function _capPanel(cap,nd,b,has_svc,title,subtitle){{
       </div>
     </div>
     ${{cap.util_svc!=null?`<div style="margin-top:6px;">${{capBar(cap.util_svc,'BKP Medior — servisní kapacita')}}</div>`:''}}
+    ${{extra||''}}
+  </div>`;
+}}
+
+// ── SVG bar chart: hourly FTE demand for deterministic models ─────────────────
+function _svgFteBar(obArr,svcArr,capOB,capSVC,hasSvc,W,H){{
+  if(!obArr||!obArr.length)return'';
+  const pl=32,pr=14,pt=8,pb=18,pw=W-pl-pr,ph=H-pt-pb;
+  const n=obArr.length;
+  const maxY=Math.max(...obArr,...(hasSvc&&svcArr.length?svcArr:[0]),capOB,hasSvc?capSVC:0)*1.2||1;
+  const ys=v=>pt+ph*(1-Math.min(v,maxY)/maxY);
+  const bW=pw/n;
+  const step=maxY<=1.5?0.25:maxY<=3?0.5:maxY<=6?1:maxY<=12?2:5;
+  let yts=[];for(let v=0;v<=maxY*1.05;v+=step)yts.push(parseFloat(v.toFixed(2)));
+  const ytkEl=yts.map(v=>`<line x1="${{pl}}" y1="${{ys(v).toFixed(1)}}" x2="${{pl+pw}}" y2="${{ys(v).toFixed(1)}}" stroke="#e2e8f0" stroke-width="0.5"/><text x="${{pl-3}}" y="${{ys(v).toFixed(1)}}" text-anchor="end" dominant-baseline="middle" font-size="7" fill="#94a3b8">${{v}}</text>`).join('');
+  const xtkEl=MCH.map((h,i)=>i%2===0?`<text x="${{(pl+(i+0.5)*bW).toFixed(1)}}" y="${{H-3}}" text-anchor="middle" font-size="7" fill="#94a3b8">${{h}}h</text>`:'').join('');
+  const capOBY=ys(capOB).toFixed(1);
+  const capLines=`<line x1="${{pl}}" y1="${{capOBY}}" x2="${{pl+pw}}" y2="${{capOBY}}" stroke="#2563eb" stroke-dasharray="5,3" stroke-width="1.5"/>
+    <text x="${{pl+pw+2}}" y="${{capOBY}}" dominant-baseline="middle" font-size="7" fill="#2563eb">OB ${{fmt1(capOB)}}</text>
+    ${{hasSvc?`<line x1="${{pl}}" y1="${{ys(capSVC).toFixed(1)}}" x2="${{pl+pw}}" y2="${{ys(capSVC).toFixed(1)}}" stroke="#d97706" stroke-dasharray="5,3" stroke-width="1.5"/><text x="${{pl+pw+2}}" y="${{ys(capSVC).toFixed(1)}}" dominant-baseline="middle" font-size="7" fill="#d97706">SVC ${{fmt1(capSVC)}}</text>`:''}}`;
+  const obBars=obArr.map((v,i)=>{{
+    const pct=capOB>0?v/capOB:0;
+    const clr=pct<0.7?'#2563eb':pct<1.0?'#f59e0b':'#ef4444';
+    const x=pl+i*bW+0.5,bh=Math.max(ph-(ys(v)-pt),0),by=ys(v);
+    return bh>0?`<rect x="${{x.toFixed(1)}}" y="${{by.toFixed(1)}}" width="${{(bW-1).toFixed(1)}}" height="${{bh.toFixed(1)}}" fill="${{clr}}" fill-opacity="0.8"/>`:'';}}).join('');
+  const svcBars=hasSvc&&svcArr.length?svcArr.map((v,i)=>{{
+    const pct=capSVC>0?v/capSVC:0;
+    const clr=pct<0.7?'#d97706':'#ef4444';
+    const x=pl+i*bW+bW*0.55,sw=bW*0.38,bh=Math.max(ph-(ys(v)-pt),0),by=ys(v);
+    return bh>0?`<rect x="${{x.toFixed(1)}}" y="${{by.toFixed(1)}}" width="${{sw.toFixed(1)}}" height="${{bh.toFixed(1)}}" fill="${{clr}}" fill-opacity="0.7"/>`:'';}}).join(''):'';
+  return`<svg viewBox="0 0 ${{W}} ${{H}}" style="width:100%;display:block;">
+    <rect x="${{pl}}" y="${{pt}}" width="${{pw}}" height="${{ph}}" fill="#f8faff" rx="2"/>
+    ${{ytkEl}}${{xtkEl}}${{obBars}}${{svcBars}}${{capLines}}
+    <line x1="${{pl}}" y1="${{pt}}" x2="${{pl}}" y2="${{pt+ph}}" stroke="#94a3b8" stroke-width="0.8"/>
+    <line x1="${{pl}}" y1="${{pt+ph}}" x2="${{pl+pw}}" y2="${{pt+ph}}" stroke="#94a3b8" stroke-width="0.8"/>
+  </svg>`;
+}}
+
+// ── Workspace recommendation ──────────────────────────────────────────────────
+function _workRec(peakMtgLam,peakBehLam,bankers,svcFte,eff,hasSvc){{
+  function p95(l){{return l>0?l+1.645*Math.sqrt(l):0;}}
+  const pm=p95(peakMtgLam),pb=hasSvc?p95(peakBehLam):0;
+  const rooms=peakMtgLam>0?Math.ceil(pm*C.MEETING_MINS/60):0;
+  const desks=hasSvc&&peakBehLam>0?Math.ceil(pb*C.WALKIN_AVG_MINS/60):0;
+  const bDesks=Math.ceil(bankers*eff);
+  const cs='flex:1;min-width:90px;padding:7px 10px;';
+  return`<div style="margin-top:10px;border-top:1px solid #eff6ff;padding-top:10px;">
+    <div style="font-size:.7rem;font-weight:700;color:#1e3a8a;margin-bottom:7px;">🏢 Doporučení pracovišť</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <div class="card" style="${{cs}}">
+        <div class="cl">Zasedací místnosti</div>
+        <div class="cv" style="color:#1d4ed8;">${{rooms}}</div>
+        <div class="cs">P95(${{fmt1(peakMtgLam)}})×${{C.MEETING_MINS}}min</div>
+      </div>
+      ${{hasSvc&&peakBehLam>0?`<div class="card" style="${{cs}}">
+        <div class="cl">Servisní místa</div>
+        <div class="cv" style="color:#0891b2;">${{desks}}</div>
+        <div class="cs">P95(${{fmt1(peakBehLam)}})×${{C.WALKIN_AVG_MINS}}min</div>
+      </div>`:''}}
+      <div class="card" style="${{cs}}">
+        <div class="cl">Bankéřská místa</div>
+        <div class="cv" style="color:#7c3aed;">${{bDesks}}</div>
+        <div class="cs">${{fmt1(bankers)}} bank.×${{Math.round(eff*100)}}%</div>
+      </div>
+    </div>
+    <div style="font-size:.63rem;color:#94a3b8;margin-top:4px;">
+      P95=λ+1.645√λ · místn.=⌈P95×${{C.MEETING_MINS}}/60⌉ · serv.=⌈P95×${{C.WALKIN_AVG_MINS}}/60⌉ · bank.=⌈bank.×ef.%⌉
+    </div>
   </div>`;
 }}
 
 // ── Kapacitní modely (Models 1–4) ─────────────────────────────────────────────
 function model1Sec(d){{
   if(!d.cap1||!d.bankers)return'';
-  return _capPanel(d.cap1,d.n_days,d.bankers,d.has_svc,
+  const eff=1-C.ABSENCE_RATE,nd=d.n_days||1;
+  const obFte=MCH.map(h=>{{
+    const on=(d.by_hour?.online?.[h]||0)/nd,fyz=(d.by_hour?.fyzicka?.[h]||0)/nd,beh=(d.by_hour?.bezhot?.[h]||0)/nd;
+    return(on+fyz+beh*C.WALKIN_CONVERT_PCT)*C.MEETING_MINS/60;
+  }});
+  const svcFte=MCH.map(h=>(d.by_hour?.bezhot?.[h]||0)/nd*C.WALKIN_AVG_MINS/60);
+  const capOB=d.bankers*eff,capSVC=d.svc_fte*eff;
+  const peakMtg=Math.max(...MCH.map(h=>((d.by_hour?.online?.[h]||0)+(d.by_hour?.fyzicka?.[h]||0))/nd),0);
+  const peakBeh=Math.max(...MCH.map(h=>(d.by_hour?.bezhot?.[h]||0)/nd),0);
+  const fteChart=d.has_time?`
+    <div class="mc-chart-title">Průměrná denní FTE poptávka po hodinách (6h–21h)</div>
+    <div style="font-size:.62rem;color:#64748b;margin-bottom:3px;">
+      OB (modrá)${{d.has_svc?' · Servis BKP (oranžová)':''}} · kapacita = přerušovaná čára · barva = využití (modrá&lt;70%·žlutá&lt;100%·červená≥100%)
+    </div>
+    <div class="mc-chart-wrap">${{_svgFteBar(obFte,svcFte,capOB,capSVC,d.has_svc,480,120)}}</div>`:'';
+  const extra=fteChart+_workRec(peakMtg,peakBeh,d.bankers,d.svc_fte,eff,d.has_svc);
+  return _capPanel(d.cap1,nd,d.bankers,d.has_svc,
     'Model 1 — Reálná data',
-    `Skutečné návštěvy za ${{fmtI(d.n_days)}} dnů · ${{fmtI(d.total)}} celkem`);
+    `Skutečné návštěvy za ${{fmtI(nd)}} dnů · ${{fmtI(d.total)}} celkem`,extra);
 }}
 
 function model2Sec(d){{
   if(!d.cap2)return d.poc_kli===0
     ?`<div class="kap-model"><div class="kap-model-hd">Model 2 — Klientský model</div>
        <div style="font-size:.78rem;color:#94a3b8;">⚠️ Data o počtu klientů nejsou dostupná.</div></div>`:'';
-  const aod=d.annual_open_days||252;
+  const aod=d.annual_open_days||252,eff=1-C.ABSENCE_RATE;
+  const totExcl=(d.by_type?.online||0)+(d.by_type?.fyzicka||0)+(d.by_type?.bezhot||0);
+  const sf=totExcl>0&&d.n_days>0?d.poc_kli*d.n_days/(aod*totExcl):0;
+  const nd=d.n_days||1;
+  const obFte=MCH.map(h=>{{
+    const on=(d.by_hour?.online?.[h]||0)/nd*sf,fyz=(d.by_hour?.fyzicka?.[h]||0)/nd*sf,beh=(d.by_hour?.bezhot?.[h]||0)/nd*sf;
+    return(on+fyz+beh*C.WALKIN_CONVERT_PCT)*C.MEETING_MINS/60;
+  }});
+  const svcFte=MCH.map(h=>(d.by_hour?.bezhot?.[h]||0)/nd*sf*C.WALKIN_AVG_MINS/60);
+  const capOB=d.cap2.bankers*eff,capSVC=d.cap2.svc_fte*eff;
+  const peakMtg=sf>0?Math.max(...MCH.map(h=>((d.by_hour?.online?.[h]||0)+(d.by_hour?.fyzicka?.[h]||0))/nd*sf),0):0;
+  const peakBeh=sf>0?Math.max(...MCH.map(h=>(d.by_hour?.bezhot?.[h]||0)/nd*sf),0):0;
+  const fteChart=d.has_time&&sf>0?`
+    <div class="mc-chart-title">Průměrná denní FTE poptávka po hodinách (6h–21h)</div>
+    <div style="font-size:.62rem;color:#64748b;margin-bottom:3px;">
+      OB (modrá)${{d.has_svc?' · Servis BKP (oranžová)':''}} · kapacita = přerušovaná čára · škálováno na ${{fmtI(d.poc_kli)}} klientů
+    </div>
+    <div class="mc-chart-wrap">${{_svgFteBar(obFte,svcFte,capOB,capSVC,d.has_svc,480,120)}}</div>`:'';
+  const extra=fteChart+_workRec(peakMtg,peakBeh,d.cap2.bankers,d.cap2.svc_fte,eff,d.has_svc);
   return _capPanel(d.cap2,aod,d.cap2.bankers,d.has_svc,
     'Model 2 — Klientský model',
-    `${{fmtI(d.poc_kli)}} klientů · ${{fmtI(aod)}} otevřených dnů/rok · typy návštěv z reálných dat`);
+    `${{fmtI(d.poc_kli)}} klientů · ${{fmtI(aod)}} otevřených dnů/rok · typy návštěv z reálných dat`,extra);
 }}
 
 function model3Sec(d){{
@@ -1309,6 +1416,23 @@ function model3Sec(d){{
   const neededW=(a.bankers_needed/maxB*100).toFixed(1);
   const deg=(Math.min(a.util_ob,100)*3.6).toFixed(0);
   const ringStyle=`background:conic-gradient(${{clr}} ${{deg}}deg,${{bg}} ${{deg}}deg)`;
+  // FTE chart: meetings only, shape from by_hour, scaled to poc_kli/aod meetings/day
+  const aod3=a.open_days||C.WORKING_DAYS;
+  const mtgPD=a.poc_kli/aod3;
+  const totalMH=MCH.reduce((s,h)=>s+(d.by_hour?.online?.[h]||0)+(d.by_hour?.fyzicka?.[h]||0),0);
+  const m3obFte=MCH.map(h=>{{
+    const shape=totalMH>0?((d.by_hour?.online?.[h]||0)+(d.by_hour?.fyzicka?.[h]||0))/totalMH:1/MCH.length;
+    return shape*mtgPD*C.MEETING_MINS/60;
+  }});
+  const m3capOB=a.bankers*eff;
+  const m3peakMtg=Math.max(...m3obFte.map(v=>v*60/C.MEETING_MINS),0);
+  const m3FteChart=d.has_time&&totalMH>0?`
+    <div class="mc-chart-title">Průměrná denní FTE poptávka po hodinách — schůzky (6h–21h)</div>
+    <div style="font-size:.62rem;color:#64748b;margin-bottom:3px;">
+      OB (modrá) · kapacita = přerušovaná čára · tvar z reálných dat, škálováno na ${{fmt1(mtgPD)}} schůzky/den
+    </div>
+    <div class="mc-chart-wrap">${{_svgFteBar(m3obFte,[],m3capOB,0,false,480,120)}}</div>`:'';
+  const m3WorkRec=_workRec(m3peakMtg,0,a.bankers,0,eff,false);
   return`<div class="kap-model">
     <div class="kap-model-hd">Model 3 — Scénář: 1× ročně s každým klientem</div>
     <div style="font-size:.72rem;color:#64748b;margin-bottom:10px;">
@@ -1364,6 +1488,8 @@ function model3Sec(d){{
         <div class="cs">${{fmtH(a.mins_needed)}} vs. ${{fmtH(a.avail_ob)}}</div>
       </div>
     </div>
+    ${{m3FteChart}}
+    ${{m3WorkRec}}
   </div>`;
 }}
 
@@ -1565,7 +1691,7 @@ function roomSec(d){{
   const mtgNote=r.peak_mtg_lam>0
     ?`λ = ${{fmt1(r.peak_mtg_lam)}}/hod → P95 = ${{fmt1(r.p95_mtg)}} (+Δ ${{fmt1(r.delta_mtg)}}) → ⌈${{fmt1(r.p95_mtg)}}×45/60⌉`:'';
   const behNote=r.peak_bezhot_lam>0
-    ?`λ = ${{fmt1(r.peak_bezhot_lam)}}/hod → P95 = ${{fmt1(r.p95_bezhot)}} (+Δ ${{fmt1(r.delta_bezhot)}}) → ⌈${{fmt1(r.p95_bezhot)}}×18/60⌉`:'';
+    ?`λ = ${{fmt1(r.peak_bezhot_lam)}}/hod → P95 = ${{fmt1(r.p95_bezhot)}} (+Δ ${{fmt1(r.delta_bezhot)}}) → ⌈${{fmt1(r.p95_bezhot)}}×${{C.WALKIN_AVG_MINS}}/60⌉`:'';
   return`<div class="sec"><div class="st">🏢 Doporučení prostor</div>
     <div class="grid2" style="margin-bottom:10px;">
       <div class="card">
@@ -1585,7 +1711,7 @@ function roomSec(d){{
       <b>P95</b> = λ + 1,645·√λ — 95. percentil Poissonova rozdělení. V 95 % dnů přijde nejvýše P95 klientů za tuto hodinu.<br>
       <b>Δ = P95 − λ</b> = bezpečnostní rezerva nad průměrem (pokrývá náhodné špičky v poptávce).<br>
       <b>Místnosti</b> = ⌈P95 × 45 min ÷ 60 min⌉ — kolik místností musí být souběžně dostupných.<br>
-      <b>Servisní místa</b> = ⌈P95 × 18 min ÷ 60 min⌉ — analogicky pro bezhot. walkin.
+      <b>Servisní místa</b> = ⌈P95 × ${{C.WALKIN_AVG_MINS}} min ÷ 60 min⌉ — analogicky pro bezhot. walkin.
     </div></div>`;
 }}
 
