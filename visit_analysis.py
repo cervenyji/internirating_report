@@ -1835,6 +1835,85 @@ function salesSec(d){{
   </div>`;
 }}
 
+// ── Kolik návštěv pro 90% utilizaci ──────────────────────────────────────────
+function targetSec(d){{
+  if(!d.cap1||!d.bankers)return'';
+  const nd=d.n_days||1,eff=1-C.ABSENCE_RATE;
+  const c1=d.cap1,mc=d.mc;
+  const totalNH=(d.by_type?.online||0)+(d.by_type?.fyzicka||0)+(d.by_type?.bezhot||0);
+  // Model 1 — OB
+  const ob90ok=c1.util_ob>=90;
+  const obSF1=!ob90ok&&c1.ob_used>0?c1.avail_ob*0.9/c1.ob_used:0;
+  const addNH1=obSF1>1?Math.ceil(totalNH*(obSF1-1)/nd):0;
+  const addMtg1=obSF1>1?Math.ceil((c1.online_mins+c1.fyzicka_mins)/C.MEETING_MINS*(obSF1-1)/nd):0;
+  const addBeh1=obSF1>1?Math.ceil((d.by_type?.bezhot||0)*(obSF1-1)/nd):0;
+  let m1ObH='';
+  if(ob90ok){{m1ObH=`<span style="color:#16a34a;font-size:.76rem;font-weight:700;">✅ Již ≥ 90 % (${{c1.util_ob.toFixed(1)}} %)</span>`;}}
+  else if(addNH1>0){{m1ObH=`<div style="font-size:.75rem;color:#1e293b;"><b>+${{fmtI(addNH1)}} nav./den</b></div><div style="font-size:.68rem;color:#64748b;margin-top:2px;">z toho +${{fmtI(addMtg1)}} schůzek · +${{fmtI(addBeh1)}} walkinů</div>`;}}
+  else{{m1ObH=`<span style="color:#94a3b8;font-size:.7rem;">Nedostatečná vstupní data</span>`;}}
+  // Model 1 — BKP
+  const s90ok=c1.util_svc!=null&&c1.util_svc>=90;
+  const addWB1=d.has_svc&&c1.avail_svc>0&&!s90ok&&(c1.avail_svc*0.9-c1.svc_used)>0?Math.ceil((c1.avail_svc*0.9-c1.svc_used)/C.WALKIN_AVG_MINS/nd):0;
+  let m1SvcH='';
+  if(!d.has_svc){{m1SvcH=`<span style="color:#94a3b8;font-size:.7rem;">Pobočka nemá BKP Medior</span>`;}}
+  else if(c1.util_svc==null){{m1SvcH=`<span style="color:#94a3b8;font-size:.7rem;">N/A</span>`;}}
+  else if(s90ok){{m1SvcH=`<span style="color:#16a34a;font-size:.76rem;font-weight:700;">✅ Již ≥ 90 % (${{c1.util_svc.toFixed(1)}} %)</span>`;}}
+  else if(addWB1>0){{m1SvcH=`<div style="font-size:.75rem;color:#1e293b;"><b>+${{fmtI(addWB1)}} walkinů/den</b></div><div style="font-size:.68rem;color:#64748b;margin-top:2px;">bezhot. walkin ${{C.WALKIN_AVG_MINS}} min (servis)</div>`;}}
+  else{{m1SvcH=`<span style="color:#94a3b8;font-size:.7rem;">Nedostatečná data</span>`;}}
+  // MC — OB
+  const obP=mc&&mc.ob_cap_day>0?mc.ob_p95_day/mc.ob_cap_day*100:null;
+  const obSFmc=obP!=null&&obP<90&&mc.ob_p95_day>0?mc.ob_cap_day*0.9/mc.ob_p95_day:0;
+  const addNHmc=obSFmc>1?Math.ceil((obSFmc-1)*d.total/nd):0;
+  const addMtgmc=obSFmc>1?Math.ceil((obSFmc-1)*((d.by_type?.online||0)+(d.by_type?.fyzicka||0))/nd):0;
+  const addBehmc=obSFmc>1?Math.ceil((obSFmc-1)*(d.by_type?.bezhot||0)/nd):0;
+  let mcObH='';
+  if(!mc){{mcObH=`<span style="color:#94a3b8;font-size:.7rem;">MC data chybí</span>`;}}
+  else if(obP==null){{mcObH=`<span style="color:#94a3b8;font-size:.7rem;">N/A</span>`;}}
+  else if(obP>=90){{mcObH=`<span style="color:#16a34a;font-size:.76rem;font-weight:700;">✅ P95 již ≥ 90 % (${{obP.toFixed(1)}} %)</span>`;}}
+  else if(addNHmc>0){{mcObH=`<div style="font-size:.75rem;color:#1e293b;"><b>+${{fmtI(addNHmc)}} nav./den</b></div><div style="font-size:.68rem;color:#64748b;margin-top:2px;">z toho +${{fmtI(addMtgmc)}} schůzek · +${{fmtI(addBehmc)}} walkinů</div>`;}}
+  else{{mcObH=`<span style="color:#94a3b8;font-size:.7rem;">Nedostatečná data</span>`;}}
+  // MC — BKP
+  const svcP=mc&&mc.svc_cap_day>0&&mc.svc_p95_day>0?mc.svc_p95_day/mc.svc_cap_day*100:null;
+  const addWBmc=d.has_svc&&svcP!=null&&svcP<90&&mc.svc_p95_day>0?Math.ceil((mc.svc_cap_day*0.9/mc.svc_p95_day-1)*(d.by_type?.bezhot||0)/nd):0;
+  let mcSvcH='';
+  if(!mc||!d.has_svc){{mcSvcH=!mc?'':`<span style="color:#94a3b8;font-size:.7rem;">Pobočka nemá BKP Medior</span>`;}}
+  else if(svcP==null){{mcSvcH=`<span style="color:#94a3b8;font-size:.7rem;">N/A</span>`;}}
+  else if(svcP>=90){{mcSvcH=`<span style="color:#16a34a;font-size:.76rem;font-weight:700;">✅ P95 již ≥ 90 % (${{svcP.toFixed(1)}} %)</span>`;}}
+  else if(addWBmc>0){{mcSvcH=`<div style="font-size:.75rem;color:#1e293b;"><b>+${{fmtI(addWBmc)}} walkinů/den</b></div><div style="font-size:.68rem;color:#64748b;margin-top:2px;">bezhot. walkin avg ${{C.WALKIN_AVG_MINS}} min</div>`;}}
+  else{{mcSvcH=`<span style="color:#94a3b8;font-size:.7rem;">Nedostatečná data</span>`;}}
+  const hdOB='font-size:.7rem;font-weight:700;color:#475569;margin-bottom:4px;';
+  const hdSVC='font-size:.7rem;font-weight:700;color:#0891b2;margin:10px 0 4px;';
+  return`<div class="sec"><div class="st">📈 Kolik návštěv pro 90 % utilizaci</div>
+    <div style="font-size:.72rem;color:#64748b;margin-bottom:10px;">
+      Odhad potřebných dodatečných návštěv pro dosažení 90 % využití kapacity OB a BKP.
+      Zachovává aktuální poměr typů návštěv (online/fyzické schůzky/bezhot. walkin).
+      Model 5: škálování Poissonových λ tak, aby P95 denní poptávka = 90 % kapacity.
+    </div>
+    <div class="grid2">
+      <div style="background:#f8faff;border-radius:8px;padding:12px 14px;border:1px solid #dbeafe;">
+        <div style="font-size:.74rem;font-weight:700;color:#1d4ed8;margin-bottom:10px;">Model 1 — Reálná data (det.)</div>
+        <div style="${{hdOB}}">👤 OB Bankéři — nyní ${{c1.util_ob.toFixed(1)}} %</div>
+        ${{m1ObH}}
+        <div style="${{hdSVC}}">🧑 BKP Medior${{d.has_svc&&c1.util_svc!=null?' — nyní '+c1.util_svc.toFixed(1)+' %':''}}</div>
+        ${{m1SvcH}}
+      </div>
+      <div style="background:#f8faff;border-radius:8px;padding:12px 14px;border:1px solid #dbeafe;">
+        <div style="font-size:.74rem;font-weight:700;color:#1d4ed8;margin-bottom:10px;">Model 5 — Monte Carlo (P95)</div>
+        ${{mc?`<div style="${{hdOB}}">👤 OB Bankéři — P95 ${{obP!=null?obP.toFixed(1)+' %':'N/A'}}</div>
+        ${{mcObH}}
+        <div style="${{hdSVC}}">🧑 BKP Medior${{d.has_svc&&svcP!=null?' — P95 '+svcP.toFixed(1)+' %':''}}</div>
+        ${{mcSvcH}}`:
+        `<div style="display:flex;align-items:center;justify-content:center;height:90px;">
+          <div style="color:#94a3b8;font-size:.8rem;text-align:center;">Monte Carlo nedostupné<br>Pobočka nemá hodinová data</div></div>`}}
+      </div>
+    </div>
+    <div style="font-size:.64rem;color:#94a3b8;margin-top:6px;line-height:1.5;">
+      Výpočet: při zachování aktuálního poměru typů — ${{fmtI(totalNH)}} relevantních nav. za ${{fmtI(nd)}} dní.
+      MC: ${{mc?fmtI(C.MC_ITERATIONS)+' simulací':'—'}} · P95 poptávky škálována na ${{mc?fmt1(mc.ob_cap_day*0.9)+'h':'—'}} h/den OB kapacity.
+    </div>
+  </div>`;
+}}
+
 // ── Main render ───────────────────────────────────────────────────────────────
 function render(id){{
   cur=id; const d=DATA[id];
@@ -1867,6 +1946,7 @@ ${{staffSec(d)}}
 ${{benchmarkSec(d)}}
 ${{salesSec(d)}}
 ${{kapCard(d)}}
+${{targetSec(d)}}
 ${{visitCard(d)}}
 ${{odSec(d)}}
 ${{roomSec(d)}}
