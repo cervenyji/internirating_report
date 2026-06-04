@@ -85,8 +85,9 @@ FORMAT_BG_PY = {
 }
 
 # ─── Staff position keys (normalized) ──────────────────────────────────────────
-BANKER_COLS = {'OSOBNI_BANKER_-_JUNIOR', 'OSOBNI_BANKER_-_MEDIOR', 'OSOBNI_BANKER_-_SENIOR'}
-SERVICE_COL = 'BANKER_KLIENTSKE_PECE_-_MEDIOR'
+BANKER_COLS  = {'OSOBNI_BANKER_-_JUNIOR', 'OSOBNI_BANKER_-_MEDIOR', 'OSOBNI_BANKER_-_SENIOR'}
+SERVICE_COL  = 'BANKER_KLIENTSKE_PECE_-_MEDIOR'
+CASHIER_COL  = 'BANKER_KLIENTSKE_PECE_-_JUNIOR'
 POSITION_LABELS = {
     'OSOBNI_BANKER_-_JUNIOR':          'OB Junior',
     'OSOBNI_BANKER_-_MEDIOR':          'OB Medior',
@@ -196,14 +197,16 @@ def run_monte_carlo(by_hour, bankers, svc_fte, n_iter=MC_ITERATIONS, seed=42):
     ob_needed  = (45 * samples[:, :, 0] +
                   45 * samples[:, :, 1] +
                   WALKIN_CONVERT_PCT * MEETING_MINS * samples[:, :, 2])  # (n_iter, 16)
-    svc_needed = WALKIN_AVG_MINS * samples[:, :, 2]   # (n_iter, 16)
+    svc_needed_raw = WALKIN_AVG_MINS * samples[:, :, 2]   # (n_iter, 16) — original SVC demand
 
     eff = 1.0 - ABSENCE_RATE   # 0.771 — effective presence per hour
 
     if svc_fte <= 0:
-        ob_needed = ob_needed + svc_needed   # OB-junior handles bezhot
+        ob_needed    = ob_needed + svc_needed_raw   # OB-junior handles bezhot
+        svc_needed   = svc_needed_raw               # keep for histograms (no BKP capacity)
         svc_overload = np.zeros((n_iter, len(MC_HOURS)), dtype=bool)
     else:
+        svc_needed   = svc_needed_raw
         svc_overload = svc_needed > svc_fte * 60 * eff
 
     # Utilization of OB team at current bankers (absence-adjusted)
@@ -231,6 +234,25 @@ def run_monte_carlo(by_hour, bankers, svc_fte, n_iter=MC_ITERATIONS, seed=42):
             bankers_for_95 = round(b, 1)
             break
 
+    # ── FTE visualization data ──────────────────────────────────────────────────
+    # Hourly P95 FTE demand: minutes / 60 → FTE-hours; capacity in FTE = bankers/svc_fte × eff
+    p95_ob_fte  = [round(float(np.percentile(ob_needed[:, i],  95)) / 60, 3) for i in range(len(MC_HOURS))]
+    p95_svc_fte = [round(float(np.percentile(svc_needed[:, i], 95)) / 60, 3) for i in range(len(MC_HOURS))]
+    ob_cap_fte  = round(bankers * eff, 3)      # effective FTE capacity per hour
+    svc_cap_fte = round(svc_fte * eff, 3)      # effective SVC FTE capacity per hour
+
+    # Daily total FTE demand distribution (sum across hours, then /60 → banker-hours)
+    ob_day  = ob_needed.sum(axis=1) / 60
+    svc_day = svc_needed.sum(axis=1) / 60
+    ob_cap_day  = round(bankers * WORK_MINS_DAY / 60 * eff, 2)   # effective banker-hours/day
+    svc_cap_day = round(svc_fte  * WORK_MINS_DAY / 60 * eff, 2)
+    ob_p95_day  = round(float(np.percentile(ob_day,  95)), 2)
+    svc_p95_day = round(float(np.percentile(svc_day, 95)), 2)
+
+    n_bins = 24
+    ob_c,  ob_e  = np.histogram(ob_day.clip(0),  bins=n_bins)
+    svc_c, svc_e = np.histogram(svc_day.clip(0), bins=n_bins)
+
     return {
         'coverage_pct':    coverage_pct,
         'overload_prob':   overload_prob,   # per hour [6..21]
@@ -238,10 +260,24 @@ def run_monte_carlo(by_hour, bankers, svc_fte, n_iter=MC_ITERATIONS, seed=42):
         'p95_util':        p95_util,        # 95th-pct utilization % per hour
         'bankers_for_95':  bankers_for_95,
         'current_bankers': round(bankers, 1),
+        'svc_fte':         round(svc_fte, 1),
         'n_iter':          n_iter,
         'lam_online':      [round(lam[i, 0], 2) for i in range(len(MC_HOURS))],
         'lam_fyzicka':     [round(lam[i, 1], 2) for i in range(len(MC_HOURS))],
         'lam_bezhot':      [round(lam[i, 2], 2) for i in range(len(MC_HOURS))],
+        # FTE visualization
+        'p95_ob_fte':    p95_ob_fte,
+        'p95_svc_fte':   p95_svc_fte,
+        'ob_cap_fte':    ob_cap_fte,
+        'svc_cap_fte':   svc_cap_fte,
+        'ob_hist':       ob_c.tolist(),
+        'ob_edges':      [round(x, 2) for x in ob_e.tolist()],
+        'svc_hist':      svc_c.tolist(),
+        'svc_edges':     [round(x, 2) for x in svc_e.tolist()],
+        'ob_cap_day':    ob_cap_day,
+        'svc_cap_day':   svc_cap_day,
+        'ob_p95_day':    ob_p95_day,
+        'svc_p95_day':   svc_p95_day,
     }
 
 
@@ -364,8 +400,9 @@ def load_specialiste():
             bid = pd.to_numeric(row[bid_c] if bid_c else None, errors='coerce')
             if pd.isna(bid): continue
             bid = int(bid)
-            bankers = sum(float(row.get(c, 0) or 0) for c in pos_cols if c in BANKER_COLS)
-            svc_fte = float(row.get(SERVICE_COL, 0) or 0)
+            bankers     = sum(float(row.get(c, 0) or 0) for c in pos_cols if c in BANKER_COLS)
+            svc_fte     = float(row.get(SERVICE_COL, 0) or 0)
+            cashier_fte = float(row.get(CASHIER_COL, 0) or 0)
             positions = {}
             for c in pos_cols:
                 v = float(row.get(c, 0) or 0)
@@ -374,12 +411,14 @@ def load_specialiste():
                     positions[lbl] = round(v, 1)
             total_fte = sum(float(row.get(c, 0) or 0) for c in pos_cols)
             out[bid] = {
-                'name':      str(row[nm_c]) if nm_c and pd.notna(row.get(nm_c,'')) else None,
-                'bankers':   round(bankers, 1),
-                'svc_fte':   round(svc_fte, 1),
-                'has_svc':   svc_fte > 0,
-                'positions': positions,
-                'total_fte': round(total_fte, 1),
+                'name':        str(row[nm_c]) if nm_c and pd.notna(row.get(nm_c,'')) else None,
+                'bankers':     round(bankers, 1),
+                'svc_fte':     round(svc_fte, 1),
+                'has_svc':     svc_fte > 0,
+                'cashier_fte': round(cashier_fte, 1),
+                'has_cash':    cashier_fte > 0,
+                'positions':   positions,
+                'total_fte':   round(total_fte, 1),
             }
         print(f"   Specialisté: {len(out)} poboček")
     except Exception as e:
@@ -564,10 +603,12 @@ def build_data(df, kpis, prof_kli, prof_fte, spec, od, sales=None):
         ]
 
         # Staff
-        bankers = float(s.get('bankers', 0) or 0)
-        svc_fte = float(s.get('svc_fte', 0) or 0)
-        has_svc = bool(s.get('has_svc', False))
-        positions = s.get('positions', {})
+        bankers     = float(s.get('bankers', 0) or 0)
+        svc_fte     = float(s.get('svc_fte', 0) or 0)
+        has_svc     = bool(s.get('has_svc', False))
+        cashier_fte = float(s.get('cashier_fte', 0) or 0)
+        has_cash    = bool(s.get('has_cash', False))
+        positions   = s.get('positions', {})
         # FTE priority: profitabilita xlsx → kpis pkl → specialiste total (fallback)
         fte = prof_fte.get(bid) or k.get('fte') or s.get('total_fte')
 
@@ -630,8 +671,10 @@ def build_data(df, kpis, prof_kli, prof_fte, spec, od, sales=None):
             'fte':        fte,
             'bankers':    bankers,
             'svc_fte':    svc_fte,
-            'has_svc':    has_svc,
-            'positions':  positions,
+            'has_svc':      has_svc,
+            'cashier_fte':  cashier_fte,
+            'has_cash':     has_cash,
+            'positions':    positions,
             'poc_kli':    poc_kli,
             'total':      total,
             'by_type':    by_type,
@@ -828,6 +871,11 @@ details summary{{cursor:pointer;font-size:.76rem;font-weight:700;color:#2563eb;p
 .cap-ring-in{{width:52px;height:52px;border-radius:50%;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1;}}
 .cap-gauge-row{{display:flex;align-items:flex-start;gap:14px;margin-bottom:10px;}}
 .cap-gauge-meta{{flex:1;min-width:0;}}
+/* MC FTE charts */
+.mc-chart-wrap{{border:1px solid #dbeafe;border-radius:6px;padding:6px;background:#fff;margin-bottom:4px;}}
+.mc-chart-title{{font-size:.68rem;font-weight:700;color:#1e3a8a;margin:8px 0 3px;}}
+.mc-charts-row{{display:grid;grid-template-columns:1fr 1fr;gap:10px;}}
+@media(max-width:560px){{.mc-charts-row{{grid-template-columns:1fr;}}}}
 </style>
 </head>
 <body>
@@ -948,22 +996,25 @@ function staffSec(d){{
   const svcNote=d.has_svc
     ?`<span class="badge" style="background:#dbeafe;color:#1d4ed8;">✓ BKP Medior zajišťuje servis</span>`
     :`<span class="badge" style="background:#fef9c3;color:#854d0e;">⚠ OB Junior — fallback servis</span>`;
+  const cashNote=d.has_cash
+    ?`<span class="badge" style="background:#fef3c7;color:#92400e;margin-top:4px;display:inline-block;">🏦 S pokladnou</span>`
+    :`<span class="badge" style="background:#f0f4ff;color:#64748b;margin-top:4px;display:inline-block;">💳 Cashless</span>`;
   const obDtl=Object.entries(d.positions||{{}}).filter(([l])=>l.startsWith('OB'))
     .map(([l,v])=>`${{l}}: <b>${{fmt1(v)}}</b>`).join(' · ');
-  const bkpDtl=Object.entries(d.positions||{{}}).filter(([l])=>l.startsWith('BKP'))
-    .map(([l,v])=>`${{l}}: <b>${{fmt1(v)}}</b>`).join(' · ');
-  const otherRows=Object.entries(d.positions||{{}}).filter(([l])=>!l.startsWith('OB')&&!l.startsWith('BKP'))
+  const otherRows=Object.entries(d.positions||{{}})
+    .filter(([l])=>!l.startsWith('OB')&&l!=='BKP Medior'&&l!=='BKP Junior')
     .map(([l,v])=>`<tr><td style="color:#64748b;font-size:.8rem;">${{l}}</td>
         <td style="font-weight:600;color:#475569;text-align:right;">${{fmt1(v)}}</td></tr>`).join('');
   const porClr=d.poc_kli>0&&d.bankers>0?(Math.round(d.poc_kli/d.bankers)<=C.TARGET_PORTFOLIO?'#16a34a':'#dc2626'):'#64748b';
+  const cols=d.has_cash?'1fr 1fr 1fr':'1fr 1fr';
   return`<div class="sec"><div class="st">👤 Personální obsazení</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:12px;">
+    <div style="display:grid;grid-template-columns:${{cols}};gap:12px;margin-bottom:12px;">
       <div>
         <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px;">
           <span class="staff-big-n" style="color:#1d4ed8;">${{fmt1(d.bankers)}}</span>
           <span class="staff-big-lbl">Bankéři OB</span>
         </div>
-        <div style="font-size:.7rem;color:#94a3b8;margin-bottom:4px;">${{obDtl||'OB pozice'}}</div>
+        <div style="font-size:.7rem;color:#94a3b8;margin-bottom:4px;">${{obDtl||'—'}}</div>
         ${{d.poc_kli>0&&d.bankers>0?`<div style="font-size:.72rem;color:#475569;">
           Portfolio/bankéř: <b style="color:${{porClr}};">${{fmtI(Math.round(d.poc_kli/d.bankers))}}</b>
           <span style="color:#94a3b8;">(cíl ≤${{C.TARGET_PORTFOLIO}})</span></div>`:''}}
@@ -973,12 +1024,20 @@ function staffSec(d){{
           <span class="staff-big-n" style="color:${{d.has_svc?'#0891b2':'#94a3b8'}};">${{fmt1(d.svc_fte)}}</span>
           <span class="staff-big-lbl">BKP Medior</span>
         </div>
-        <div style="font-size:.7rem;color:#94a3b8;margin-bottom:6px;">${{bkpDtl||'—'}}</div>
+        <div style="font-size:.7rem;color:#94a3b8;margin-bottom:6px;">Servis (bezhot. walkin)</div>
         ${{svcNote}}
       </div>
+      ${{d.has_cash?`<div>
+        <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px;">
+          <span class="staff-big-n" style="color:#d97706;">${{fmt1(d.cashier_fte)}}</span>
+          <span class="staff-big-lbl">BKP Junior</span>
+        </div>
+        <div style="font-size:.7rem;color:#94a3b8;margin-bottom:6px;">Pokladník (hotov. op.)</div>
+        ${{cashNote}}
+      </div>`:''}}
     </div>
     ${{otherRows?`<table class="post" style="margin-bottom:8px;"><tbody>${{otherRows}}</tbody></table>`:''}}
-    ${{d.fte!=null?`<div style="font-size:.7rem;color:#94a3b8;padding-top:8px;border-top:1px solid #f0f4ff;">FTE celkem: <b>${{fmt1(d.fte)}}</b></div>`:''}}
+    ${{d.fte!=null?`<div style="font-size:.7rem;color:#94a3b8;padding-top:8px;border-top:1px solid #f0f4ff;">FTE celkem: <b>${{fmt1(d.fte)}}</b> · ${{d.has_cash?'S pokladnou':'Cashless'}}</div>`:''}}
   </div>`;
 }}
 
@@ -1308,60 +1367,123 @@ function model3Sec(d){{
   </div>`;
 }}
 
-function _mcPanel(mc,n){{
+// ── SVG FTE line chart: P95 hourly FTE demand vs. capacity ───────────────────
+function _svgFteLine(mc,hasSvc,W,H){{
+  if(!mc||!mc.p95_ob_fte)return'';
+  const pl=32,pr=12,pt=8,pb=18,pw=W-pl-pr,ph=H-pt-pb;
+  const n=MCH.length;
+  const xs=i=>pl+i/(n-1)*pw;
+  const obFte=mc.p95_ob_fte,svcFte=mc.p95_svc_fte||[];
+  const capOB=mc.ob_cap_fte||0,capSVC=mc.svc_cap_fte||0;
+  const maxY=Math.max(...obFte,...(hasSvc?svcFte:[]),capOB,hasSvc?capSVC:0)*1.2||1;
+  const ys=v=>pt+ph*(1-Math.min(v,maxY)/maxY);
+  // Y ticks
+  const step=maxY<=1.5?0.25:maxY<=3?0.5:maxY<=6?1:maxY<=12?2:5;
+  let yts=[]; for(let v=0;v<=maxY*1.05;v+=step)yts.push(parseFloat(v.toFixed(2)));
+  const ytkEl=yts.map(v=>`<line x1="${{pl}}" y1="${{ys(v).toFixed(1)}}" x2="${{pl+pw}}" y2="${{ys(v).toFixed(1)}}" stroke="#e2e8f0" stroke-width="0.5"/><text x="${{pl-3}}" y="${{ys(v).toFixed(1)}}" text-anchor="end" dominant-baseline="middle" font-size="7" fill="#94a3b8">${{v}}</text>`).join('');
+  // X labels (every 2h)
+  const xtkEl=MCH.map((h,i)=>i%2===0?`<text x="${{xs(i).toFixed(1)}}" y="${{H-3}}" text-anchor="middle" font-size="7" fill="#94a3b8">${{h}}h</text>`:'').join('');
+  // Capacity dashed lines
+  const capOBY=ys(capOB);
+  const capLines=`<line x1="${{pl}}" y1="${{capOBY.toFixed(1)}}" x2="${{pl+pw}}" y2="${{capOBY.toFixed(1)}}" stroke="#2563eb" stroke-dasharray="5,3" stroke-width="1.5"/>
+    <text x="${{pl+pw+2}}" y="${{capOBY.toFixed(1)}}" dominant-baseline="middle" font-size="7" fill="#2563eb">OB ${{fmt1(capOB)}}</text>
+    ${{hasSvc?`<line x1="${{pl}}" y1="${{ys(capSVC).toFixed(1)}}" x2="${{pl+pw}}" y2="${{ys(capSVC).toFixed(1)}}" stroke="#d97706" stroke-dasharray="5,3" stroke-width="1.5"/><text x="${{pl+pw+2}}" y="${{ys(capSVC).toFixed(1)}}" dominant-baseline="middle" font-size="7" fill="#d97706">SVC ${{fmt1(capSVC)}}</text>`:''}}`;
+  // Lines
+  const obPts=obFte.map((v,i)=>`${{i===0?'M':'L'}}${{xs(i).toFixed(1)}},${{ys(v).toFixed(1)}}`).join(' ');
+  const svcPts=hasSvc?svcFte.map((v,i)=>`${{i===0?'M':'L'}}${{xs(i).toFixed(1)}},${{ys(v).toFixed(1)}}`).join(' '):'';
+  // Fill area under OB line
+  const areaOB=`${{obPts}} L${{xs(n-1).toFixed(1)}},${{(pt+ph).toFixed(1)}} L${{pl}},${{(pt+ph).toFixed(1)}} Z`;
+  return`<svg viewBox="0 0 ${{W}} ${{H}}" style="width:100%;display:block;">
+    <rect x="${{pl}}" y="${{pt}}" width="${{pw}}" height="${{ph}}" fill="#f8faff" rx="2"/>
+    ${{ytkEl}}${{xtkEl}}${{capLines}}
+    <path d="${{areaOB}}" fill="#2563eb" fill-opacity="0.06"/>
+    ${{hasSvc?`<path d="${{svcPts}}" fill="none" stroke="#d97706" stroke-width="1.5" stroke-linejoin="round"/>`:''}}
+    <path d="${{obPts}}" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round"/>
+    <line x1="${{pl}}" y1="${{pt}}" x2="${{pl}}" y2="${{pt+ph}}" stroke="#94a3b8" stroke-width="0.8"/>
+    <line x1="${{pl}}" y1="${{pt+ph}}" x2="${{pl+pw}}" y2="${{pt+ph}}" stroke="#94a3b8" stroke-width="0.8"/>
+  </svg>`;
+}}
+
+// ── SVG histogram: daily FTE demand distribution ───────────────────────────────
+function _svgHist(counts,edges,capV,p95V,color,W,H){{
+  if(!counts||!counts.length||!edges||edges.length<2)return'';
+  const pl=32,pr=6,pt=8,pb=18,pw=W-pl-pr,ph=H-pt-pb;
+  const maxX=edges[edges.length-1]||1,maxC=Math.max(...counts,1);
+  const xs=x=>pl+Math.min(x,maxX)/maxX*pw;
+  const ys=v=>pt+ph*(1-v/maxC);
+  // Bars
+  const bars=counts.map((c,i)=>{{
+    const x1=xs(edges[i]),x2=xs(edges[i+1]),w=Math.max(x2-x1-0.5,0.5),y=ys(c),h=ph-(y-pt);
+    return`<rect x="${{x1.toFixed(1)}}" y="${{y.toFixed(1)}}" width="${{w.toFixed(1)}}" height="${{h.toFixed(1)}}" fill="${{color}}" fill-opacity="0.75"/>`;
+  }}).join('');
+  // Vertical reference lines
+  const capX=xs(Math.min(capV,maxX)),p95X=xs(Math.min(p95V,maxX));
+  const capLn=`<line x1="${{capX.toFixed(1)}}" y1="${{pt}}" x2="${{capX.toFixed(1)}}" y2="${{pt+ph}}" stroke="#475569" stroke-dasharray="4,3" stroke-width="1.5"/>`;
+  const p95Ln=p95V>0?`<line x1="${{p95X.toFixed(1)}}" y1="${{pt}}" x2="${{p95X.toFixed(1)}}" y2="${{pt+ph}}" stroke="#16a34a" stroke-dasharray="4,3" stroke-width="1.5"/>`:'';
+  // X ticks (5 evenly spaced)
+  const xTk=[0,0.25,0.5,0.75,1.0].map(t=>{{const v=t*maxX,x=xs(v);return`<text x="${{x.toFixed(1)}}" y="${{H-3}}" text-anchor="middle" font-size="7" fill="#94a3b8">${{v.toFixed(1)}}</text>`;}}).join('');
+  return`<svg viewBox="0 0 ${{W}} ${{H}}" style="width:100%;display:block;">
+    <rect x="${{pl}}" y="${{pt}}" width="${{pw}}" height="${{ph}}" fill="#f8faff" rx="2"/>
+    ${{bars}}${{capLn}}${{p95Ln}}
+    <line x1="${{pl}}" y1="${{pt}}" x2="${{pl}}" y2="${{pt+ph}}" stroke="#94a3b8" stroke-width="0.8"/>
+    <line x1="${{pl}}" y1="${{pt+ph}}" x2="${{pl+pw}}" y2="${{pt+ph}}" stroke="#94a3b8" stroke-width="0.8"/>
+    ${{xTk}}
+  </svg>`;
+}}
+
+// ── Model 4 — Monte Carlo with FTE visualization ──────────────────────────────
+function _mcPanel(mc,n,hasSvc){{
   if(!mc)return'';
   const cov=mc.coverage_pct;
   const covClr=cov>=95?'#15803d':cov>=80?'#d97706':'#b91c1c';
-  const maxProb=Math.max(...mc.overload_prob,1);
-  const bars=MCH.map((h,i)=>{{
-    const prob=mc.overload_prob[i]||0;
-    const barClr=prob>25?'#ef4444':prob>10?'#f59e0b':prob>2?'#3b82f6':'#93c5fd';
-    const hb=Math.max(prob/maxProb*70,1).toFixed(1);
-    return`<div class="mcbar-col">
-      <div style="font-size:.55rem;color:#94a3b8;text-align:center;">${{prob>0?prob.toFixed(0)+'%':''}}</div>
-      <div style="height:${{hb}}px;background:${{barClr}};border-radius:3px 3px 0 0;width:100%;"
-           title="${{h}}h: ${{prob}}%"></div>
-      <div style="font-size:.56rem;color:#64748b;">${{h}}h</div></div>`;
-  }}).join('');
-  const maxP95=Math.max(...mc.p95_util,1);
-  const p95bars=MCH.map((h,i)=>{{
-    const v=mc.p95_util[i]||0;
-    const clr=v>100?'#ef4444':v>80?'#f59e0b':'#2563eb';
-    const hb=Math.max(v/maxP95*50,1).toFixed(1);
-    return`<div class="mcbar-col">
-      <div style="font-size:.55rem;color:#94a3b8;text-align:center;">${{v>0?Math.round(v)+'%':''}}</div>
-      <div style="height:${{hb}}px;background:${{clr}};border-radius:3px 3px 0 0;width:100%;opacity:.7;"
-           title="${{h}}h P95: ${{v}}%"></div>
-      <div style="font-size:.56rem;color:#64748b;">${{h}}h</div></div>`;
-  }}).join('');
-  return`<div style="flex:1;min-width:200px;background:#f8faff;border-radius:10px;padding:10px;">
-    <div style="font-size:.76rem;font-weight:700;color:#1e3a8a;margin-bottom:8px;">n = ${{fmtI(n)}}</div>
+  return`<div style="flex:1;min-width:260px;background:#f8faff;border-radius:10px;padding:12px;">
+    <div style="font-size:.76rem;font-weight:700;color:#1e3a8a;margin-bottom:8px;">n = ${{fmtI(n)}} simulací</div>
     <div style="display:flex;gap:6px;margin-bottom:10px;">
-      <div class="card" style="flex:1;padding:7px 9px;">
+      <div class="card" style="flex:1;padding:6px 9px;">
         <div class="cl">Pokrytí</div>
-        <div style="font-size:1.5rem;font-weight:800;color:${{covClr}};">${{cov}}%</div>
+        <div style="font-size:1.4rem;font-weight:800;color:${{covClr}};">${{cov}}%</div>
         <div class="cs">dnů bez přetížení</div>
       </div>
-      <div class="card" style="flex:1;padding:7px 9px;">
-        <div class="cl">P95 max</div>
-        <div style="font-size:1.5rem;font-weight:800;">${{fmt1(Math.max(...mc.p95_util))}}%</div>
-        <div class="cs">špičková utilizace</div>
-      </div>
-      <div class="card" style="flex:1;padding:7px 9px;">
-        <div class="cl">Pro 95%</div>
-        <div style="font-size:1.5rem;font-weight:800;">${{mc.bankers_for_95!=null?fmt1(mc.bankers_for_95):'>+3'}}</div>
+      <div class="card" style="flex:1;padding:6px 9px;">
+        <div class="cl">Pro 95% pokrytí</div>
+        <div style="font-size:1.4rem;font-weight:800;">${{mc.bankers_for_95!=null?fmt1(mc.bankers_for_95):'>+3'}}</div>
         <div class="cs">bankéřů OB</div>
       </div>
+      <div class="card" style="flex:1;padding:6px 9px;">
+        <div class="cl">OB P95 špička</div>
+        <div style="font-size:1.4rem;font-weight:800;">${{fmt1(Math.max(...mc.p95_ob_fte))}}</div>
+        <div class="cs">FTE / hod</div>
+      </div>
     </div>
-    <div style="font-size:.68rem;color:#64748b;margin-bottom:3px;font-weight:600;">P(přetížení) / hodinu</div>
-    <div class="mcbar-wrap" style="height:80px;align-items:flex-end;">${{bars}}</div>
-    <div style="font-size:.68rem;color:#64748b;margin-top:8px;margin-bottom:3px;font-weight:600;">P95 využití OB / hodinu</div>
-    <div class="mcbar-wrap" style="height:60px;align-items:flex-end;">${{p95bars}}</div>
+
+    <div class="mc-chart-title">P95 FTE poptávka po hodinách (6h–21h)</div>
+    <div style="font-size:.62rem;color:#64748b;margin-bottom:3px;">
+      OB (modrá) ${{hasSvc?'· Servis BKP (oranžová) ':''}}· kapacita = přerušovaná čára (FTE = bankéř × ${{Math.round((1-C.ABSENCE_RATE)*100)}}% přítomnost)
+    </div>
+    <div class="mc-chart-wrap">${{_svgFteLine(mc,hasSvc,480,130)}}</div>
+
+    <div class="mc-chart-title">Distribuce celkové denní FTE poptávky (bankéř-hodiny/den)</div>
+    <div style="font-size:.62rem;color:#64748b;margin-bottom:3px;">Frekvence · šedá = kapacita · zelená = P95 poptávky</div>
+    <div class="${{hasSvc?'mc-charts-row':''}}">
+      <div>
+        <div style="font-size:.65rem;color:#2563eb;font-weight:700;margin-bottom:2px;">
+          OB tým (schůzky) — kapacita ${{fmt1(mc.ob_cap_day)}}h · P95 ${{fmt1(mc.ob_p95_day)}}h
+        </div>
+        <div class="mc-chart-wrap">${{_svgHist(mc.ob_hist,mc.ob_edges,mc.ob_cap_day,mc.ob_p95_day,'#2563eb',hasSvc?230:470,100)}}</div>
+      </div>
+      ${{hasSvc?`<div>
+        <div style="font-size:.65rem;color:#d97706;font-weight:700;margin-bottom:2px;">
+          Servisní zóna (BKP) — kapacita ${{fmt1(mc.svc_cap_day)}}h · P95 ${{fmt1(mc.svc_p95_day)}}h
+        </div>
+        <div class="mc-chart-wrap">${{_svgHist(mc.svc_hist,mc.svc_edges,mc.svc_cap_day,mc.svc_p95_day,'#d97706',230,100)}}</div>
+      </div>`:''}}
+    </div>
   </div>`;
 }}
 
 function model4Sec(d){{
   if(!d.mc)return'';
+  const hasSvc=d.has_svc||false;
   const b95note=d.mc.bankers_for_95!=null
     ?(d.mc.bankers_for_95===d.mc.current_bankers
         ?`✅ Současný počet bankéřů (${{fmt1(d.mc.current_bankers)}}) postačuje pro 95% pokrytí.`
@@ -1371,15 +1493,15 @@ function model4Sec(d){{
     <div class="kap-model-hd">Model 4 — Monte Carlo simulace průměrného dne</div>
     <div style="font-size:.72rem;color:#64748b;margin-bottom:10px;">
       Poisson(λ) per hodina · efektivní přítomnost ${{Math.round((1-C.ABSENCE_RATE)*100)}}%
-      ${{d.mc2?'· Srovnání stability výsledků pro různý počet simulací':''}}
+      ${{d.mc2?'· Srovnání stability výsledků n=1000 vs n=2000':''}}
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
-      ${{_mcPanel(d.mc,C.MC_ITERATIONS)}}
-      ${{d.mc2?_mcPanel(d.mc2,2000):''}}
+      ${{_mcPanel(d.mc,C.MC_ITERATIONS,hasSvc)}}
+      ${{d.mc2?_mcPanel(d.mc2,2000,hasSvc):''}}
     </div>
-    <div style="font-size:.75rem;color:#475569;padding:8px 12px;
+    <div style="font-size:.75rem;padding:8px 12px;border-radius:8px;
         background:${{d.mc.bankers_for_95===d.mc.current_bankers?'#f0fdf4':'#f0f4ff'}};
-        border-radius:8px;color:${{d.mc.bankers_for_95===d.mc.current_bankers?'#15803d':'#475569'}};">
+        color:${{d.mc.bankers_for_95===d.mc.current_bankers?'#15803d':'#475569'}};">
       ${{b95note}}
     </div>
   </div>`;
