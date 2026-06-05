@@ -1414,23 +1414,6 @@ function model3Sec(d){{
   const neededW=(a.bankers_needed/maxB*100).toFixed(1);
   const deg=(Math.min(a.util_ob,100)*3.6).toFixed(0);
   const ringStyle=`background:conic-gradient(${{clr}} ${{deg}}deg,${{bg}} ${{deg}}deg)`;
-  // FTE chart: meetings only, shape from by_hour, scaled to poc_kli/aod meetings/day
-  const aod3=a.open_days||C.WORKING_DAYS;
-  const mtgPD=a.poc_kli/aod3;
-  const totalMH=MCH.reduce((s,h)=>s+(d.by_hour?.online?.[h]||0)+(d.by_hour?.fyzicka?.[h]||0),0);
-  const m3obFte=MCH.map(h=>{{
-    const shape=totalMH>0?((d.by_hour?.online?.[h]||0)+(d.by_hour?.fyzicka?.[h]||0))/totalMH:1/MCH.length;
-    return shape*mtgPD*C.MEETING_MINS/60;
-  }});
-  const m3capOB=a.bankers*eff;
-  const m3peakMtg=Math.max(...m3obFte.map(v=>v*60/C.MEETING_MINS),0);
-  const m3FteChart=d.has_time&&totalMH>0?`
-    <div class="mc-chart-title">Průměrná denní FTE poptávka po hodinách — schůzky (6h–21h)</div>
-    <div style="font-size:.62rem;color:#64748b;margin-bottom:3px;">
-      OB (modrá) · kapacita = přerušovaná čára · tvar z reálných dat, škálováno na ${{fmt1(mtgPD)}} schůzky/den
-    </div>
-    <div class="mc-chart-wrap">${{_svgFteBar(m3obFte,[],m3capOB,0,false,480,120)}}</div>`:'';
-  const m3WorkRec=_workRec(m3peakMtg,0,a.bankers,0,eff,false);
   return`<div class="kap-model">
     <div class="kap-model-hd">Model 3 — Scénář: 1× ročně s každým klientem</div>
     <div style="font-size:.72rem;color:#64748b;margin-bottom:10px;">
@@ -1486,8 +1469,6 @@ function model3Sec(d){{
         <div class="cs">${{fmtH(a.mins_needed)}} vs. ${{fmtH(a.avail_ob)}}</div>
       </div>
     </div>
-    ${{m3FteChart}}
-    ${{m3WorkRec}}
   </div>`;
 }}
 
@@ -1841,6 +1822,9 @@ function targetSec(d){{
   const nd=d.n_days||1,eff=1-C.ABSENCE_RATE;
   const c1=d.cap1,mc=d.mc;
   const totalNH=(d.by_type?.online||0)+(d.by_type?.fyzicka||0)+(d.by_type?.bezhot||0);
+  const nowNH1=totalNH/nd;
+  const nowMtg1=((d.by_type?.online||0)+(d.by_type?.fyzicka||0))/nd;
+  const nowBeh1=(d.by_type?.bezhot||0)/nd;
   // Model 1 — OB
   const ob90ok=c1.util_ob>=90;
   const obSF1=!ob90ok&&c1.ob_used>0?c1.avail_ob*0.9/c1.ob_used:0;
@@ -1849,16 +1833,17 @@ function targetSec(d){{
   const addBeh1=obSF1>1?Math.ceil((d.by_type?.bezhot||0)*(obSF1-1)/nd):0;
   let m1ObH='';
   if(ob90ok){{m1ObH=`<span style="color:#16a34a;font-size:.76rem;font-weight:700;">✅ Již ≥ 90 % (${{c1.util_ob.toFixed(1)}} %)</span>`;}}
-  else if(addNH1>0){{m1ObH=`<div style="font-size:.75rem;color:#1e293b;"><b>+${{fmtI(addNH1)}} nav./den</b></div><div style="font-size:.68rem;color:#64748b;margin-top:2px;">z toho +${{fmtI(addMtg1)}} schůzek · +${{fmtI(addBeh1)}} walkinů</div>`;}}
+  else if(addNH1>0){{m1ObH=`<div style="font-size:.72rem;color:#475569;">Nyní: <b>${{fmt1(nowNH1)}}</b> nav./den (${{fmt1(nowMtg1)}} schůzek · ${{fmt1(nowBeh1)}} walkinů)</div><div style="font-size:.75rem;color:#1d4ed8;margin-top:3px;">Cíl 90 %: <b>${{fmt1(nowNH1+addNH1)}}</b> nav./den (<b>+${{fmtI(addNH1)}}</b> · +${{fmtI(addMtg1)}} schůzek · +${{fmtI(addBeh1)}} walkinů)</div>`;}}
   else{{m1ObH=`<span style="color:#94a3b8;font-size:.7rem;">Nedostatečná vstupní data</span>`;}}
   // Model 1 — BKP
   const s90ok=c1.util_svc!=null&&c1.util_svc>=90;
   const addWB1=d.has_svc&&c1.avail_svc>0&&!s90ok&&(c1.avail_svc*0.9-c1.svc_used)>0?Math.ceil((c1.avail_svc*0.9-c1.svc_used)/C.WALKIN_AVG_MINS/nd):0;
+  const nowWB1=(d.by_type?.bezhot||0)/nd;
   let m1SvcH='';
   if(!d.has_svc){{m1SvcH=`<span style="color:#94a3b8;font-size:.7rem;">Pobočka nemá BKP Medior</span>`;}}
   else if(c1.util_svc==null){{m1SvcH=`<span style="color:#94a3b8;font-size:.7rem;">N/A</span>`;}}
   else if(s90ok){{m1SvcH=`<span style="color:#16a34a;font-size:.76rem;font-weight:700;">✅ Již ≥ 90 % (${{c1.util_svc.toFixed(1)}} %)</span>`;}}
-  else if(addWB1>0){{m1SvcH=`<div style="font-size:.75rem;color:#1e293b;"><b>+${{fmtI(addWB1)}} walkinů/den</b></div><div style="font-size:.68rem;color:#64748b;margin-top:2px;">bezhot. walkin ${{C.WALKIN_AVG_MINS}} min (servis)</div>`;}}
+  else if(addWB1>0){{m1SvcH=`<div style="font-size:.72rem;color:#475569;">Nyní: <b>${{fmt1(nowWB1)}}</b> walkinů/den celkem</div><div style="font-size:.75rem;color:#0891b2;margin-top:3px;">Cíl 90 %: <b>${{fmt1(nowWB1+addWB1)}}</b> walkinů/den (<b>+${{fmtI(addWB1)}}</b>)</div>`;}}
   else{{m1SvcH=`<span style="color:#94a3b8;font-size:.7rem;">Nedostatečná data</span>`;}}
   // MC — OB
   const obP=mc&&mc.ob_cap_day>0?mc.ob_p95_day/mc.ob_cap_day*100:null;
@@ -1866,20 +1851,24 @@ function targetSec(d){{
   const addNHmc=obSFmc>1?Math.ceil((obSFmc-1)*d.total/nd):0;
   const addMtgmc=obSFmc>1?Math.ceil((obSFmc-1)*((d.by_type?.online||0)+(d.by_type?.fyzicka||0))/nd):0;
   const addBehmc=obSFmc>1?Math.ceil((obSFmc-1)*(d.by_type?.bezhot||0)/nd):0;
+  const nowNHmc=d.total/nd;
+  const nowMtgmc=((d.by_type?.online||0)+(d.by_type?.fyzicka||0))/nd;
+  const nowBehmc=(d.by_type?.bezhot||0)/nd;
   let mcObH='';
   if(!mc){{mcObH=`<span style="color:#94a3b8;font-size:.7rem;">MC data chybí</span>`;}}
   else if(obP==null){{mcObH=`<span style="color:#94a3b8;font-size:.7rem;">N/A</span>`;}}
   else if(obP>=90){{mcObH=`<span style="color:#16a34a;font-size:.76rem;font-weight:700;">✅ P95 již ≥ 90 % (${{obP.toFixed(1)}} %)</span>`;}}
-  else if(addNHmc>0){{mcObH=`<div style="font-size:.75rem;color:#1e293b;"><b>+${{fmtI(addNHmc)}} nav./den</b></div><div style="font-size:.68rem;color:#64748b;margin-top:2px;">z toho +${{fmtI(addMtgmc)}} schůzek · +${{fmtI(addBehmc)}} walkinů</div>`;}}
+  else if(addNHmc>0){{mcObH=`<div style="font-size:.72rem;color:#475569;">Nyní: <b>${{fmt1(nowNHmc)}}</b> nav./den (${{fmt1(nowMtgmc)}} schůzek · ${{fmt1(nowBehmc)}} walkinů)</div><div style="font-size:.75rem;color:#1d4ed8;margin-top:3px;">Cíl 90 %: <b>${{fmt1(nowNHmc+addNHmc)}}</b> nav./den (<b>+${{fmtI(addNHmc)}}</b> · +${{fmtI(addMtgmc)}} schůzek · +${{fmtI(addBehmc)}} walkinů)</div>`;}}
   else{{mcObH=`<span style="color:#94a3b8;font-size:.7rem;">Nedostatečná data</span>`;}}
   // MC — BKP
   const svcP=mc&&mc.svc_cap_day>0&&mc.svc_p95_day>0?mc.svc_p95_day/mc.svc_cap_day*100:null;
   const addWBmc=d.has_svc&&svcP!=null&&svcP<90&&mc.svc_p95_day>0?Math.ceil((mc.svc_cap_day*0.9/mc.svc_p95_day-1)*(d.by_type?.bezhot||0)/nd):0;
+  const nowWBmc=(d.by_type?.bezhot||0)/nd;
   let mcSvcH='';
   if(!mc||!d.has_svc){{mcSvcH=!mc?'':`<span style="color:#94a3b8;font-size:.7rem;">Pobočka nemá BKP Medior</span>`;}}
   else if(svcP==null){{mcSvcH=`<span style="color:#94a3b8;font-size:.7rem;">N/A</span>`;}}
   else if(svcP>=90){{mcSvcH=`<span style="color:#16a34a;font-size:.76rem;font-weight:700;">✅ P95 již ≥ 90 % (${{svcP.toFixed(1)}} %)</span>`;}}
-  else if(addWBmc>0){{mcSvcH=`<div style="font-size:.75rem;color:#1e293b;"><b>+${{fmtI(addWBmc)}} walkinů/den</b></div><div style="font-size:.68rem;color:#64748b;margin-top:2px;">bezhot. walkin avg ${{C.WALKIN_AVG_MINS}} min</div>`;}}
+  else if(addWBmc>0){{mcSvcH=`<div style="font-size:.72rem;color:#475569;">Nyní: <b>${{fmt1(nowWBmc)}}</b> walkinů/den celkem</div><div style="font-size:.75rem;color:#0891b2;margin-top:3px;">Cíl 90 %: <b>${{fmt1(nowWBmc+addWBmc)}}</b> walkinů/den (<b>+${{fmtI(addWBmc)}}</b>)</div>`;}}
   else{{mcSvcH=`<span style="color:#94a3b8;font-size:.7rem;">Nedostatečná data</span>`;}}
   const hdOB='font-size:.7rem;font-weight:700;color:#475569;margin-bottom:4px;';
   const hdSVC='font-size:.7rem;font-weight:700;color:#0891b2;margin:10px 0 4px;';
