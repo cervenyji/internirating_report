@@ -1387,9 +1387,34 @@ function _workRec(peakMtgLam,peakBehLam,bankers,svcFte,eff,hasSvc){{
 function model1Sec(d){{
   if(!d.cap1||!d.bankers)return'';
   const nd=d.n_days||1;
+  let m4extra='';
+  if(d.cap_m4){{
+    const c4=d.cap_m4,c1=d.cap1;
+    const u4Clr=c4.util_ob<70?'#2563eb':c4.util_ob<90?'#f59e0b':'#ef4444';
+    const s4Clr=c4.util_svc!=null?(c4.util_svc<70?'#0891b2':c4.util_svc<90?'#f59e0b':'#ef4444'):'#94a3b8';
+    const mtg4=(c4.online_mins+c4.fyzicka_mins)/d.bankers/nd/C.MEETING_MINS;
+    const mtg1=(c1.online_mins+c1.fyzicka_mins)/d.bankers/nd/C.MEETING_MINS;
+    m4extra=`<details style="margin-top:10px;border-top:1px solid #eff6ff;padding-top:8px;">
+      <summary style="font-size:.72rem;font-weight:700;color:#7c3aed;cursor:pointer;user-select:none;list-style:none;">▶ Scénář: 35 % walkinů → schůzka OB (varianta M4)</summary>
+      <div style="margin-top:8px;">
+        <div style="font-size:.67rem;color:#64748b;margin-bottom:7px;">Stejná reálná data · 35 % bezhotovostních walkinů přechází na OB schůzku ${{C.MEETING_MINS}} min</div>
+        <div class="grid3" style="margin-bottom:0;">
+          <div class="card"><div class="cl">OB Utilizace</div>
+            <div class="cv" style="color:${{u4Clr}};">${{c4.util_ob.toFixed(1)}} %</div>
+            <div class="cs">M1: ${{c1.util_ob.toFixed(1)}} %</div></div>
+          <div class="card"><div class="cl">Schůzky / bankéř / den</div>
+            <div class="cv">${{fmt1(mtg4)}}</div>
+            <div class="cs">M1: ${{fmt1(mtg1)}}</div></div>
+          ${{d.has_svc&&c4.util_svc!=null?`<div class="card"><div class="cl">BKP Utilizace</div>
+            <div class="cv" style="color:${{s4Clr}};">${{c4.util_svc.toFixed(1)}} %</div>
+            <div class="cs">M1: ${{c1.util_svc!=null?c1.util_svc.toFixed(1)+' %':'N/A'}}</div></div>`:''}}
+        </div>
+      </div>
+    </details>`;
+  }}
   return _capPanel(d.cap1,nd,d.bankers,d.has_svc,
     'Model 1 — Reálná data',
-    `Skutečné návštěvy za ${{fmtI(nd)}} dnů · ${{fmtI(d.total)}} celkem`);
+    `Skutečné návštěvy za ${{fmtI(nd)}} dnů · ${{fmtI(d.total)}} celkem`,m4extra);
 }}
 
 function model2Sec(d){{
@@ -1397,80 +1422,34 @@ function model2Sec(d){{
     ?`<div class="kap-model"><div class="kap-model-hd">Model 2 — Klientský model</div>
        <div style="font-size:.78rem;color:#94a3b8;">⚠️ Data o počtu klientů nejsou dostupná.</div></div>`:'';
   const aod=d.annual_open_days||252;
+  let m3extra='';
+  if(d.annual_1x){{
+    const a=d.annual_1x,eff=1-C.ABSENCE_RATE;
+    const aClr=a.util_ob<70?'#2563eb':a.util_ob<90?'#f59e0b':'#ef4444';
+    const aOk=a.bankers_needed<=a.bankers;
+    m3extra=`<details style="margin-top:10px;border-top:1px solid #eff6ff;padding-top:8px;">
+      <summary style="font-size:.72rem;font-weight:700;color:#7c3aed;cursor:pointer;user-select:none;list-style:none;">▶ Scénář: 1× ročně s každým klientem (varianta M3)</summary>
+      <div style="margin-top:8px;">
+        <div style="font-size:.67rem;color:#64748b;margin-bottom:7px;">Každý z ${{fmtI(a.poc_kli)}} klientů × 1 schůzka × ${{C.MEETING_MINS}} min ročně · ${{fmtI(a.open_days||C.WORKING_DAYS)}} otevřených dnů/rok</div>
+        <div class="grid3" style="margin-bottom:0;">
+          <div class="card"><div class="cl">Schůzky / bankéř / den</div>
+            <div class="cv">${{fmt1(a.mtgs_pb_day)}}</div>
+            <div class="cs">cíl ${{C.TARGET_MTGS_MIN}}–${{C.TARGET_MTGS_MAX}}/den</div></div>
+          <div class="card"><div class="cl">Bankéři potřební</div>
+            <div class="cv" style="color:${{aOk?'#15803d':'#b91c1c'}}">${{fmt1(a.bankers_needed)}}</div>
+            <div class="cs">k disp. ${{fmt1(a.bankers)}} · efekt. ${{Math.round(eff*100)}}%</div></div>
+          <div class="card"><div class="cl">Utilizace OB</div>
+            <div class="cv" style="color:${{aClr}}">${{a.util_ob.toFixed(1)}}%</div>
+            <div class="cs">${{aOk?'✅ kapacita OK':'⚠️ přetíženo'}}</div></div>
+        </div>
+      </div>
+    </details>`;
+  }}
   return _capPanel(d.cap2,aod,d.cap2.bankers,d.has_svc,
     'Model 2 — Klientský model',
-    `${{fmtI(d.poc_kli)}} klientů · ${{fmtI(aod)}} otevřených dnů/rok · typy návštěv z reálných dat`);
+    `${{fmtI(d.poc_kli)}} klientů · ${{fmtI(aod)}} otevřených dnů/rok · typy návštěv z reálných dat`,m3extra);
 }}
 
-function model3Sec(d){{
-  if(!d.annual_1x)return'';
-  const a=d.annual_1x,eff=1-C.ABSENCE_RATE;
-  const clr=a.util_ob<70?'#2563eb':a.util_ob<90?'#f59e0b':'#ef4444';
-  const bg =a.util_ob<70?'#dbeafe':a.util_ob<90?'#fef3c7':'#fee2e2';
-  const mtgClr=a.mtgs_pb_day>=C.TARGET_MTGS_MIN&&a.mtgs_pb_day<=C.TARGET_MTGS_MAX?'#15803d':a.mtgs_pb_day>C.TARGET_MTGS_MAX?'#b91c1c':'#64748b';
-  const ok=a.bankers_needed<=a.bankers;
-  const maxB=Math.max(a.bankers,a.bankers_needed)*1.1;
-  const availW=(a.bankers/maxB*100).toFixed(1);
-  const neededW=(a.bankers_needed/maxB*100).toFixed(1);
-  const deg=(Math.min(a.util_ob,100)*3.6).toFixed(0);
-  const ringStyle=`background:conic-gradient(${{clr}} ${{deg}}deg,${{bg}} ${{deg}}deg)`;
-  return`<div class="kap-model">
-    <div class="kap-model-hd">Model 3 — Scénář: 1× ročně s každým klientem</div>
-    <div style="font-size:.72rem;color:#64748b;margin-bottom:10px;">
-      Každý z ${{fmtI(a.poc_kli)}} klientů × 1 schůzka × ${{C.MEETING_MINS}} min ročně
-      · ${{fmtI(a.open_days||C.WORKING_DAYS)}} otevřených dnů/rok
-    </div>
-    <div class="cap-gauge-row">
-      <div class="cap-ring" style="${{ringStyle}}">
-        <div class="cap-ring-in">
-          <span style="font-size:.88rem;font-weight:800;color:${{clr}};">${{a.util_ob.toFixed(0)}}%</span>
-          <span style="font-size:.48rem;color:#64748b;line-height:1.2;text-align:center;">OB<br>kapc.</span>
-        </div>
-      </div>
-      <div class="cap-gauge-meta">
-        <div style="font-size:.67rem;font-weight:700;color:#475569;margin-bottom:6px;">Bankéři: potřeba vs. dostupnost</div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
-          <div style="font-size:.65rem;color:#475569;width:68px;flex-shrink:0;">Dostupní</div>
-          <div style="flex:1;height:18px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
-            <div style="height:100%;width:${{availW}}%;background:#2563eb;border-radius:4px;
-                 display:flex;align-items:center;justify-content:flex-end;padding-right:4px;">
-              <span style="font-size:.65rem;font-weight:700;color:#fff;">${{fmt1(a.bankers)}}</span>
-            </div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div style="font-size:.65rem;color:#475569;width:68px;flex-shrink:0;">Potřeba</div>
-          <div style="flex:1;height:18px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
-            <div style="height:100%;width:${{neededW}}%;background:${{ok?'#16a34a':'#dc2626'}};border-radius:4px;
-                 display:flex;align-items:center;justify-content:flex-end;padding-right:4px;">
-              <span style="font-size:.65rem;font-weight:700;color:#fff;">${{fmt1(a.bankers_needed)}}</span>
-            </div>
-          </div>
-        </div>
-        <div style="font-size:.68rem;font-weight:700;color:${{ok?'#16a34a':'#dc2626'}};margin-top:5px;">
-          ${{ok?'✅ Aktuální tým kapacitu zvládne':`⚠️ Chybí ${{fmt1(a.bankers_needed-a.bankers)}} bankéřů`}}
-        </div>
-      </div>
-    </div>
-    <div class="grid3" style="margin-top:10px;">
-      <div class="card">
-        <div class="cl">Schůzky / bankéř / den</div>
-        <div class="cv" style="color:${{mtgClr}};">${{fmt1(a.mtgs_pb_day)}}</div>
-        <div class="cs">cíl ${{C.TARGET_MTGS_MIN}}–${{C.TARGET_MTGS_MAX}}/den</div>
-      </div>
-      <div class="card">
-        <div class="cl">Bankéři potřební</div>
-        <div class="cv" style="color:${{ok?'#15803d':'#b91c1c'}};">${{fmt1(a.bankers_needed)}}</div>
-        <div class="cs">k disp. ${{fmt1(a.bankers)}} · efekt. ${{Math.round(eff*100)}}%</div>
-      </div>
-      <div class="card">
-        <div class="cl">Utilizace OB</div>
-        <div class="cv" style="color:${{clr}};">${{a.util_ob.toFixed(1)}}%</div>
-        <div class="cs">${{fmtH(a.mins_needed)}} vs. ${{fmtH(a.avail_ob)}}</div>
-      </div>
-    </div>
-  </div>`;
-}}
 
 // ── SVG FTE line chart: P95 hourly FTE demand vs. capacity ───────────────────
 function _svgFteLine(mc,hasSvc,W,H){{
@@ -1536,18 +1515,51 @@ function _svgHist(counts,edges,capV,p95V,color,W,H){{
   </svg>`;
 }}
 
+// ── SVG multi-model hourly visits line chart ──────────────────────────────────
+function _svgHourlyVisits(d,W,H){{
+  if(!d.has_time)return'';
+  const pl=34,pr=12,pt=8,pb=20,pw=W-pl-pr,ph=H-pt-pb;
+  const n=MCH.length;
+  const xs=i=>pl+i/(n-1)*pw;
+  const actS=MCH.map(h=>TYPES.reduce((s,t)=>s+(d.by_hour[t.key]?.[h]||0),0));
+  const aPD=d.total/(d.n_days||1);
+  const m2PD=d.poc_kli>0&&d.annual_open_days>0?d.poc_kli/d.annual_open_days:0;
+  const m2SF=aPD>0&&m2PD>0?m2PD/aPD:0;
+  const m2S=m2SF>0?actS.map(v=>v*m2SF):null;
+  const mcS=d.mc?MCH.map((_,i)=>(d.mc.lam_online[i]||0)+(d.mc.lam_fyzicka[i]||0)+(d.mc.lam_bezhot[i]||0)):null;
+  const allV=[...actS,...(m2S||[]),...(mcS||[])];
+  const maxY=Math.max(...allV,0.01)*1.2;
+  const ys=v=>pt+ph*(1-Math.min(v,maxY)/maxY);
+  const step=maxY<=2?0.5:maxY<=5?1:maxY<=10?2:maxY<=20?5:10;
+  let yts=[];for(let v=0;v<=maxY*1.05;v+=step)yts.push(parseFloat(v.toFixed(1)));
+  const ytkEl=yts.map(v=>`<line x1="${{pl}}" y1="${{ys(v).toFixed(1)}}" x2="${{pl+pw}}" y2="${{ys(v).toFixed(1)}}" stroke="#e2e8f0" stroke-width="0.5"/><text x="${{pl-3}}" y="${{ys(v).toFixed(1)}}" text-anchor="end" dominant-baseline="middle" font-size="7" fill="#94a3b8">${{v}}</text>`).join('');
+  const xtkEl=MCH.map((h,i)=>i%2===0?`<text x="${{xs(i).toFixed(1)}}" y="${{H-3}}" text-anchor="middle" font-size="7" fill="#94a3b8">${{h}}h</text>`:'').join('');
+  const lp=s=>s.map((v,i)=>`${{i===0?'M':'L'}}${{xs(i).toFixed(1)}},${{ys(v).toFixed(1)}}`).join(' ');
+  const areaAct=`${{lp(actS)}} L${{xs(n-1).toFixed(1)}},${{(pt+ph).toFixed(1)}} L${{pl}},${{(pt+ph).toFixed(1)}} Z`;
+  return`<svg viewBox="0 0 ${{W}} ${{H}}" style="width:100%;display:block;">
+    <rect x="${{pl}}" y="${{pt}}" width="${{pw}}" height="${{ph}}" fill="#f8faff" rx="2"/>
+    ${{ytkEl}}${{xtkEl}}
+    <path d="${{areaAct}}" fill="#2563eb" fill-opacity="0.07"/>
+    ${{m2S?`<path d="${{lp(m2S)}}" fill="none" stroke="#16a34a" stroke-width="1.8" stroke-dasharray="6,3" stroke-linejoin="round"/>`:''}}
+    ${{mcS?`<path d="${{lp(mcS)}}" fill="none" stroke="#9333ea" stroke-width="1.5" stroke-dasharray="2,2" stroke-linejoin="round"/>`:''}}
+    <path d="${{lp(actS)}}" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round"/>
+    <line x1="${{pl}}" y1="${{pt}}" x2="${{pl}}" y2="${{pt+ph}}" stroke="#94a3b8" stroke-width="0.8"/>
+    <line x1="${{pl}}" y1="${{pt+ph}}" x2="${{pl+pw}}" y2="${{pt+ph}}" stroke="#94a3b8" stroke-width="0.8"/>
+  </svg>`;
+}}
+
 // ── Model 4 — Monte Carlo with FTE visualization ──────────────────────────────
 function _mcPanel(mc,n,hasSvc){{
   if(!mc)return'';
-  const cov=mc.coverage_pct;
-  const covClr=cov>=95?'#15803d':cov>=80?'#d97706':'#b91c1c';
+  const ovHPD=mc.overload_prob.reduce((a,b)=>a+b,0)/100;
+  const ovClr=ovHPD<0.5?'#15803d':ovHPD<2?'#d97706':'#b91c1c';
   return`<div style="flex:1;min-width:260px;background:#f8faff;border-radius:10px;padding:12px;">
     <div style="font-size:.76rem;font-weight:700;color:#1e3a8a;margin-bottom:8px;">n = ${{fmtI(n)}} simulací</div>
     <div style="display:flex;gap:6px;margin-bottom:10px;">
       <div class="card" style="flex:1;padding:6px 9px;">
-        <div class="cl">Pokrytí</div>
-        <div style="font-size:1.4rem;font-weight:800;color:${{covClr}};">${{cov}}%</div>
-        <div class="cs">dnů bez přetížení</div>
+        <div class="cl">Přetížení</div>
+        <div style="font-size:1.4rem;font-weight:800;color:${{ovClr}};">${{fmt1(ovHPD)}} h</div>
+        <div class="cs">/ den průměrně</div>
       </div>
       <div class="card" style="flex:1;padding:6px 9px;">
         <div class="cl">Pro 95% pokrytí</div>
