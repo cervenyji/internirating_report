@@ -1598,12 +1598,27 @@ function _mcPanel(mc,n,hasSvc){{
   </div>`;
 }}
 
-function model4DetSec(d){{
-  if(!d.cap_m4||!d.bankers)return'';
-  const nd=d.n_days||1;
-  return _capPanel(d.cap_m4,nd,d.bankers,d.has_svc,
-    'Model 4 — Scénář: 35 % walkin → schůzka',
-    `Stejná reálná data jako Model 1 · ${{Math.round(0.35*100)}} % bezhotovostních walkinů přechází na OB schůzku ${{C.MEETING_MINS}} min`);
+function hourlyModelsSec(d){{
+  if(!d.has_time)return'';
+  const aPD=d.total/(d.n_days||1);
+  const m2PD=d.poc_kli>0&&d.annual_open_days>0?d.poc_kli/d.annual_open_days:0;
+  const m2SF=aPD>0&&m2PD>0?m2PD/aPD:0;
+  return`<div class="kap-model">
+    <div class="kap-model-hd">📊 Hodinový profil — průměrné návštěvy / hodinu</div>
+    <div style="font-size:.72rem;color:#64748b;margin-bottom:8px;">Srovnání skutečného profilu s projekcemi modelů (6–21h)</div>
+    <div class="mc-chart-wrap">${{_svgHourlyVisits(d,520,140)}}</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:.68rem;color:#475569;">
+      <span style="display:inline-flex;align-items:center;gap:5px;">
+        <svg width="22" height="8" style="flex-shrink:0;"><line x1="0" y1="4" x2="22" y2="4" stroke="#2563eb" stroke-width="2"/></svg>
+        Reálná data (M1, M4)</span>
+      ${{m2SF>0?`<span style="display:inline-flex;align-items:center;gap:5px;">
+        <svg width="22" height="8" style="flex-shrink:0;"><line x1="0" y1="4" x2="22" y2="4" stroke="#16a34a" stroke-width="1.8" stroke-dasharray="6,3"/></svg>
+        M2/M3 projekce (${{fmt1(m2PD)}} nav./den)</span>`:''}}
+      ${{d.mc?`<span style="display:inline-flex;align-items:center;gap:5px;">
+        <svg width="22" height="8" style="flex-shrink:0;"><line x1="0" y1="4" x2="22" y2="4" stroke="#9333ea" stroke-width="1.5" stroke-dasharray="2,2"/></svg>
+        MC λ střed</span>`:''}}
+    </div>
+  </div>`;
 }}
 
 function model5Sec(d){{
@@ -1615,7 +1630,7 @@ function model5Sec(d){{
         :`Doporučení: <b>${{fmt1(d.mc.bankers_for_95)}} bankéřů</b> pro 95% pokrytí (nyní ${{fmt1(d.mc.current_bankers)}})`)
     :`Ani s +3 bankéři nedosaženo 95% pokrytí.`;
   return`<div class="kap-model">
-    <div class="kap-model-hd">Model 5 — Monte Carlo simulace průměrného dne</div>
+    <div class="kap-model-hd">Model 3 — Monte Carlo simulace průměrného dne</div>
     <div style="font-size:.72rem;color:#64748b;margin-bottom:10px;">
       Poisson(λ) per hodina · efektivní přítomnost ${{Math.round((1-C.ABSENCE_RATE)*100)}}%
       ${{d.mc2?'· Srovnání stability výsledků n=1000 vs n=2000':''}}
@@ -1633,11 +1648,12 @@ function model5Sec(d){{
 }}
 
 function kapCard(d){{
-  const m1=model1Sec(d),m2=model2Sec(d),m3=model3Sec(d),m4=model4DetSec(d),m5=model5Sec(d);
-  if(!m1&&!m2&&!m3&&!m4&&!m5)return'';
+  const m1=model1Sec(d),m2=model2Sec(d),m5=model5Sec(d);
+  if(!m1&&!m2&&!m5)return'';
   return`<div class="kap-card">
     <div class="kap-title">⚡ Kapacitní modely &nbsp;·&nbsp; efektivní přítomnost ${{Math.round((1-C.ABSENCE_RATE)*100)}}% &nbsp;·&nbsp; absence ${{Math.round(C.ABSENCE_RATE*100)}}%</div>
-    ${{m1}}${{m2}}${{m3}}${{m4}}${{m5}}
+    ${{m1}}${{m2}}${{m5}}
+    ${{hourlyModelsSec(d)}}
   </div>`;
 }}
 
@@ -1888,7 +1904,7 @@ function targetSec(d){{
     <div style="font-size:.72rem;color:#64748b;margin-bottom:10px;">
       Odhad potřebných dodatečných návštěv pro dosažení 90 % využití kapacity OB a BKP.
       Zachovává aktuální poměr typů návštěv (online/fyzické schůzky/bezhot. walkin).
-      Model 5: škálování Poissonových λ tak, aby P95 denní poptávka = 90 % kapacity.
+      Model 3: škálování Poissonových λ tak, aby P95 denní poptávka = 90 % kapacity.
     </div>
     <div class="grid2">
       <div style="background:#f8faff;border-radius:8px;padding:12px 14px;border:1px solid #dbeafe;">
@@ -1899,7 +1915,7 @@ function targetSec(d){{
         ${{m1SvcH}}
       </div>
       <div style="background:#f8faff;border-radius:8px;padding:12px 14px;border:1px solid #dbeafe;">
-        <div style="font-size:.74rem;font-weight:700;color:#1d4ed8;margin-bottom:10px;">Model 5 — Monte Carlo (P95)</div>
+        <div style="font-size:.74rem;font-weight:700;color:#1d4ed8;margin-bottom:10px;">Model 3 — Monte Carlo (P95)</div>
         ${{mc?`<div style="${{hdOB}}">👤 OB Bankéři — P95 ${{obP!=null?obP.toFixed(1)+' %':'N/A'}}</div>
         ${{mcObH}}
         <div style="${{hdSVC}}">🧑 BKP Medior${{d.has_svc&&svcP!=null?' — P95 '+svcP.toFixed(1)+' %':''}}</div>
