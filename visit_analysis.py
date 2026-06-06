@@ -909,6 +909,13 @@ details summary{{cursor:pointer;font-size:.76rem;font-weight:700;color:#2563eb;p
 .gap90{{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin-top:10px;font-size:.72rem;}}
 .mc-2col{{display:grid;grid-template-columns:1fr 1fr;gap:12px;}}
 @media(max-width:600px){{.mc-2col{{grid-template-columns:1fr;}}}}
+/* Ranking table */
+.rank-tbl{{width:100%;border-collapse:collapse;font-size:.82rem;}}
+.rank-tbl th{{font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#94a3b8;border-bottom:2px solid #dbeafe;padding:7px 10px;text-align:left;white-space:nowrap;}}
+.rank-tbl td{{padding:7px 10px;border-bottom:1px solid #f0f4ff;vertical-align:middle;}}
+.rank-tbl tbody tr{{cursor:pointer;}}
+.rank-tbl tbody tr:hover{{background:#f8faff;}}
+.rank-score{{display:inline-flex;align-items:center;justify-content:center;border-radius:6px;padding:2px 8px;font-weight:700;font-size:.85rem;min-width:46px;}}
 </style>
 </head>
 <body>
@@ -947,6 +954,68 @@ const MON   = ['Led','Úno','Bře','Dub','Kvě','Čvn','Čvc','Srp','Zář','Ř�
 
 let cur=null;
 const si=document.getElementById('si'),bl=document.getElementById('bl'),sw=document.getElementById('sw');
+
+// ── Score helpers ─────────────────────────────────────────────────────────────
+function _scoreClr(s){{return s>=90?'#ef4444':s>=70?'#f59e0b':'#2563eb';}}
+function _scoreBg(s){{return s>=90?'#fee2e2':s>=70?'#fef3c7':'#dbeafe';}}
+function _branchScore(d){{
+  if(!d.cap1)return null;
+  return Math.round(d.cap1.util_ob||0);
+}}
+function _rankClick(id){{
+  si.value=DATA[id].name;bl.classList.remove('open');render(id);
+}}
+
+// ── Ranking table (home screen) ───────────────────────────────────────────────
+function renderRanking(){{
+  const rows=ORDER.map(id=>{{
+    const d=DATA[id];
+    const score=_branchScore(d);
+    if(score===null)return null;
+    const mtgPD=d.mtgs_pb_day;
+    const wkPD=d.has_svc&&d.cap1&&d.svc_fte>0?d.cap1.bezhot_base/C.WALKIN_AVG_MINS/(d.n_days||1)/d.svc_fte:null;
+    const totalMtgs=(d.by_type?.online||0)+(d.by_type?.fyzicka||0);
+    const revMtg=d.sales&&d.sales.total_objem>0&&totalMtgs>0?d.sales.total_objem/totalMtgs:null;
+    const revBanker=d.sales&&d.sales.total_objem>0&&d.bankers>0?d.sales.total_objem/d.bankers:null;
+    return{{id,d,score,mtgPD,wkPD,revMtg,revBanker}};
+  }}).filter(Boolean).sort((a,b)=>(b.score||0)-(a.score||0));
+  if(!rows.length){{document.getElementById('mc').innerHTML='<div class="placeholder">← Vyberte pobočku výše</div>';return;}}
+  const hasSvc=rows.some(r=>r.wkPD!=null);
+  const hasSales=rows.some(r=>r.revMtg!=null);
+  const scoreCol=(s)=>`<td><div class="rank-score" style="background:${{_scoreBg(s)}};color:${{_scoreClr(s)}};">${{s}}%</div></td>`;
+  const thead=`<tr>
+    <th style="width:32px;">#</th>
+    <th>Pobočka</th>
+    <th>Skóre</th>
+    <th title="Průměrné schůzky OB / bankéř / den">Sch./bank./den</th>
+    ${{hasSvc?'<th title="Walkins / BKP Medior / den">Walk./BKP/den</th>':''}}
+    ${{hasSales?'<th title="Výnos z prodejů na jednu schůzku OB (CZK)">Výnos/schůzku</th><th title="Roční výnos z prodejů na bankéře (CZK)">Výnos/bankéř</th>':''}}
+  </tr>`;
+  const tbody=rows.map((r,i)=>`<tr onclick="_rankClick('${{r.id}}')">
+    <td style="font-weight:700;color:#94a3b8;font-size:.78rem;">${{i+1}}</td>
+    <td>
+      <div style="font-weight:600;color:#1e293b;">${{r.d.name}}</div>
+      <div style="font-size:.68rem;color:#94a3b8;">#${{r.id}}${{r.d.branch_format?' · '+r.d.branch_format:''}}</div>
+    </td>
+    ${{scoreCol(r.score)}}
+    <td style="font-weight:700;color:#1e3a8a;">${{r.mtgPD!=null?fmt1(r.mtgPD):'—'}}</td>
+    ${{hasSvc?`<td style="color:#0891b2;">${{r.wkPD!=null?fmt1(r.wkPD):'—'}}</td>`:''}}
+    ${{hasSales?`<td style="font-weight:600;color:#15803d;">${{r.revMtg!=null?fmtN(Math.round(r.revMtg))+' Kč':'—'}}</td>
+               <td style="font-weight:600;color:#15803d;">${{r.revBanker!=null?fmtN(Math.round(r.revBanker))+' Kč':'—'}}</td>`:''}}
+  </tr>`).join('');
+  const note=`<div style="font-size:.64rem;color:#94a3b8;padding:8px 12px 4px;">
+    Skóre = OB utilizace (%) · Výnosy z ${{rows.filter(r=>r.revMtg!=null).length}} poboček s dostupnými prodejními daty
+  </div>`;
+  document.getElementById('mc').innerHTML=`
+    <div style="background:#fff;border:1.5px solid #dbeafe;border-radius:14px;overflow:hidden;margin-bottom:14px;">
+      <div style="background:#1e3a8a;padding:11px 16px;">
+        <div style="font-size:.84rem;font-weight:700;color:#fff;">🏆 Přehled vytíženosti poboček</div>
+        <div style="font-size:.68rem;color:#93c5fd;margin-top:2px;">Seřazeno dle skóre vytíženosti (OB utilizace) · kliknutím zobrazíte detail</div>
+      </div>
+      <div style="overflow-x:auto;"><table class="rank-tbl"><thead>${{thead}}</thead><tbody>${{tbody}}</tbody></table></div>
+      ${{note}}
+    </div>`;
+}}
 
 function renderList(q){{
   q=q.toLowerCase();
@@ -1999,11 +2068,25 @@ function benchmarkSec(d){{
 // ── Main render ───────────────────────────────────────────────────────────────
 function render(id){{
   cur=id; const d=DATA[id];
+  const score=_branchScore(d);
+  const scoreCard=score!=null?`<div class="card" style="border-color:${{_scoreClr(score)}}40;background:${{_scoreBg(score)}};">
+    <div class="cl">Skóre vytíženosti</div>
+    <div class="cv" style="color:${{_scoreClr(score)}};">${{score}}%</div>
+    <div class="cs">${{score>=90?'🔴 přetíženo':score>=70?'⚠️ blíží se':'✅ OK'}} · OB utilizace</div></div>`:'';
   const totCard=`<div class="card"><div class="cl">Celkem návštěv</div>
     <div class="cv">${{fmtI(d.total)}}</div>
     <div class="cs">rok 2025 · ${{d.n_days}} dnů · ${{d.annual_open_days||0}} ot. dnů/rok</div></div>`;
   const cliCard=d.poc_kli>0?`<div class="card"><div class="cl">Počet klientů</div>
     <div class="cv">${{fmtI(d.poc_kli)}}</div><div class="cs">portfoliová data</div></div>`:'';
+  const totalMtgs=(d.by_type?.online||0)+(d.by_type?.fyzicka||0);
+  const revMtgCard=d.sales&&d.sales.total_objem>0&&totalMtgs>0?`<div class="card" style="border-color:#bbf7d0;background:#f0fdf4;">
+    <div class="cl">Výnos / schůzku</div>
+    <div class="cv" style="color:#15803d;">${{fmtN(Math.round(d.sales.total_objem/totalMtgs))}}</div>
+    <div class="cs">Kč · ${{fmtI(totalMtgs)}} schůzek</div></div>`:'';
+  const revBankerCard=d.sales&&d.sales.total_objem>0&&d.bankers>0?`<div class="card" style="border-color:#bbf7d0;background:#f0fdf4;">
+    <div class="cl">Výnos / bankéř</div>
+    <div class="cv" style="color:#15803d;">${{fmtN(Math.round(d.sales.total_objem/d.bankers))}}</div>
+    <div class="cs">Kč · ${{fmt1(d.bankers)}} bankéřů</div></div>`:'';
   const typeCards=TYPES.map(t=>{{
     const v=d.by_type[t.key]||0,pct=d.total>0?(v/d.total*100).toFixed(1):'0.0';
     return`<div class="card" style="border-color:${{t.color}}50;background:${{t.color}}0a;">
@@ -2021,7 +2104,7 @@ function render(id){{
   ${{formatBadge(d)}}
 </div>
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px;">
-  ${{totCard}}${{cliCard}}${{typeCards}}
+  ${{scoreCard}}${{totCard}}${{cliCard}}${{revMtgCard}}${{revBankerCard}}${{typeCards}}
 </div>
 ${{unkNote}}
 ${{staffSec(d)}}
@@ -2032,6 +2115,7 @@ ${{benchmarkSec(d)}}
 <details style="margin-bottom:14px;"><summary>📐 Metodika výpočtu (rozbalit)</summary>
   ${{methSec(d)}}</details>
 `;}}
+renderRanking();
 </script>
 </body>
 </html>"""
