@@ -673,6 +673,12 @@ def build_data(df, kpis, prof_kli, prof_fte, spec, od, sales=None):
         if mc is not None:
             mc2 = run_monte_carlo(by_hour, bankers, svc_fte, n_iter=2000, seed=42)
 
+        # MC boost: +20% all visit lambdas
+        mc_boost = None
+        if has_time and has_date and bankers > 0:
+            by_hour_boost = {k2: [v * 1.2 for v in vals] for k2, vals in by_hour.items()}
+            mc_boost = run_monte_carlo(by_hour_boost, bankers, svc_fte)
+
         branch_format = compute_format(fte)
         rooms         = compute_rooms(mc)
 
@@ -706,6 +712,7 @@ def build_data(df, kpis, prof_kli, prof_fte, spec, od, sales=None):
             'annual_1x':  annual_1x,
             'mc':           mc,
             'mc2':          mc2,
+            'mc_boost':     mc_boost,
             'branch_format': branch_format,
             'rooms':         rooms,
             'is_vikend':  o.get('is_vikend', False),
@@ -887,6 +894,21 @@ details summary{{cursor:pointer;font-size:.76rem;font-weight:700;color:#2563eb;p
 .mc-chart-title{{font-size:.68rem;font-weight:700;color:#1e3a8a;margin:8px 0 3px;}}
 .mc-charts-row{{display:grid;grid-template-columns:1fr 1fr;gap:10px;}}
 @media(max-width:560px){{.mc-charts-row{{grid-template-columns:1fr;}}}}
+/* Visit toggle */
+.vtog{{display:flex;background:#f1f5f9;border-radius:6px;padding:2px;gap:2px;}}
+.vt-btn{{padding:4px 10px;border:none;background:transparent;border-radius:4px;font-size:.72rem;font-weight:600;color:#475569;cursor:pointer;white-space:nowrap;}}
+.vt-btn.vt-on{{background:#fff;color:#1d4ed8;box-shadow:0 1px 3px rgba(0,0,0,.12);}}
+/* Capacity sub-panels */
+.cap-sub{{background:#f8faff;border-radius:10px;padding:12px;border:1px solid #dbeafe;}}
+.cap-sub-hd{{font-size:.72rem;font-weight:700;margin-bottom:8px;}}
+.hbar-row{{display:flex;align-items:center;gap:6px;margin-bottom:5px;}}
+.hbar-lbl{{width:72px;font-size:.63rem;color:#475569;text-align:right;flex-shrink:0;}}
+.hbar-track{{flex:1;height:16px;background:#f1f5f9;border-radius:3px;overflow:hidden;}}
+.hbar-fill{{height:100%;border-radius:3px;display:flex;align-items:center;padding-left:5px;min-width:0;transition:width .2s;}}
+.hbar-val{{font-size:.62rem;font-weight:700;white-space:nowrap;}}
+.gap90{{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin-top:10px;font-size:.72rem;}}
+.mc-2col{{display:grid;grid-template-columns:1fr 1fr;gap:12px;}}
+@media(max-width:600px){{.mc-2col{{grid-template-columns:1fr;}}}}
 </style>
 </head>
 <body>
@@ -904,6 +926,17 @@ details summary{{cursor:pointer;font-size:.76rem;font-weight:700;color:#2563eb;p
 </div>
 
 <script>
+let _vtAgg='hour',_vtVal='total';
+function _vtsw(a){{_vtAgg=a;_vtupd();}}
+function _vtsv(v){{_vtVal=v;_vtupd();}}
+function _vtupd(){{
+  ['hour','wd','month'].forEach(a=>['total','pb'].forEach(v=>{{
+    const el=document.getElementById(`vt-${{a}}-${{v}}`);
+    if(el)el.style.display=(a===_vtAgg&&v===_vtVal)?'block':'none';
+  }}));
+  document.querySelectorAll('[data-vta]').forEach(b=>b.classList.toggle('vt-on',b.dataset.vta===_vtAgg));
+  document.querySelectorAll('[data-vtv]').forEach(b=>b.classList.toggle('vt-on',b.dataset.vtv===_vtVal));
+}}
 const DATA  = {data_js};
 const ORDER = {order_js};
 const TYPES = {types_js};
@@ -1000,6 +1033,48 @@ function capBar(pct,label){{
 }}
 
 
+
+// ── Interactive visit trend chart ─────────────────────────────────────────────
+function visitTrendSec(d){{
+  if(!d.total)return'';
+  const b=d.bankers||1,nd=d.n_days||1;
+  const wdLen=d.is_vikend?7:5,wdLabels=WD.slice(0,wdLen);
+  const hrLabels=MCH.map(h=>h+'h');
+  const hrTot=TYPES.map(t=>({{label:t.label,color:t.color,values:MCH.map(h=>d.by_hour[t.key]?.[h]||0)}}));
+  const hrPB=TYPES.map(t=>({{label:t.label,color:t.color,values:MCH.map(h=>(d.by_hour[t.key]?.[h]||0)/b)}}));
+  const wdTot=TYPES.map(t=>({{label:t.label,color:t.color,values:(d.by_weekday[t.key]||Array(7).fill(0)).slice(0,wdLen)}}));
+  const wdPB=TYPES.map(t=>({{label:t.label,color:t.color,values:(d.by_weekday[t.key]||Array(7).fill(0)).slice(0,wdLen).map((v,i)=>d.n_days_wd&&d.n_days_wd[i]>0?v/d.n_days_wd[i]/b:0)}}));
+  const monTot=TYPES.map(t=>({{label:t.label,color:t.color,values:d.by_month[t.key]||Array(12).fill(0)}}));
+  const monPB=TYPES.map(t=>({{label:t.label,color:t.color,values:(d.by_month[t.key]||Array(12).fill(0)).map(v=>nd>0?v/(nd/12)/b:0)}}));
+  const mkV=(sfx,show,labels,arr,ht)=>`<div id="vt-${{sfx}}" style="display:${{show?'block':'none'}};"><div class="bars" style="height:${{ht}}px;">${{stackedBars(labels,arr,ht-10)}}</div>${{legend()}}</div>`;
+  const views=[
+    mkV('hour-total',true,hrLabels,hrTot,90),
+    mkV('hour-pb',false,hrLabels,hrPB,90),
+    mkV('wd-total',false,wdLabels,wdTot,90),
+    mkV('wd-pb',false,wdLabels,wdPB,90),
+    mkV('month-total',false,MON,monTot,100),
+    mkV('month-pb',false,MON,monPB,100),
+  ].join('');
+  const wdNote=!d.is_vikend?`<div style="font-size:.68rem;color:#94a3b8;margin-top:4px;">So/Ne skryty — nevíkendová pobočka</div>`:'';
+  return`<div class="sec">
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+      <div class="st" style="margin-bottom:0;">📈 Průběh návštěv</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;">
+        <div class="vtog">
+          <button class="vt-btn vt-on" data-vta="hour" onclick="_vtsw('hour')">Hodina</button>
+          <button class="vt-btn" data-vta="wd" onclick="_vtsw('wd')">Den týdne</button>
+          <button class="vt-btn" data-vta="month" onclick="_vtsw('month')">Měsíc</button>
+        </div>
+        <div class="vtog">
+          <button class="vt-btn vt-on" data-vtv="total" onclick="_vtsv('total')">Celkem</button>
+          <button class="vt-btn" data-vtv="pb" onclick="_vtsv('pb')">/ bankéř / den</button>
+        </div>
+      </div>
+    </div>
+    ${{views}}
+    ${{wdNote}}
+  </div>`;
+}}
 
 // ── Staff section ─────────────────────────────────────────────────────────────
 function staffSec(d){{
