@@ -480,6 +480,8 @@ NOVE_NAZVY = {
     "CISLO_POPISNE":     "Č. popisné",
     "CISLO_ORIENTACNI":  "Č. orientační",
     "RUIAN_ID":          "RUIAN ID",
+    "GPS_X":             "GPS X",
+    "GPS_Y":             "GPS Y",
     "ORP_NAZEV":         "ORP",
     "ORP_KOD":           "ORP kód",
 
