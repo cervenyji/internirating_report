@@ -103,6 +103,17 @@ BNS_IR_TOP_N = 280
 # Kódy poboček z simulace sítě 250 — nastavuje generate_network_simulation_200()
 SIM_250_KEEP_CODES: set = set()
 
+# IDs poboček s jednočlenným provozem
+JEDNOCLENNY_IDS: set = {
+    423, 667, 593, 492, 294, 317, 273, 274, 254, 326, 304, 534,
+    330, 327, 234, 257, 237, 239, 215, 173, 125, 186, 187, 213,
+    175, 157, 185, 169, 339, 399, 398, 395, 401, 672, 675, 417,
+    418, 529, 115,  80, 120,  18,  45, 102,  92,  14,  91,  37,
+     89,  19, 117,  77,  32,  85,  86,  29,  27,  67,  68,  12,
+     21, 613, 625, 643, 550, 573, 590, 637, 548, 662, 576, 554,
+    663, 555, 648, 669, 556, 570, 605, 651, 619, 626, 631, 564,
+}
+
 # Segmentové FTE pozice — definice skupin pro FTE_MMMA, FTE_SBC, … FTE_RKC
 FTE_MMMA_POZICE = [
     "bankéř klientské péče - junior", "bankéř klientské péče - medior",
@@ -636,6 +647,7 @@ NOVE_NAZVY = {
     "FORMAT_2024_(FIX_FS)":  "Realizovaný formát",
     "BRANCH_BUILDING_NF_SF": "Formát NF/SF",
     "NEW_FORMAT_SINCE":      "Datum NF",
+    "JEDNOCLENNY_PROVOZ":    "Jednočlenný provoz",
 
     # ── 💵 Transakční data ────────────────────────────────────────
     "CASH_PREVODITELNOST_PCT":        "% převoditelnosti",
@@ -7555,6 +7567,14 @@ def prepare_rating_status(df):
     except Exception:
         rating_status['SIM_250_FLAG'] = ''
 
+    # ── Jednočlenný provoz ──────────────────────────────────────────────────────
+    try:
+        rating_status['JEDNOCLENNY_PROVOZ'] = rating_status['BRANCH_CODE'].apply(
+            lambda bc: 'Ano' if (int(float(bc)) if pd.notna(bc) else -1) in JEDNOCLENNY_IDS else 'Ne'
+        )
+    except Exception:
+        rating_status['JEDNOCLENNY_PROVOZ'] = 'Ne'
+
     # ── Interní rating — metodika 2022 ──────────────────────────────────────────
     # Vstupní metriky: C/I ratio 25 (30%), Výnosy 25 (20%),
     #                  Celkové návštěvy (25%), Prodeje celkem 2025 (25%)
@@ -8411,7 +8431,7 @@ def write_excel_sheet(ws, df_excel, freeze="D2"):
 COL_GROUPS = [
     # ── 🗄️ Databáze síť ───────────────────────────────────────────────────────
     ("📍 Adresa",              ["Oblast", "Region fixed", "Město", "Obvod / část", "Ulice", "Č. popisné", "Č. orientační", "RUIAN ID", "ORP", "ORP kód"], "#f0f4f8"),
-    ("🏢 Budova",              ["Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
+    ("🏢 Budova",              ["Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Jednočlenný provoz", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
     ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
     # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
     ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25",
@@ -10316,11 +10336,12 @@ def _mapbox_layout(center_lat=49.8, center_lon=15.5, zoom=6.5):
     return dict(style='open-street-map',
                 center=dict(lat=center_lat, lon=center_lon), zoom=zoom)
 
-def generate_map_html(df, title="🗺️ Mapa poboček"):
+def generate_map_html(df, title="🗺️ Mapa poboček", _inner_only=False):
     """
     Scatter_mapbox s pobočkami. Každá kombinace (hotovostní/bezhotovostní × strategie) = vlastní trace.
     Strategie: Close rok, Cashless rok, Keep, Ostatní.
     Symbol: circle = hotovostní, circle-stroke = bezhotovostní (outline).
+    Pokud _inner_only=True vrátí jen vnitřní obsah (statistiky + mapa) bez vnějšího obalu s nadpisem.
     """
     import plotly.graph_objects as go
 
@@ -10487,10 +10508,7 @@ def generate_map_html(df, title="🗺️ Mapa poboček"):
     n_cash_hot = (~_df['_is_cashless']).sum()
     n_cash_bez = _df['_is_cashless'].sum()
 
-    return f"""
-<div style="margin-top:24px;padding-top:20px;border-top:2px solid #e0e6f5;">
-  <div class="section-header">{title}</div>
-  <div style="display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 8px 0;font-size:0.78rem;">
+    _inner = f"""  <div style="display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 8px 0;font-size:0.78rem;">
     <span style="background:#fdecea;color:#d62728;border:1px solid #f5b8b8;border-radius:12px;padding:2px 10px;font-weight:600;">🔴 Close: {n_close}</span>
     <span style="background:#e8f0ff;color:#2770f0;border:1px solid #b8ccf7;border-radius:12px;padding:2px 10px;font-weight:600;">🔵 → Cashless: {n_cashless}</span>
     <span style="background:#eaf7ec;color:#2ca02c;border:1px solid #a8dfc8;border-radius:12px;padding:2px 10px;font-weight:600;">🟢 Keep: {n_keep}</span>
@@ -10502,7 +10520,155 @@ def generate_map_html(df, title="🗺️ Mapa poboček"):
   <div style="font-size:0.71rem;color:#aaa;margin-top:4px;">
     Plný kruh = hotovostní &nbsp;|&nbsp; Průhledný kruh = bezhotovostní &nbsp;|&nbsp;
     Kliknutím na legendu zobrazíte/skryjete skupinu. Scroll = zoom.
+  </div>"""
+
+    if _inner_only:
+        return _inner
+    return f"""
+<div style="margin-top:24px;padding-top:20px;border-top:2px solid #e0e6f5;">
+  <div class="section-header">{title}</div>
+{_inner}
+</div>"""
+
+
+def generate_jednoclenny_map_html(df):
+    """Scatter_mapbox: jednočlenné provozy vs. standardní — vrací vnitřní HTML (bez vnějšího obalu)."""
+    import plotly.graph_objects as go
+
+    _df = df.copy()
+    for _gc in ['GPS_X', 'GPS_Y']:
+        if _gc in _df.columns:
+            _df[_gc] = pd.to_numeric(_df[_gc], errors='coerce')
+
+    if 'GPS_X' not in _df.columns or 'GPS_Y' not in _df.columns:
+        return '<p style="color:#aaa;font-style:italic;">GPS souřadnice nejsou k dispozici.</p>'
+
+    _df = _df[_df['GPS_X'].notna() & _df['GPS_Y'].notna()].copy()
+    if _df.empty:
+        return '<p style="color:#aaa;font-style:italic;">Žádné pobočky s GPS souřadnicemi.</p>'
+
+    if 'JEDNOCLENNY_PROVOZ' not in _df.columns:
+        _df['JEDNOCLENNY_PROVOZ'] = 'Ne'
+
+    def _sv(row, col, default='—'):
+        v = row.get(col, default)
+        return default if (v is None or (isinstance(v, float) and pd.isna(v)) or str(v) in ('nan', 'None', '')) else str(v)
+
+    hovers = []
+    for _, row in _df.iterrows():
+        nm  = _sv(row, 'BRANCH_NAME')
+        bc  = _sv(row, 'BRANCH_CODE')
+        reg = _sv(row, 'REGION_NAME')
+        fmt = _sv(row, 'BRANCH_FORMAT')
+        ir  = _sv(row, 'IR')
+        jp  = str(row.get('JEDNOCLENNY_PROVOZ', 'Ne'))
+        hovers.append('<br>'.join([
+            f'<b>{nm}</b> <span style="color:#aaa;">#{bc}</span>',
+            f'📍 {reg} &nbsp;·&nbsp; 📐 {fmt}',
+            f'⭐ IR 2025: <b>{ir}</b>',
+            f'👤 Jednočlenný: <b>{jp}</b>',
+        ]))
+    _df['_hover'] = hovers
+
+    traces = []
+    for jp_val, lbl, color, size, opacity in [
+        ('Ano', '👤 Jednočlenný provoz', '#f59e0b', 12, 0.90),
+        ('Ne',  '🏢 Standardní provoz',  '#6b7280',  9, 0.55),
+    ]:
+        sub = _df[_df['JEDNOCLENNY_PROVOZ'] == jp_val]
+        if sub.empty:
+            continue
+        traces.append(go.Scattermapbox(
+            lat=sub['GPS_X'].tolist(),
+            lon=sub['GPS_Y'].tolist(),
+            mode='markers',
+            marker=dict(size=size, color=color, opacity=opacity),
+            text=sub['_hover'].tolist(),
+            hovertemplate='%{text}<extra></extra>',
+            name=lbl,
+        ))
+
+    fig = go.Figure(traces)
+    fig.update_layout(
+        mapbox=_mapbox_layout(center_lat=49.8, center_lon=15.5, zoom=6.5),
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=560,
+        legend=dict(
+            bgcolor='rgba(255,255,255,0.93)',
+            bordercolor='#ccc',
+            borderwidth=1,
+            font=dict(size=11),
+            x=0.01, y=0.99,
+            xanchor='left', yanchor='top',
+        ),
+        paper_bgcolor='white',
+    )
+
+    n_jp  = (_df['JEDNOCLENNY_PROVOZ'] == 'Ano').sum()
+    n_std = (_df['JEDNOCLENNY_PROVOZ'] == 'Ne').sum()
+
+    _map_div = fig.to_html(
+        full_html=False,
+        include_plotlyjs=False,
+        config={'displayModeBar': True, 'scrollZoom': True,
+                'modeBarButtonsToRemove': ['toImage'], 'displaylogo': False},
+    )
+    return f"""  <div style="display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 8px 0;font-size:0.78rem;">
+    <span style="background:#fef3c7;color:#d97706;border:1px solid #fcd34d;border-radius:12px;padding:2px 10px;font-weight:600;">👤 Jednočlenné: {n_jp}</span>
+    <span style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;border-radius:12px;padding:2px 10px;">🏢 Standardní: {n_std}</span>
   </div>
+  <div style="border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1);">
+    {_map_div}
+  </div>
+  <div style="font-size:0.71rem;color:#aaa;margin-top:4px;">
+    Kliknutím na legendu zobrazíte/skryjete skupinu. Scroll = zoom.
+  </div>"""
+
+
+def generate_map_html_with_toggle(df, title="🗺️ Mapa poboček — celá síť"):
+    """Mapa poboček s přepínačem: strategie poboček vs. jednočlenné provozy."""
+    import uuid
+    _uid = uuid.uuid4().hex[:8]
+
+    _strat = generate_map_html(df, _inner_only=True)
+    _jp    = generate_jednoclenny_map_html(df)
+
+    return f"""
+<div style="margin-top:24px;padding-top:20px;border-top:2px solid #e0e6f5;">
+  <div class="section-header">{title}</div>
+  <div style="display:flex;gap:8px;margin:8px 0 12px 0;align-items:center;">
+    <button id="mapbtn-strat-{_uid}" onclick="mapSw_{_uid}('strat')"
+      style="padding:5px 16px;border-radius:20px;border:1px solid #2563eb;background:#2563eb;color:#fff;cursor:pointer;font-size:0.82rem;font-weight:600;">
+      📋 Strategie poboček
+    </button>
+    <button id="mapbtn-jp-{_uid}" onclick="mapSw_{_uid}('jp')"
+      style="padding:5px 16px;border-radius:20px;border:1px solid #d1d5db;background:#fff;color:#374151;cursor:pointer;font-size:0.82rem;">
+      👤 Jednočlenné provozy
+    </button>
+  </div>
+  <div id="mapview-strat-{_uid}">
+{_strat}
+  </div>
+  <div id="mapview-jp-{_uid}" style="display:none;">
+{_jp}
+  </div>
+  <script>
+  (function(){{
+    function mapSw_{_uid}(v) {{
+      document.getElementById('mapview-strat-{_uid}').style.display = v==='strat' ? '' : 'none';
+      document.getElementById('mapview-jp-{_uid}').style.display    = v==='jp'    ? '' : 'none';
+      var bs = document.getElementById('mapbtn-strat-{_uid}');
+      var bj = document.getElementById('mapbtn-jp-{_uid}');
+      bs.style.background  = v==='strat' ? '#2563eb' : '#fff';
+      bs.style.color       = v==='strat' ? '#fff'    : '#374151';
+      bs.style.borderColor = v==='strat' ? '#2563eb' : '#d1d5db';
+      bj.style.background  = v==='jp'    ? '#f59e0b' : '#fff';
+      bj.style.color       = v==='jp'    ? '#fff'    : '#374151';
+      bj.style.borderColor = v==='jp'    ? '#f59e0b' : '#d1d5db';
+    }}
+    window['mapSw_{_uid}'] = mapSw_{_uid};
+  }})();
+  </script>
 </div>"""
 
 
@@ -12083,7 +12249,7 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
         + _orp_coverage_html, default_open=False))}
 
     <!-- 4. Mapa -->
-    {_sc('mapa', generate_map_html(df_sorted, title="🗺️ Mapa poboček — celá síť"))}
+    {_sc('mapa', generate_map_html_with_toggle(df_sorted, title="🗺️ Mapa poboček — celá síť"))}
 
     <hr class="report-divider">
 
@@ -13044,7 +13210,7 @@ function obSet_{_fn_slug}(btn, ob){{
     <div style="margin:0 0 20px 0;width:100%;">{bns_close_html_reg}</div>""")}
 
     <!-- 4. Mapa -->
-    {_sr('mapa', generate_map_html(df_reg.sort_values(by="IR"), title=f"🗺️ Mapa poboček — {region}"))}
+    {_sr('mapa', generate_map_html_with_toggle(df_reg.sort_values(by="IR"), title=f"🗺️ Mapa poboček — {region}"))}
 
     <hr class="report-divider">
 
