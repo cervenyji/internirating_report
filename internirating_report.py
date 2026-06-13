@@ -10755,6 +10755,7 @@ def generate_oc_analysis_html(df):
     oc['_ci']            = _ci
     oc['_sch']           = _sch
     oc['_bw']            = _bw
+    oc['_hw']            = _hw
     oc['najem_pct_vyn']  = np.where(_vyn > 0, _najem / _vyn * 100, np.nan)
     oc['najem_per_m2']   = np.where(_plocha > 0, _najem / _plocha, np.nan)
     oc['nvyn_x_najem']   = np.where(_najem > 0, _nvyn / _najem, np.nan)
@@ -11022,9 +11023,11 @@ def generate_oc_analysis_html(df):
     # ════════════════════════
     _viz_ok = 'POCET_NAVSTEV_CELKEM' in oc.columns
     if _viz_ok:
-        _oc_v = oc_r[['BRANCH_CODE', 'BRANCH_NAME', 'schuzky_pct', '_sch', '_bw', '_hw',
-                       'POCET_SCHUZEK_ONLINE', 'POCET_SCHUZEK_FYZICKY',
-                       'POCET_BEZHOT_WALK_IN', 'POCET_HOT_WALK_IN']].copy()
+        _v4_base = ['BRANCH_CODE', 'BRANCH_NAME', 'schuzky_pct', '_sch', '_bw', '_hw']
+        _v4_opt  = ['POCET_SCHUZEK_ONLINE', 'POCET_SCHUZEK_FYZICKY',
+                    'POCET_BEZHOT_WALK_IN', 'POCET_HOT_WALK_IN']
+        _v4_cols = _v4_base + [c for c in _v4_opt if c in oc_r.columns]
+        _oc_v = oc_r[_v4_cols].copy()
         _oc_v = _oc_v.sort_values('schuzky_pct', ascending=False, na_position='last')
         _vl = [f"#{_sv(r.get('BRANCH_CODE'))} {str(r.get('BRANCH_NAME',''))[:10]}" for _, r in _oc_v.iterrows()]
         _stk_fig = go.Figure()
