@@ -10840,6 +10840,7 @@ def generate_oc_analysis_html(df):
         _rg  = _sv(_row.get('REGION_NAME'))
         _sc2 = _row.get('_eff')
         _fg, _bg, _ico = _sclr(_sc2)
+        _sc2_str = f'{float(_sc2):.0f}' if pd.notna(_sc2) else '—'
         _npr = _row.get('najem_pct_vyn')
         _hlt = 'font-weight:600;color:#1d4ed8;' if pd.notna(_row.get('schuzky_pct')) and float(_row.get('schuzky_pct') or 0) >= 40 else ''
         _rank_rows += (
@@ -10851,7 +10852,7 @@ def generate_oc_analysis_html(df):
             f'<td style="text-align:center;">'
             f'<span style="background:{_bg};color:{_fg};border:1px solid {_fg};'
             f'border-radius:12px;padding:2px 9px;font-weight:700;font-size:0.81rem;">'
-            f'{_ico} {_sc2:.0f if pd.notna(_sc2) else ""}</span></td>'
+            f'{_ico} {_sc2_str}</span></td>'
             f'<td style="text-align:right;">{_m(_row.get("_najem"))}</td>'
             f'<td style="text-align:right;">{_m(_row.get("_vyn"))}</td>'
             f'<td style="text-align:right;font-weight:600;color:{"#dc2626" if pd.notna(_npr) and float(_npr or 0)>15 else "#374151"};">{_p(_npr)}</td>'
