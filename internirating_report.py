@@ -221,13 +221,16 @@ SEKCE_POBOCKA = {
 
 # ── Sekce v celkovém reportu (celá síť) ──────────────────────────────────────
 SEKCE_CELKOVY = {
+    # ── Vždy viditelné ────────────────────────────────────────────────────────
     "prehled":         True,   # 📋 Celkový přehled pobočkových ratingů
     "obchody":         True,   # 🛒 Přehled obchodů dle produktové skupiny
-    "typologie":       True,   # 🏢 Přehled poboček dle regionu
+    "typologie":       True,   # 🏢 Přehled poboček dle regionu — Typologie / Bezhotovostní / Formát
     "orp":             True,   # 🗺️ Pokrytí ORP — analýza
-    "mapa":            True,   # 🗺️ Mapa poboček — celá síť
+    "mapa":            True,   # 🗺️ Mapa poboček — celá síť (přepínač Strategie / Jednočlenné)
+    # ── Rozbalovací sekce ─────────────────────────────────────────────────────
+    "oc_analyza":      True,   # 🏬 Analýza poboček v obchodním centru
     "benchmark":       True,   # 📊 Síťový benchmark
-    "strategie":       True,   # 📋 Strategie poboček (Close / Investice / Cashless)
+    "strategie":       True,   # 📋 Strategie poboček — Close · Investice · Cashless
     "top_vynosy":      True,   # 💰 Nejvyšší nové výnosy
     "top_rating":      True,   # 🚀⚠️ Top 5: Zlepšení a zhoršení ratingu
     "vekove_segmenty": True,   # 👥 Věková struktura klientů
@@ -246,12 +249,14 @@ SEKCE_CELKOVY = {
 
 # ── Sekce v regionálním reportu ───────────────────────────────────────────────
 SEKCE_REGION = {
+    # ── Vždy viditelné ────────────────────────────────────────────────────────
     "prehled":         True,   # 📋 Celkový přehled pobočkových ratingů
     "obchody":         True,   # 🛒 Přehled obchodů dle produktové skupiny
-    "typologie":       True,   # 🏢 Přehled poboček regionu
-    "mapa":            True,   # 🗺️ Mapa poboček
+    "typologie":       True,   # 🏢 Přehled poboček regionu — Typologie / Bezhotovostní / Formát
+    "mapa":            True,   # 🗺️ Mapa poboček (přepínač Strategie / Jednočlenné)
+    # ── Rozbalovací sekce ─────────────────────────────────────────────────────
     "benchmark":       True,   # 📊 Regionální benchmark
-    "strategie":       True,   # 📋 Strategie poboček
+    "strategie":       True,   # 📋 Strategie poboček — Close · Investice · Cashless
     "top_vynosy":      True,   # 💰 Přehled oblastí s nejvyššími výnosy
     "top_rating":      True,   # 🚀⚠️ Top 5: Zlepšení a zhoršení ratingu
     "vekove_segmenty": True,   # 👥 Věkové segmenty klientů
@@ -12811,7 +12816,7 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
     <!-- 4b. OC analýza -->
     {_sc('oc_analyza', make_collapsible("oc-analyza-static", "🏬 Analýza poboček v obchodním centru",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Komplexní analýza {n_oc} OC poboček — nájemné vs výnosy, cena za m², kvalita klientů, skladba návštěv a srovnání s podobnými pobočkami mimo OC.</p>'.replace("{n_oc}", str(len(OC_BRANCH_IDS)))
-        + _oc_analysis_html, default_open=True))}
+        + _oc_analysis_html, default_open=False))}
 
     <hr class="report-divider">
 
