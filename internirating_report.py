@@ -114,6 +114,13 @@ JEDNOCLENNY_IDS: set = {
     663, 555, 648, 669, 556, 570, 605, 651, 619, 626, 631, 564,
 }
 
+# IDs poboček v obchodních centrech
+OC_BRANCH_IDS: set = {
+    14, 21, 22, 29, 91, 92, 185, 187, 188, 211, 220, 223,
+    287, 360, 398, 401, 474, 477, 492, 498, 515, 516, 519,
+    521, 541, 553, 590, 672, 675, 676,
+}
+
 # Segmentové FTE pozice — definice skupin pro FTE_MMMA, FTE_SBC, … FTE_RKC
 FTE_MMMA_POZICE = [
     "bankéř klientské péče - junior", "bankéř klientské péče - medior",
@@ -648,6 +655,7 @@ NOVE_NAZVY = {
     "BRANCH_BUILDING_NF_SF": "Formát NF/SF",
     "NEW_FORMAT_SINCE":      "Datum NF",
     "JEDNOCLENNY_PROVOZ":    "Jednočlenný provoz",
+    "OC_POBOCKA":            "Pobočka v OC",
 
     # ── 💵 Transakční data ────────────────────────────────────────
     "CASH_PREVODITELNOST_PCT":        "% převoditelnosti",
@@ -7575,6 +7583,14 @@ def prepare_rating_status(df):
     except Exception:
         rating_status['JEDNOCLENNY_PROVOZ'] = 'Ne'
 
+    # ── Pobočka v obchodním centru ──────────────────────────────────────────────
+    try:
+        rating_status['OC_POBOCKA'] = rating_status['BRANCH_CODE'].apply(
+            lambda bc: 'Ano' if (int(float(bc)) if pd.notna(bc) else -1) in OC_BRANCH_IDS else 'Ne'
+        )
+    except Exception:
+        rating_status['OC_POBOCKA'] = 'Ne'
+
     # ── Interní rating — metodika 2022 ──────────────────────────────────────────
     # Vstupní metriky: C/I ratio 25 (30%), Výnosy 25 (20%),
     #                  Celkové návštěvy (25%), Prodeje celkem 2025 (25%)
@@ -8431,7 +8447,7 @@ def write_excel_sheet(ws, df_excel, freeze="D2"):
 COL_GROUPS = [
     # ── 🗄️ Databáze síť ───────────────────────────────────────────────────────
     ("📍 Adresa",              ["Oblast", "Region fixed", "Město", "Obvod / část", "Ulice", "Č. popisné", "Č. orientační", "RUIAN ID", "ORP", "ORP kód"], "#f0f4f8"),
-    ("🏢 Budova",              ["Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Jednočlenný provoz", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
+    ("🏢 Budova",              ["Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Jednočlenný provoz", "Pobočka v OC", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
     ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
     # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
     ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25",
@@ -10672,6 +10688,540 @@ def generate_map_html_with_toggle(df, title="🗺️ Mapa poboček — celá sí
 </div>"""
 
 
+def generate_oc_analysis_html(df):
+    """Komplexní analýza poboček v obchodních centrech (OC_BRANCH_IDS)."""
+    import plotly.graph_objects as go
+    import uuid
+
+    _uid = uuid.uuid4().hex[:8]
+
+    _num = [
+        'ROCNI_SPLATKY_S_DPH_CZK', 'VYNOSY', 'OBJEM_VYNOSU_CZK',
+        'PLOCHA_POUZE_D5', 'CELK_PLOCHA_POBOCKY_2026', 'POCET_KLIENTU',
+        'PRIMARNI_KLIENTI', 'AKTIVNI_KLIENTI', 'PRIM_RATIO', 'AKTIVNI_RATIO',
+        'POCET_SCHUZEK_ONLINE', 'POCET_SCHUZEK_FYZICKY', 'POCET_BEZHOT_WALK_IN',
+        'POCET_HOT_WALK_IN', 'POCET_NAVSTEV_CELKEM', 'FTE',
+        'PRIME_NAKLADY/VYNOSY', 'IR',
+        'POCET_PRODEJU_CELKEM_2025', 'POCET_PRODEJU_HYPO_2025',
+        'POCET_PRODEJU_LOANS_2025', 'POCET_PRODEJU_LOANREV_2025',
+        'POCET_PRODEJU_INS_LIFE_2025', 'POCET_PRODEJU_INS_NONLIFE_2025',
+        'POCET_PRODEJU_INV_REGULAR_2025', 'POCET_PRODEJU_INV_SIMPLE_2025',
+        'POCET_PRODEJU_PENSION_2025', 'POCET_PRODEJU_ACCOUNTS_2025',
+    ]
+    _d = df.copy()
+    for _c in _num:
+        if _c in _d.columns:
+            _d[_c] = pd.to_numeric(_d[_c], errors='coerce')
+
+    try:
+        _bc_num = pd.to_numeric(_d['BRANCH_CODE'], errors='coerce')
+        _oc_mask = _bc_num.isin(OC_BRANCH_IDS)
+    except Exception:
+        _oc_mask = pd.Series(False, index=_d.index)
+
+    oc = _d[_oc_mask].copy()
+    non_oc = _d[~_oc_mask].copy()
+
+    if oc.empty:
+        return '<p style="color:#aaa;font-style:italic;padding:20px;">Žádné OC pobočky v datech.</p>'
+
+    def _gcol(df2, col, fill=np.nan):
+        return df2[col] if col in df2.columns else pd.Series(fill, index=df2.index)
+
+    # ── Metriky ───────────────────────────────────────────────────────────────
+    _najem  = _gcol(oc, 'ROCNI_SPLATKY_S_DPH_CZK')
+    _vyn    = _gcol(oc, 'VYNOSY')
+    _nvyn   = _gcol(oc, 'OBJEM_VYNOSU_CZK')
+    _plocha = _gcol(oc, 'PLOCHA_POUZE_D5').where(_gcol(oc, 'PLOCHA_POUZE_D5') > 0, np.nan)
+    _kli    = _gcol(oc, 'POCET_KLIENTU').where(_gcol(oc, 'POCET_KLIENTU') > 0, np.nan)
+    _prim_r = _gcol(oc, 'PRIM_RATIO')
+    _akt_r  = _gcol(oc, 'AKTIVNI_RATIO')
+    _ir     = pd.to_numeric(_gcol(oc, 'IR'), errors='coerce')
+    _ci     = _gcol(oc, 'PRIME_NAKLADY/VYNOSY')
+    _viz    = _gcol(oc, 'POCET_NAVSTEV_CELKEM').replace(0, np.nan)
+    _sch    = _gcol(oc, 'POCET_SCHUZEK_ONLINE').fillna(0) + _gcol(oc, 'POCET_SCHUZEK_FYZICKY').fillna(0)
+    _bw     = _gcol(oc, 'POCET_BEZHOT_WALK_IN').fillna(0)
+    _hw     = _gcol(oc, 'POCET_HOT_WALK_IN').fillna(0)
+
+    oc = oc.copy()
+    oc['_najem']         = _najem
+    oc['_vyn']           = _vyn
+    oc['_nvyn']          = _nvyn
+    oc['_plocha']        = _plocha
+    oc['_kli']           = _kli
+    oc['_prim_r']        = _prim_r
+    oc['_akt_r']         = _akt_r
+    oc['_ir']            = _ir
+    oc['_ci']            = _ci
+    oc['_sch']           = _sch
+    oc['_bw']            = _bw
+    oc['najem_pct_vyn']  = np.where(_vyn > 0, _najem / _vyn * 100, np.nan)
+    oc['najem_per_m2']   = np.where(_plocha > 0, _najem / _plocha, np.nan)
+    oc['nvyn_x_najem']   = np.where(_najem > 0, _nvyn / _najem, np.nan)
+    oc['vyn_per_kli']    = np.where(_kli > 0, _vyn / _kli, np.nan)
+    oc['nvyn_per_kli']   = np.where(_kli > 0, _nvyn / _kli, np.nan)
+    oc['schuzky_pct']    = np.where(_viz > 0, _sch / _viz * 100, np.nan)
+    oc['bezhot_pct']     = np.where(_viz > 0, _bw / _viz * 100, np.nan)
+    oc['hot_pct']        = np.where(_viz > 0, _hw / _viz * 100, np.nan)
+
+    # ── Efektivní skóre (nižší = lepší) ──────────────────────────────────────
+    def _pa(s): return s.rank(pct=True, na_option='keep') * 100
+    def _pd(s): return 100 - _pa(s)
+
+    oc['_eff'] = (
+        _pa(oc['najem_pct_vyn']).fillna(50) * 0.35 +
+        _pa(oc['_ir']).fillna(50)           * 0.25 +
+        _pd(oc['nvyn_x_najem']).fillna(50)  * 0.20 +
+        _pd(oc['schuzky_pct']).fillna(50)   * 0.10 +
+        _pd(oc['_prim_r']).fillna(50)       * 0.10
+    )
+    oc_r = oc.sort_values('_eff')
+
+    # ── Srovnatelné non-OC pobočky ────────────────────────────────────────────
+    comparable = {}
+    if 'REGION_NAME' in _d.columns:
+        for _, row in oc.iterrows():
+            bc = row.get('BRANCH_CODE')
+            reg = row.get('REGION_NAME')
+            if pd.isna(reg) or not str(reg).strip(): continue
+            peers = non_oc[non_oc.get('REGION_NAME', pd.Series(dtype=str)) == reg].copy() \
+                if 'REGION_NAME' in non_oc.columns else pd.DataFrame()
+            if peers.empty: continue
+            oc_fte = float(row.get('FTE') or 0) if pd.notna(row.get('FTE')) else None
+            oc_vyn_val = float(row.get('VYNOSY') or 0) if pd.notna(row.get('VYNOSY')) else None
+            def _sim(p):
+                d1 = abs(float(p.get('FTE') or 0) - (oc_fte or 0)) if oc_fte is not None else 0
+                dv = abs(float(p.get('VYNOSY') or 0) - (oc_vyn_val or 0)) / max(abs(oc_vyn_val or 1), 1) * 100 if oc_vyn_val else 0
+                return d1 * 0.6 + dv * 0.4
+            peers['_sim'] = [_sim(r) for _, r in peers.iterrows()]
+            best = peers.nsmallest(1, '_sim')
+            if not best.empty:
+                comparable[bc] = best.iloc[0]
+
+    # ── Formátovací helpery ────────────────────────────────────────────────────
+    def _m(v, u='Kč'):
+        if v is None or (isinstance(v, float) and pd.isna(v)): return '—'
+        v = float(v)
+        if abs(v) >= 1e6: return f'{v/1e6:.1f} M {u}'
+        if abs(v) >= 1e3: return f'{v/1e3:.0f} tis. {u}'
+        return f'{v:.0f} {u}'
+    def _p(v, d=1):
+        if v is None or (isinstance(v, float) and pd.isna(v)): return '—'
+        return f'{float(v):.{d}f} %'
+    def _n(v, d=0):
+        if v is None or (isinstance(v, float) and pd.isna(v)): return '—'
+        return f'{float(v):.{d}f}'
+    def _sv(v):
+        if v is None or (isinstance(v, float) and pd.isna(v)): return '—'
+        return str(v)
+    def _sclr(s):
+        if s is None or (isinstance(s, float) and pd.isna(s)): return '#6b7280', '#f3f4f6', '⚪'
+        s = float(s)
+        if s < 33: return '#16a34a', '#dcfce7', '🟢'
+        if s < 66: return '#d97706', '#fef3c7', '🟡'
+        return '#dc2626', '#fee2e2', '🔴'
+    def _fig_html(fig, first=False):
+        return fig.to_html(
+            full_html=False,
+            include_plotlyjs='cdn' if first else False,
+            config={'displayModeBar': False, 'scrollZoom': False, 'displaylogo': False},
+        )
+    _cl = dict(paper_bgcolor='white', plot_bgcolor='#f8fafc',
+               font=dict(family='Segoe UI,Arial,sans-serif', size=11),
+               margin=dict(l=10, r=10, t=36, b=10), height=380)
+
+    # ════════════════════════
+    # TAB 1: Žebříček efektivity
+    # ════════════════════════
+    _rank_rows = ''
+    for _rank, (_, _row) in enumerate(oc_r.iterrows(), 1):
+        _bc  = _sv(_row.get('BRANCH_CODE'))
+        _nm  = _sv(_row.get('BRANCH_NAME'))
+        _rg  = _sv(_row.get('REGION_NAME'))
+        _sc2 = _row.get('_eff')
+        _fg, _bg, _ico = _sclr(_sc2)
+        _npr = _row.get('najem_pct_vyn')
+        _hlt = 'font-weight:600;color:#1d4ed8;' if pd.notna(_row.get('schuzky_pct')) and float(_row.get('schuzky_pct') or 0) >= 40 else ''
+        _rank_rows += (
+            f'<tr>'
+            f'<td style="text-align:center;font-weight:700;color:#374151;">#{_rank}</td>'
+            f'<td style="text-align:left;min-width:140px;">'
+            f'<div style="font-weight:600;color:#0f172a;">{_nm}</div>'
+            f'<div style="font-size:0.74rem;color:#6b7280;">#{_bc} · {_rg}</div></td>'
+            f'<td style="text-align:center;">'
+            f'<span style="background:{_bg};color:{_fg};border:1px solid {_fg};'
+            f'border-radius:12px;padding:2px 9px;font-weight:700;font-size:0.81rem;">'
+            f'{_ico} {_sc2:.0f if pd.notna(_sc2) else ""}</span></td>'
+            f'<td style="text-align:right;">{_m(_row.get("_najem"))}</td>'
+            f'<td style="text-align:right;">{_m(_row.get("_vyn"))}</td>'
+            f'<td style="text-align:right;font-weight:600;color:{"#dc2626" if pd.notna(_npr) and float(_npr or 0)>15 else "#374151"};">{_p(_npr)}</td>'
+            f'<td style="text-align:right;">{_m(_row.get("_nvyn"))}</td>'
+            f'<td style="text-align:right;">{_n(_row.get("nvyn_x_najem"),1)}×</td>'
+            f'<td style="text-align:right;">{_m(_row.get("najem_per_m2"), "Kč/m²")}</td>'
+            f'<td style="text-align:right;">{_n(_row.get("_kli"),0)}</td>'
+            f'<td style="text-align:right;">{_p(_row.get("_prim_r") * 100 if pd.notna(_row.get("_prim_r")) and float(_row.get("_prim_r") or 0) <= 1 else _row.get("_prim_r"), 0)}</td>'
+            f'<td style="text-align:right;{_hlt}">{_p(_row.get("schuzky_pct"))}</td>'
+            f'<td style="text-align:right;">{_p(_row.get("bezhot_pct"))}</td>'
+            f'<td style="text-align:right;">{_sv(_row.get("IR"))}</td>'
+            f'</tr>'
+        )
+    _tab1 = f"""
+<div style="overflow-x:auto;">
+<table class="table table-sm table-striped table-hover" style="font-size:0.79rem;min-width:1100px;">
+<thead><tr>
+  <th>#</th><th style="text-align:left;">Pobočka</th>
+  <th title="Skóre: nižší=efektivnější (0–100)">Skóre</th>
+  <th>Nájemné/rok</th><th>Výnosy 25</th>
+  <th title="Nájemné jako % výnosů — červená > 15 %">Náj/Výn %</th>
+  <th>Nové výnosy</th>
+  <th title="Nové výnosy / nájemné (násobek)">NV/Náj</th>
+  <th>Kč/m²</th><th>Klienti</th>
+  <th title="Podíl primárních klientů">Prim. %</th>
+  <th title="Schůzky / celkové návštěvy — modrá ≥ 40 %">Schůzky %</th>
+  <th title="Bezhotovostní walkin %">BW %</th>
+  <th>IR 25</th>
+</tr></thead>
+<tbody>{_rank_rows}</tbody>
+</table></div>"""
+
+    # ════════════════════════
+    # TAB 2: Nájemné & Plocha
+    # ════════════════════════
+    _valid_sct = oc_r.dropna(subset=['_najem', '_vyn'])
+    _first_plotly = True
+    if not _valid_sct.empty:
+        _sc_fig = go.Figure()
+        _x_max = float(_valid_sct['_vyn'].max()) * 1.15
+        for _pct_line, _lc, _ld in [(10, '#16a34a', 'dot'), (15, '#d97706', 'dash'), (20, '#dc2626', 'dash')]:
+            _sc_fig.add_trace(go.Scatter(
+                x=[0, _x_max], y=[0, _x_max * _pct_line / 100],
+                mode='lines', line=dict(color=_lc, width=1, dash=_ld),
+                name=f'{_pct_line} % nájemné/výnosy', showlegend=True,
+            ))
+        _clrs = [_sclr(s)[0] for s in _valid_sct['_eff']]
+        _sc_fig.add_trace(go.Scatter(
+            x=_valid_sct['_vyn'], y=_valid_sct['_najem'],
+            mode='markers+text',
+            marker=dict(size=10, color=_clrs, opacity=0.85, line=dict(width=1, color='white')),
+            text=[_sv(r.get('BRANCH_CODE')) for _, r in _valid_sct.iterrows()],
+            textposition='top center', textfont=dict(size=9),
+            customdata=[[_sv(r.get('BRANCH_NAME')), _sv(r.get('BRANCH_CODE')),
+                         _p(r.get('najem_pct_vyn')), _m(r.get('_najem'))]
+                        for _, r in _valid_sct.iterrows()],
+            hovertemplate=(
+                '<b>%{customdata[0]}</b> #%{customdata[1]}<br>'
+                'Výnosy: %{x:,.0f} Kč<br>Nájemné: %{y:,.0f} Kč<br>'
+                'Náj/Výn: %{customdata[2]}<extra></extra>'
+            ),
+            name='OC pobočky', showlegend=True,
+        ))
+        _sc_fig.update_layout(**_cl, xaxis_title='Výnosy 25 (Kč)', yaxis_title='Roční nájemné (Kč)',
+            title='Nájemné vs Výnosy — zelená 10 %, oranžová 15 %, červená 20 %',
+            height=420, legend=dict(x=0.02, y=0.98, bgcolor='rgba(255,255,255,0.85)'))
+        _ch_sct = f'<div style="border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.07);">{_fig_html(_sc_fig, first=_first_plotly)}</div>'
+        _first_plotly = False
+    else:
+        _ch_sct = ''
+
+    _bar_pct = oc_r.dropna(subset=['najem_pct_vyn']).sort_values('najem_pct_vyn', ascending=False)
+    if not _bar_pct.empty:
+        _bp_lbls = [f"#{_sv(r.get('BRANCH_CODE'))} {str(r.get('BRANCH_NAME',''))[:12]}" for _, r in _bar_pct.iterrows()]
+        _bp_fig = go.Figure(go.Bar(x=_bp_lbls, y=_bar_pct['najem_pct_vyn'],
+            marker_color='#ef4444', opacity=0.85))
+        _bp_fig.add_hline(y=15, line_dash='dash', line_color='#d97706',
+            annotation_text='15 %', annotation_position='top right')
+        _bp_fig.update_layout(**_cl, title='Nájemné jako % výnosů (nižší = efektivnější)',
+            yaxis_title='%', xaxis=dict(tickangle=-38, tickfont=dict(size=9)), height=340)
+        _ch_bpct = f'<div style="border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.07);">{_fig_html(_bp_fig)}</div>'
+    else:
+        _ch_bpct = ''
+
+    _bar_m2 = oc_r.dropna(subset=['najem_per_m2']).sort_values('najem_per_m2', ascending=False)
+    if not _bar_m2.empty:
+        _bm_lbls = [f"#{_sv(r.get('BRANCH_CODE'))} {str(r.get('BRANCH_NAME',''))[:12]}" for _, r in _bar_m2.iterrows()]
+        _bm_fig = go.Figure(go.Bar(x=_bm_lbls, y=_bar_m2['najem_per_m2'],
+            marker_color='#8b5cf6', opacity=0.85))
+        _bm_fig.update_layout(**_cl, title='Cena pronájmu za m² plochy D5',
+            yaxis_title='Kč/m²', xaxis=dict(tickangle=-38, tickfont=dict(size=9)), height=340)
+        _ch_bm2 = f'<div style="border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.07);">{_fig_html(_bm_fig)}</div>'
+    else:
+        _ch_bm2 = ''
+
+    _tab2 = f"""
+{_ch_sct}
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;">
+  {_ch_bpct}
+  {_ch_bm2}
+</div>"""
+
+    # ════════════════════════
+    # TAB 3: Výnosy & Klienti + Produkt mix
+    # ════════════════════════
+    _rvk = oc_r.dropna(subset=['vyn_per_kli']).sort_values('vyn_per_kli', ascending=False)
+    if not _rvk.empty:
+        _rvk_lbls = [f"#{_sv(r.get('BRANCH_CODE'))} {str(r.get('BRANCH_NAME',''))[:12]}" for _, r in _rvk.iterrows()]
+        _rvk_fig = go.Figure(go.Bar(x=_rvk_lbls, y=_rvk['vyn_per_kli'],
+            marker_color='#2563eb', opacity=0.85, name='Výnosy/klienta'))
+        _rvk_fig.update_layout(**_cl, title='Výnosy na klienta (Kč)',
+            yaxis_title='Kč', xaxis=dict(tickangle=-38, tickfont=dict(size=9)), height=320)
+        _ch_rvk = f'<div style="border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.07);">{_fig_html(_rvk_fig)}</div>'
+    else:
+        _ch_rvk = ''
+
+    _prim_ok = oc_r['_prim_r'].notna().any()
+    if _prim_ok:
+        _pv_lbls = [f"#{_sv(r.get('BRANCH_CODE'))} {str(r.get('BRANCH_NAME',''))[:12]}" for _, r in oc_r.iterrows()]
+        _prim_vals = oc_r['_prim_r'].apply(lambda v: float(v)*100 if pd.notna(v) and float(v or 0) <= 1 else (float(v) if pd.notna(v) else np.nan))
+        _akt_vals  = oc_r['_akt_r'].apply(lambda v: float(v)*100 if pd.notna(v) and float(v or 0) <= 1 else (float(v) if pd.notna(v) else np.nan)) if '_akt_r' in oc_r.columns else pd.Series(dtype=float)
+        _prim_fig = go.Figure()
+        _prim_fig.add_trace(go.Bar(x=_pv_lbls, y=_prim_vals, name='Primární %', marker_color='#0891b2', opacity=0.85))
+        if _akt_vals.notna().any():
+            _prim_fig.add_trace(go.Bar(x=_pv_lbls, y=_akt_vals, name='Aktivní %', marker_color='#38bdf8', opacity=0.65))
+        _prim_fig.update_layout(**_cl, barmode='group', title='Primární a aktivní klienti (%)',
+            yaxis_title='%', xaxis=dict(tickangle=-38, tickfont=dict(size=9)), height=320)
+        _ch_prim = f'<div style="border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.07);">{_fig_html(_prim_fig)}</div>'
+    else:
+        _ch_prim = ''
+
+    _prod_cols_def = [
+        ('POCET_PRODEJU_HYPO_2025', 'Hypotéky'),
+        ('POCET_PRODEJU_LOANS_2025', 'Úvěry'),
+        ('POCET_PRODEJU_LOANREV_2025', 'Revol. úvěry'),
+        ('POCET_PRODEJU_INS_LIFE_2025', 'Poj. život'),
+        ('POCET_PRODEJU_INS_NONLIFE_2025', 'Poj. neživot'),
+        ('POCET_PRODEJU_INV_REGULAR_2025', 'Inv. pravid.'),
+        ('POCET_PRODEJU_INV_SIMPLE_2025', 'Inv. jednor.'),
+        ('POCET_PRODEJU_PENSION_2025', 'Penze'),
+        ('POCET_PRODEJU_ACCOUNTS_2025', 'Účty'),
+    ]
+    _avail_p = [(c, l) for c, l in _prod_cols_def if c in oc.columns and c in _d.columns]
+    if _avail_p:
+        _pl = [l for _, l in _avail_p]
+        _oc_avg  = [oc[c].mean() for c, _ in _avail_p]
+        _net_avg = [_d[c].mean() for c, _ in _avail_p]
+        _prod_fig = go.Figure()
+        _prod_fig.add_trace(go.Bar(x=_pl, y=_oc_avg, name='OC (průměr/pobočku)', marker_color='#f59e0b', opacity=0.85))
+        _prod_fig.add_trace(go.Bar(x=_pl, y=_net_avg, name='Celá síť (průměr/pobočku)', marker_color='#94a3b8', opacity=0.7))
+        _prod_fig.update_layout(**_cl, barmode='group',
+            title='Prodeje dle produktu — OC vs celá síť (průměr/pobočku)',
+            yaxis_title='ks', height=380)
+        _ch_prod = f'<div style="border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-top:14px;">{_fig_html(_prod_fig)}</div>'
+    else:
+        _ch_prod = ''
+
+    _tab3 = f"""
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+  {_ch_rvk}
+  {_ch_prim}
+</div>
+{_ch_prod}"""
+
+    # ════════════════════════
+    # TAB 4: Skladba návštěv
+    # ════════════════════════
+    _viz_ok = 'POCET_NAVSTEV_CELKEM' in oc.columns
+    if _viz_ok:
+        _oc_v = oc_r[['BRANCH_CODE', 'BRANCH_NAME', 'schuzky_pct', '_sch', '_bw', '_hw',
+                       'POCET_SCHUZEK_ONLINE', 'POCET_SCHUZEK_FYZICKY',
+                       'POCET_BEZHOT_WALK_IN', 'POCET_HOT_WALK_IN']].copy()
+        _oc_v = _oc_v.sort_values('schuzky_pct', ascending=False, na_position='last')
+        _vl = [f"#{_sv(r.get('BRANCH_CODE'))} {str(r.get('BRANCH_NAME',''))[:10]}" for _, r in _oc_v.iterrows()]
+        _stk_fig = go.Figure()
+        for _col, _lbl, _clr in [
+            ('POCET_SCHUZEK_ONLINE',  'Online schůzky', '#1d4ed8'),
+            ('POCET_SCHUZEK_FYZICKY', 'Fyzické schůzky','#3b82f6'),
+            ('POCET_BEZHOT_WALK_IN',  'Bezhot. walkin',  '#f59e0b'),
+            ('POCET_HOT_WALK_IN',     'Hot. walkin',     '#94a3b8'),
+        ]:
+            if _col in _oc_v.columns:
+                _stk_fig.add_trace(go.Bar(x=_vl, y=_oc_v[_col].fillna(0),
+                    name=_lbl, marker_color=_clr, opacity=0.85))
+        _stk_fig.update_layout(**_cl, barmode='stack',
+            title='Složení návštěv dle typu (seřazeno dle % schůzek ↓)',
+            yaxis_title='Počet/rok', height=420,
+            xaxis=dict(tickangle=-38, tickfont=dict(size=9)),
+            legend=dict(x=0.01, y=0.99, bgcolor='rgba(255,255,255,0.85)'))
+        _ch_stk = f'<div style="border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.07);">{_fig_html(_stk_fig)}</div>'
+
+        _sp_valid = oc_r.dropna(subset=['schuzky_pct']).sort_values('schuzky_pct', ascending=False)
+        _net_sp = np.nan
+        if all(c in _d.columns for c in ['POCET_SCHUZEK_ONLINE', 'POCET_SCHUZEK_FYZICKY', 'POCET_NAVSTEV_CELKEM']):
+            _nv = _d['POCET_NAVSTEV_CELKEM'].sum()
+            if _nv > 0:
+                _net_sp = (_d['POCET_SCHUZEK_ONLINE'].fillna(0).sum() + _d['POCET_SCHUZEK_FYZICKY'].fillna(0).sum()) / _nv * 100
+        if not _sp_valid.empty:
+            _sp_lbls = [f"#{_sv(r.get('BRANCH_CODE'))} {str(r.get('BRANCH_NAME',''))[:12]}" for _, r in _sp_valid.iterrows()]
+            _sp_fig = go.Figure(go.Bar(x=_sp_lbls, y=_sp_valid['schuzky_pct'],
+                marker_color='#2563eb', opacity=0.85))
+            if pd.notna(_net_sp):
+                _sp_fig.add_hline(y=_net_sp, line_dash='dash', line_color='#dc2626',
+                    annotation_text=f'Síť {_net_sp:.1f} %', annotation_position='top right')
+            _sp_fig.update_layout(**_cl, title='Podíl schůzek na celkových návštěvách (%)',
+                yaxis_title='%', xaxis=dict(tickangle=-38, tickfont=dict(size=9)), height=320)
+            _ch_sp = f'<div style="border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-top:14px;">{_fig_html(_sp_fig)}</div>'
+        else:
+            _ch_sp = ''
+        _tab4 = f'{_ch_stk}{_ch_sp}'
+    else:
+        _tab4 = '<p style="color:#aaa;">Data o návštěvách nejsou k dispozici.</p>'
+
+    # ════════════════════════
+    # TAB 5: Srovnání s non-OC
+    # ════════════════════════
+    def _najem_pct_row(row):
+        _rn = row.get('ROCNI_SPLATKY_S_DPH_CZK')
+        _rv = row.get('VYNOSY')
+        try:
+            v = float(_rn or 0) / float(_rv or 0) * 100 if pd.notna(_rn) and pd.notna(_rv) and float(_rv or 0) != 0 else np.nan
+        except Exception:
+            v = np.nan
+        return _p(v)
+    def _sch_pct_row(row):
+        _rs = (float(row.get('POCET_SCHUZEK_ONLINE') or 0) + float(row.get('POCET_SCHUZEK_FYZICKY') or 0)) \
+            if 'POCET_SCHUZEK_ONLINE' in (row.index if hasattr(row, 'index') else []) else 0
+        _rv = float(row.get('POCET_NAVSTEV_CELKEM') or 0) if 'POCET_NAVSTEV_CELKEM' in (row.index if hasattr(row, 'index') else []) else 0
+        return _p(_rs / _rv * 100 if _rv > 0 else np.nan)
+    def _diff_cell(oc_v, comp_v, higher_better=True, money=False, pct_val=False):
+        try:
+            ov, cv = float(oc_v or 0), float(comp_v or 0)
+            if pd.isna(oc_v) or pd.isna(comp_v): return '—'
+            diff = ov - cv
+            better = (diff > 0) == higher_better
+            clr = '#16a34a' if better else '#dc2626'
+            arrow = '↑' if diff > 0 else '↓'
+            if money: dstr = _m(abs(diff))
+            elif pct_val: dstr = f'{abs(diff):.1f} %'
+            else: dstr = f'{abs(diff):.1f}'
+            return f'<span style="color:{clr};font-weight:600;">{arrow} {dstr}</span>'
+        except Exception:
+            return '—'
+
+    _cmp_rows = ''
+    for _, _row in oc_r.iterrows():
+        _bc = _row.get('BRANCH_CODE')
+        _comp = comparable.get(_bc)
+        if _comp is None: continue
+        _nm  = _sv(_row.get('BRANCH_NAME'))
+        _nmc = _sv(_comp.get('BRANCH_NAME'))
+        _bcc = _sv(_comp.get('BRANCH_CODE'))
+        _rg  = _sv(_row.get('REGION_NAME'))
+        _sep = f'<tr><td colspan="9" style="height:4px;background:#e2e8f0;padding:0;"></td></tr>'
+        _cmp_rows += (
+            f'<tr style="background:#eff6ff;">'
+            f'<td style="text-align:left;"><div style="font-weight:600;color:#1d4ed8;">🏬 {_nm} <small style="color:#6b7280;">#{_sv(_bc)}</small></div>'
+            f'<div style="font-size:0.74rem;color:#374151;">{_rg}</div></td>'
+            f'<td style="text-align:right;">{_m(_row.get("_najem"))}</td>'
+            f'<td style="text-align:right;">{_m(_row.get("_vyn"))}</td>'
+            f'<td style="text-align:right;">{_p(_row.get("najem_pct_vyn"))}</td>'
+            f'<td style="text-align:right;">{_m(_row.get("_nvyn"))}</td>'
+            f'<td style="text-align:right;">{_n(_row.get("_kli"),0)}</td>'
+            f'<td style="text-align:right;">{_p(float(_row.get("_prim_r") or 0)*100 if pd.notna(_row.get("_prim_r")) and float(_row.get("_prim_r") or 1)<=1 else _row.get("_prim_r"), 0)}</td>'
+            f'<td style="text-align:right;">{_p(_row.get("schuzky_pct"))}</td>'
+            f'<td style="text-align:right;">{_sv(_row.get("IR"))}</td>'
+            f'</tr>'
+            f'<tr style="background:#fafafa;">'
+            f'<td style="text-align:left;"><div style="font-weight:600;color:#374151;">🏢 {_nmc} <small style="color:#6b7280;">#{_bcc}</small></div>'
+            f'<div style="font-size:0.74rem;color:#6b7280;">peer v regionu (nejbližší FTE/výnosy)</div></td>'
+            f'<td style="text-align:right;">{_m(_comp.get("ROCNI_SPLATKY_S_DPH_CZK"))}</td>'
+            f'<td style="text-align:right;">{_m(_comp.get("VYNOSY"))}</td>'
+            f'<td style="text-align:right;">{_najem_pct_row(_comp)}</td>'
+            f'<td style="text-align:right;">{_m(_comp.get("OBJEM_VYNOSU_CZK"))}</td>'
+            f'<td style="text-align:right;">{_n(_comp.get("POCET_KLIENTU"),0)}</td>'
+            f'<td style="text-align:right;">{_p(float(_comp.get("PRIM_RATIO") or 0)*100 if pd.notna(_comp.get("PRIM_RATIO")) and float(_comp.get("PRIM_RATIO") or 1)<=1 else _comp.get("PRIM_RATIO"), 0)}</td>'
+            f'<td style="text-align:right;">{_sch_pct_row(_comp)}</td>'
+            f'<td style="text-align:right;">{_sv(_comp.get("IR"))}</td>'
+            f'</tr>'
+            f'<tr style="background:#fffbeb;">'
+            f'<td style="text-align:left;font-size:0.77rem;font-weight:600;color:#92400e;">Δ OC vs peer</td>'
+            f'<td style="text-align:right;">{_diff_cell(_row.get("_najem"),_comp.get("ROCNI_SPLATKY_S_DPH_CZK"),higher_better=False,money=True)}</td>'
+            f'<td style="text-align:right;">{_diff_cell(_row.get("_vyn"),_comp.get("VYNOSY"),higher_better=True,money=True)}</td>'
+            f'<td style="text-align:right;">—</td>'
+            f'<td style="text-align:right;">{_diff_cell(_row.get("_nvyn"),_comp.get("OBJEM_VYNOSU_CZK"),higher_better=True,money=True)}</td>'
+            f'<td style="text-align:right;">{_diff_cell(_row.get("_kli"),_comp.get("POCET_KLIENTU"),higher_better=True)}</td>'
+            f'<td style="text-align:right;">—</td><td style="text-align:right;">—</td><td style="text-align:right;">—</td>'
+            f'</tr>{_sep}'
+        )
+    _tab5 = f"""
+<div style="overflow-x:auto;">
+<table class="table table-sm" style="font-size:0.79rem;min-width:900px;">
+<thead><tr>
+  <th style="text-align:left;">Pobočka</th>
+  <th>Nájemné/rok</th><th>Výnosy 25</th><th>Náj/Výn %</th>
+  <th>Nové výnosy</th><th>Klienti</th><th>Prim. %</th>
+  <th>Schůzky %</th><th>IR 25</th>
+</tr></thead>
+<tbody>{_cmp_rows or '<tr><td colspan="9" style="text-align:center;color:#aaa;padding:20px;">Srovnatelné pobočky nenalezeny.</td></tr>'}</tbody>
+</table></div>"""
+
+    # ════════════════════════
+    # Summary chips
+    # ════════════════════════
+    _n_oc    = len(oc)
+    _tot_n   = oc['_najem'].sum()
+    _tot_v   = oc['_vyn'].sum()
+    _avg_np  = (_tot_n / _tot_v * 100) if _tot_v > 0 else np.nan
+    _tot_nv  = oc['_nvyn'].sum()
+    _avg_pl  = oc['_plocha'].mean()
+    _chips = (
+        f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px 0;font-size:0.82rem;align-items:center;">'
+        f'<span style="background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd;border-radius:12px;padding:3px 12px;font-weight:600;">🏬 {_n_oc} OC poboček</span>'
+        f'<span style="background:#fce7f3;color:#9d174d;border:1px solid #f9a8d4;border-radius:12px;padding:3px 12px;font-weight:600;">🏠 ∑ nájemné: {_m(_tot_n)}</span>'
+        f'<span style="background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:12px;padding:3px 12px;font-weight:600;">💰 ∑ výnosy: {_m(_tot_v)}</span>'
+        f'<span style="background:{"#fee2e2" if pd.notna(_avg_np) and _avg_np>15 else "#fef3c7"};'
+        f'color:{"#dc2626" if pd.notna(_avg_np) and _avg_np>15 else "#d97706"};'
+        f'border:1px solid {"#fca5a5" if pd.notna(_avg_np) and _avg_np>15 else "#fcd34d"};'
+        f'border-radius:12px;padding:3px 12px;font-weight:600;">📊 náj/výnosy: {_p(_avg_np)}</span>'
+        + (f'<span style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;border-radius:12px;padding:3px 12px;">📐 prům. D5: {_n(_avg_pl,0)} m²</span>' if pd.notna(_avg_pl) else '')
+        + f'<span style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;border-radius:12px;padding:3px 12px;">🆕 ∑ nové výnosy: {_m(_tot_nv)}</span>'
+        f'</div>'
+    )
+
+    # ════════════════════════
+    # Tab navigation + assembly
+    # ════════════════════════
+    _tdefs = [
+        ('rank', '📊 Žebříček efektivity', _tab1),
+        ('najem', '🏠 Nájemné & Plocha', _tab2),
+        ('rev',   '💰 Výnosy & Klienti',  _tab3),
+        ('viz',   '🚶 Skladba návštěv',        _tab4),
+        ('cmp',   '🔄 Srovnání s non-OC', _tab5),
+    ]
+    _btn_a = 'background:#1d4ed8;color:#fff;border-color:#1d4ed8;'
+    _btn_i = 'background:#fff;color:#374151;border-color:#d1d5db;'
+    _tab_btns = ''.join(
+        f'<button id="oct-btn-{k}-{_uid}" onclick="ocTab_{_uid}(\'{k}\')" '
+        f'style="padding:6px 14px;border-radius:20px;border:1px solid;cursor:pointer;'
+        f'font-size:0.82rem;font-weight:600;margin-bottom:4px;{_btn_a if i==0 else _btn_i}">{lbl}</button>'
+        for i, (k, lbl, _) in enumerate(_tdefs)
+    )
+    _tab_divs = ''
+    for _i, (_k, _, _content) in enumerate(_tdefs):
+        _hide = '' if _i == 0 else ' style="display:none;"'
+        _tab_divs += f'<div id="oct-tab-{_k}-{_uid}"{_hide}>{_content}</div>'
+    _keys_js = str([k for k, _, _ in _tdefs]).replace("'", '"')
+    _tab_js = (
+        f'<script>(function(){{'
+        f'var _t={_keys_js},_u="{_uid}";'
+        f'function ocTab_{_uid}(t){{'
+        f'_t.forEach(function(k){{'
+        f'document.getElementById("oct-tab-"+k+"-"+_u).style.display=k===t?"":"none";'
+        f'var b=document.getElementById("oct-btn-"+k+"-"+_u);'
+        f'if(b){{b.style.background=k===t?"#1d4ed8":"#fff";'
+        f'b.style.color=k===t?"#fff":"#374151";'
+        f'b.style.borderColor=k===t?"#1d4ed8":"#d1d5db";}}}});}}  '
+        f'window["ocTab_{_uid}"]=ocTab_{_uid};'
+        f'}})();</script>'
+    )
+    return (
+        f'<div style="margin-top:8px;">'
+        f'{_chips}'
+        f'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">{_tab_btns}</div>'
+        f'{_tab_divs}'
+        f'{_tab_js}'
+        f'</div>'
+    )
+
+
 def _render_top_revenues_table(df, region_label="", n=10):
     """
     Přehled oblastí s nejvyššími výnosy.
@@ -12127,6 +12677,9 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
             f'<div style="display:flex;gap:20px;flex-wrap:wrap;">{_ie_top5_static_html}</div>'
         ) if _ie_top5_static_html else ''
 
+        print("  🏬 Generuji analýzu OC poboček...")
+        _oc_analysis_html = generate_oc_analysis_html(df_sorted)
+
         print("  🏧 Generuji ATM přehled...")
         _atm_static_html = generate_atm_region_html(
             df_sorted,
@@ -12250,6 +12803,11 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
 
     <!-- 4. Mapa -->
     {_sc('mapa', generate_map_html_with_toggle(df_sorted, title="🗺️ Mapa poboček — celá síť"))}
+
+    <!-- 4b. OC analýza -->
+    {_sc('oc_analyza', make_collapsible("oc-analyza-static", "🏬 Analýza poboček v obchodním centru",
+        '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Komplexní analýza {n_oc} OC poboček — nájemné vs výnosy, cena za m², kvalita klientů, skladba návštěv a srovnání s podobnými pobočkami mimo OC.</p>'.replace("{n_oc}", str(len(OC_BRANCH_IDS)))
+        + _oc_analysis_html, default_open=True))}
 
     <hr class="report-divider">
 
