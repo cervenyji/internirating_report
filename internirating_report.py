@@ -10828,7 +10828,7 @@ def generate_oc_analysis_html(df):
         )
     _cl = dict(paper_bgcolor='white', plot_bgcolor='#f8fafc',
                font=dict(family='Segoe UI,Arial,sans-serif', size=11),
-               margin=dict(l=10, r=10, t=36, b=10), height=380)
+               margin=dict(l=10, r=10, t=36, b=10))
 
     # ════════════════════════
     # TAB 1: Žebříček efektivity
