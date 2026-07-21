@@ -1,0 +1,2291 @@
+{
+  "1": {
+    "Název": "Brno (Jánská)",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "2": {
+    "Název": "Brno - Česká",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "3": {
+    "Název": "Kounicova",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "5": {
+    "Název": "Brno - Masarykova",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "8": {
+    "Název": "Křídlovická",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "11": {
+    "Název": "Královo Pole",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "12": {
+    "Název": "Žabovřesky",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "14": {
+    "Název": "OC Olympia Brno",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "17": {
+    "Název": "Ivančice",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "ZP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "18": {
+    "Název": "Kuřim",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "19": {
+    "Název": "Rosice",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "20": {
+    "Název": "Tišnov",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "ZP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "21": {
+    "Název": "Židlochovice",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "22": {
+    "Název": "OC Campus Square Brno",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "24": {
+    "Název": "Pohořelice",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "27": {
+    "Název": "Vinohrady",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "29": {
+    "Název": "Vaňkovka",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "32": {
+    "Název": "Šlapanice",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "36": {
+    "Název": "Humpolec",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "ZP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "37": {
+    "Název": "Pacov",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "38": {
+    "Název": "Pelhřimov",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "43": {
+    "Název": "Blansko",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "44": {
+    "Název": "Boskovice",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "ZP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "45": {
+    "Název": "Letovice",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "51": {
+    "Název": "Břeclav",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "52": {
+    "Název": "Hustopeče u Brna",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "ZP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "53": {
+    "Název": "Mikulov na Moravě",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "60": {
+    "Název": "Zlín",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "64": {
+    "Název": "Otrokovice - Atrium",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "66": {
+    "Název": "Valašské Klobouky",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "67": {
+    "Název": "Vizovice",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "68": {
+    "Název": "Zlín - Dvanáctka",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "74": {
+    "Název": "Hodonín",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "75": {
+    "Název": "Kyjov",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "76": {
+    "Název": "Veselí nad Moravou",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "ZP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "77": {
+    "Název": "Strážnice",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "80": {
+    "Název": "Bzenec",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "84": {
+    "Název": "Jihlava",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "85": {
+    "Název": "Telč",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "86": {
+    "Název": "Třešť",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "89": {
+    "Název": "Polná",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "91": {
+    "Název": "OC Třebíč",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "92": {
+    "Název": "OC City Park Jihlava",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "93": {
+    "Název": "Kroměříž",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "94": {
+    "Název": "Holešov",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "95": {
+    "Název": "Bystřice pod Hostýnem",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "100": {
+    "Název": "Třebíč",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "101": {
+    "Název": "Moravské Budějovice",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "102": {
+    "Název": "Náměšť nad Oslavou",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "107": {
+    "Název": "Uherské Hradiště",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "108": {
+    "Název": "Uherský Brod",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "114": {
+    "Název": "Vyškov",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "115": {
+    "Název": "Bučovice",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "117": {
+    "Název": "Slavkov u Brna",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "118": {
+    "Název": "Znojmo",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "119": {
+    "Název": "Moravský Krumlov",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "120": {
+    "Název": "Hrušovany nad Jevišovkou",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "123": {
+    "Název": "Ústí nad Labem",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "125": {
+    "Název": "Děčín 4",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "128": {
+    "Název": "Beroun",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "129": {
+    "Název": "Hořovice",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "134": {
+    "Název": "Kladno",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "135": {
+    "Název": "Kročehlavy",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "136": {
+    "Název": "Slaný",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "142": {
+    "Název": "Brandýs nad Labem",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "144": {
+    "Název": "Kralupy nad Vltavou",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "145": {
+    "Název": "Neratovice",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "146": {
+    "Název": "Mělník",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "148": {
+    "Název": "Mladá Boleslav",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "149": {
+    "Název": "Benátky nad Jizerou",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "150": {
+    "Název": "Mnichovo Hradiště",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "151": {
+    "Název": "TRIO Ml. Boleslav",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "156": {
+    "Název": "Rakovník",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "157": {
+    "Název": "Nové Strašecí",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "158": {
+    "Název": "Podbořany",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "159": {
+    "Název": "Žatec",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "160": {
+    "Název": "Česká Lípa",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "161": {
+    "Název": "Mimoň",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "162": {
+    "Název": "Nový Bor",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "167": {
+    "Název": "Děčín",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "168": {
+    "Název": "Rumburk",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "169": {
+    "Název": "Varnsdorf",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "173": {
+    "Název": "Česká Kamenice",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "174": {
+    "Název": "Chomutov",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "175": {
+    "Název": "Kadaň",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "178": {
+    "Název": "Jablonec nad Nisou",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "179": {
+    "Název": "Tanvald",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "182": {
+    "Název": "Liberec",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "184": {
+    "Název": "Frýdlant v Čechách",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "185": {
+    "Název": "OC Nisa Liberec",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "186": {
+    "Název": "Hrádek nad Nisou",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "187": {
+    "Název": "Jablonec nad Nisou - OC Rýnovka",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "188": {
+    "Název": "OC Forum Liberec",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "191": {
+    "Název": "Roudnice nad Labem",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "192": {
+    "Název": "Litoměřice",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "193": {
+    "Název": "Lovosice",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "194": {
+    "Název": "Štětí",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "198": {
+    "Název": "Louny",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "199": {
+    "Název": "Most",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "203": {
+    "Název": "Litvínov",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "204": {
+    "Název": "Teplice",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "205": {
+    "Název": "Bílina",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "211": {
+    "Název": "OC Olympia Teplice-Srbice",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "212": {
+    "Název": "Turnov",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "213": {
+    "Název": "Jilemnice",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "215": {
+    "Název": "Semily",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "218": {
+    "Název": "Hradec Králové - ČSA",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "219": {
+    "Název": "Střelecká",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "220": {
+    "Název": "Hradec Králové - OC Aupark",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "221": {
+    "Název": "Chlumec nad Cidlinou",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "222": {
+    "Název": "Nový Bydžov",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "223": {
+    "Název": "Futurum Hradec Králové",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "228": {
+    "Název": "Kolín",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "230": {
+    "Název": "Český Brod",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "231": {
+    "Název": "Čelákovice",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "234": {
+    "Název": "Pečky",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "235": {
+    "Název": "Kutná Hora",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "236": {
+    "Název": "Čáslav",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "237": {
+    "Název": "Uhlířské Janovice",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "239": {
+    "Název": "Zruč nad Sázavou",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "241": {
+    "Název": "Poděbrady",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "242": {
+    "Název": "Lysá nad Labem",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "243": {
+    "Název": "Nymburk",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "246": {
+    "Název": "Havlíčkův Brod",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "247": {
+    "Název": "Chotěboř",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "248": {
+    "Název": "Ledeč nad Sázavou",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "253": {
+    "Název": "Chrudim",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "254": {
+    "Název": "Heřmanův Městec",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "255": {
+    "Název": "Hlinsko v Čechách",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "257": {
+    "Název": "Skuteč",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "264": {
+    "Název": "Nová Paka",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "265": {
+    "Název": "Hořice",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "266": {
+    "Název": "Jičín",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "272": {
+    "Název": "Náchod",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "273": {
+    "Název": "Broumov",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "274": {
+    "Název": "Červený Kostelec",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "277": {
+    "Název": "Jaroměř",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "282": {
+    "Název": "Pardubice, tř. Míru",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "283": {
+    "Název": "Holice v Čechách",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "286": {
+    "Název": "Přelouč",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "287": {
+    "Název": "OC Globus Pardubice",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "291": {
+    "Název": "Rychnov nad Kněžnou",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "292": {
+    "Název": "Dobruška",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "293": {
+    "Název": "Kostelec nad Orlicí",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "294": {
+    "Název": "Týniště nad Orlicí",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "299": {
+    "Název": "Svitavy",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "301": {
+    "Název": "Litomyšl",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "302": {
+    "Název": "Moravská Třebová",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "303": {
+    "Název": "Polička",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "304": {
+    "Název": "Jevíčko",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "307": {
+    "Název": "Trutnov",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "314": {
+    "Název": "Dvůr Králové nad Labem",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "315": {
+    "Název": "Vrchlabí",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "317": {
+    "Název": "Úpice",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "321": {
+    "Název": "Ústí nad Orlicí",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "323": {
+    "Název": "Česká Třebová",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "324": {
+    "Název": "Lanškroun",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "325": {
+    "Název": "Vysoké Mýto",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "326": {
+    "Název": "Choceň",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "327": {
+    "Název": "Letohrad",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "328": {
+    "Název": "Žamberk",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "330": {
+    "Název": "Králíky",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "331": {
+    "Název": "Žďár nad Sázavou",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "332": {
+    "Název": "Bystřice nad Pernštejnem",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "333": {
+    "Název": "Nové Město na Moravě",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "334": {
+    "Název": "Velká Bíteš",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "335": {
+    "Název": "Velké Meziříčí",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "ZP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "338": {
+    "Název": "Ostrava - Nová Karolina Park",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "339": {
+    "Název": "Bílovec",
+    "Region": "Severní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "344": {
+    "Název": "Ostrava - Hrabůvka",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "348": {
+    "Název": "Ostrava - Poruba (U Soudu)",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "349": {
+    "Název": "Ostrava - Dubina",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "353": {
+    "Název": "Frenštát pod Radhoštěm",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "354": {
+    "Název": "Kopřivnice",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "355": {
+    "Název": "Bohumín",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "359": {
+    "Název": "Ostrava - Poruba 8",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "360": {
+    "Název": "Shopping Park Ostrava",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "362": {
+    "Název": "OA Kotva Ostrava-Zábřeh",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "366": {
+    "Název": "Vsetín",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "368": {
+    "Název": "Prostějov",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "372": {
+    "Název": "Frýdek-Místek",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "374": {
+    "Název": "Jablunkov",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "376": {
+    "Název": "Frýdlant nad Ostravicí",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "377": {
+    "Název": "Třinec - Lyžbice",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "383": {
+    "Název": "Karviná",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "384": {
+    "Název": "Havířov - Město",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "386": {
+    "Název": "Orlová",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "387": {
+    "Název": "Český Těšín",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "391": {
+    "Název": "Nový Jičín",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "392": {
+    "Název": "Valašské Meziříčí",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "393": {
+    "Název": "Rožnov pod Radhoštěm",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "395": {
+    "Název": "Odry",
+    "Region": "Severní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "397": {
+    "Název": "Olomouc",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "398": {
+    "Název": "OC HANÁ Olomouc",
+    "Region": "Severní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "399": {
+    "Název": "Litovel",
+    "Region": "Severní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "401": {
+    "Název": "Olomouc - OC Bělidla",
+    "Region": "Severní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "402": {
+    "Název": "Šternberk",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "403": {
+    "Název": "Uničov",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "413": {
+    "Název": "Opava",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "414": {
+    "Název": "Hlučín",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "416": {
+    "Název": "Bruntál",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "ZP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "417": {
+    "Název": "Rýmařov",
+    "Region": "Severní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "418": {
+    "Název": "Vrbno pod Pradědem",
+    "Region": "Severní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "419": {
+    "Název": "Krnov",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "423": {
+    "Název": "Kravaře",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "429": {
+    "Název": "Přerov",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "430": {
+    "Název": "Hranice",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "432": {
+    "Název": "Lipník nad Bečvou",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "435": {
+    "Název": "Šumperk",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "436": {
+    "Název": "Jeseník",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "437": {
+    "Název": "Mohelnice",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "438": {
+    "Název": "Zábřeh",
+    "Region": "Severní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "446": {
+    "Název": "Václavské náměstí",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "447": {
+    "Název": "Vodičkova",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "449": {
+    "Název": "Dlouhá",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "450": {
+    "Název": "Na Příkopě",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "451": {
+    "Název": "Praha 1 - Národní",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "454": {
+    "Název": "Nuselská",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "459": {
+    "Název": "Praha 2 (Jugoslávská)",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "460": {
+    "Název": "Karlovo nám.",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "464": {
+    "Název": "Sladkovského nám.",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "465": {
+    "Název": "Vinohradská 112",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "469": {
+    "Název": "Praha 4 (Budějovická)",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "471": {
+    "Název": "Sofijské náměstí",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "472": {
+    "Název": "GEMINI",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "473": {
+    "Název": "Háje",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "474": {
+    "Název": "Novodvorská",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "477": {
+    "Název": "Praha - OC Chodov",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "479": {
+    "Název": "Palmovka",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "486": {
+    "Název": "Praha 5 - Štefánikova",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "488": {
+    "Název": "Radotín",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "490": {
+    "Název": "Luka",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "491": {
+    "Název": "Nové Butovice",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "492": {
+    "Název": "Praha 5 - OC Zličín",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "493": {
+    "Název": "Strossmayerovo náměstí",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "495": {
+    "Název": "Dělnická",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "497": {
+    "Název": "Praha 8 - Ládví",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "498": {
+    "Název": "Praha 8 - OC Krakov",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "500": {
+    "Název": "KAMERA (Barrandov)",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "505": {
+    "Název": "Praha 6 - Vítězné nám.",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "508": {
+    "Název": "Praha 6 - Petřiny",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "510": {
+    "Název": "Řepy",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "511": {
+    "Název": "Praha 8 (Sokolovská)",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "512": {
+    "Název": "Verneřická",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "514": {
+    "Název": "Horní Počernice",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "515": {
+    "Název": "Praha 9 - OC Galerie Harfa",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "516": {
+    "Název": "OC Čakovice",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "518": {
+    "Název": "Vysočany",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "519": {
+    "Název": "OC Letňany",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "520": {
+    "Název": "Újezd nad Lesy",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "521": {
+    "Název": "Praha 9 - Centrum Černý Most",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "523": {
+    "Název": "Vršovické nám.",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "524": {
+    "Název": "Starostrašnická",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "528": {
+    "Název": "Topolová",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "529": {
+    "Název": "Uhříněves",
+    "Region": "Praha",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "531": {
+    "Název": "Horní Měcholupy",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "534": {
+    "Název": "Kostelec nad Černými lesy",
+    "Region": "Východní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "535": {
+    "Název": "Říčany",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "540": {
+    "Název": "Plzeň - Františkánská",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "541": {
+    "Název": "Plzeň - OC Plaza",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "544": {
+    "Název": "Plzeň - Slovany",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "545": {
+    "Název": "Sušice",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "546": {
+    "Název": "Plzeň - Lochotín",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "548": {
+    "Název": "Horažďovice",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "550": {
+    "Název": "Blovice",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "552": {
+    "Název": "Přeštice",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "553": {
+    "Název": "OC Olympia Plzeň",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "ZP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "554": {
+    "Název": "Kralovice",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "555": {
+    "Název": "Nýřany",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "556": {
+    "Název": "Plzeň - Skvrňany",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "562": {
+    "Název": "Benešov",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "563": {
+    "Název": "Vlašim",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "564": {
+    "Název": "Votice",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "569": {
+    "Název": "Příbram",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "570": {
+    "Název": "Sázava",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "571": {
+    "Název": "Dobříš",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "572": {
+    "Název": "Sedlčany",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "573": {
+    "Název": "Březnice",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "576": {
+    "Název": "Jílové u Prahy",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "578": {
+    "Název": "České Budějovice",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "579": {
+    "Název": "Trhové Sviny",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "580": {
+    "Název": "Týn nad Vltavou",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "581": {
+    "Název": "Č. Budějovice - Sokolská",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "590": {
+    "Název": "Č. Budějovice - OC Globus",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "593": {
+    "Název": "Č. Budějovice - Lidická",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "595": {
+    "Název": "Český Krumlov",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "596": {
+    "Název": "Kaplice",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "600": {
+    "Název": "Jindřichův Hradec",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "601": {
+    "Název": "Dačice",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "602": {
+    "Název": "Třeboň",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "605": {
+    "Název": "Suchdol nad Lužnicí",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "612": {
+    "Název": "Písek",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "613": {
+    "Název": "Milevsko",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "618": {
+    "Název": "Prachatice",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "619": {
+    "Název": "Vimperk",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "624": {
+    "Název": "Strakonice",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "625": {
+    "Název": "Blatná",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "626": {
+    "Název": "Vodňany",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "629": {
+    "Název": "Tábor",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "631": {
+    "Název": "Sezimovo Ústí",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "632": {
+    "Název": "Soběslav",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "636": {
+    "Název": "Domažlice",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "637": {
+    "Název": "Holýšov",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "642": {
+    "Název": "Cheb",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "643": {
+    "Název": "Aš",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "645": {
+    "Název": "Mariánské Lázně",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "646": {
+    "Název": "Karlovy Vary",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "UP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "648": {
+    "Název": "Ostrov",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "651": {
+    "Název": "Toužim",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "653": {
+    "Název": "Klatovy",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "656": {
+    "Název": "Rokycany",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "660": {
+    "Název": "Sokolov",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "662": {
+    "Název": "Chodov",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "663": {
+    "Název": "Kraslice",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "666": {
+    "Název": "Tachov",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "667": {
+    "Název": "Stříbro",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "669": {
+    "Název": "Planá",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "672": {
+    "Název": "Olomouc - OC Šantovka",
+    "Region": "Severní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BP",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "675": {
+    "Název": "Přerov - OC Galerie",
+    "Region": "Severní Morava",
+    "jednoclenka": "ano",
+    "BRANCH_TYPE": "BZ",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "902": {
+    "Název": "ERSTE Premier centrum Karlín",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PR",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "904": {
+    "Název": "ERSTE Premier centrum Trianon",
+    "Region": "Jihozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PR",
+    "BRANCH_BUILDING_NF_SF": "SF"
+  },
+  "905": {
+    "Název": "ERSTE Premier centrum Rytířská",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PR",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "906": {
+    "Název": "ERSTE Premier centrum Luxembourg Plaza",
+    "Region": "Praha",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PR",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "909": {
+    "Název": "ERSTE Premier centrum Pelléova",
+    "Region": "Severozápadní Čechy",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PR",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "919": {
+    "Název": "ERSTE Premier centrum Trnitá",
+    "Region": "Jižní Morava",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "PR",
+    "BRANCH_BUILDING_NF_SF": "NF"
+  },
+  "1001": {
+    "Název": "Testovací pobočka 1",
+    "Region": "Testovací region",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "TEST",
+    "BRANCH_BUILDING_NF_SF": "TEST"
+  },
+  "1002": {
+    "Název": "Testovací pobočka 2",
+    "Region": "Testovací region",
+    "jednoclenka": "ne",
+    "BRANCH_TYPE": "TEST",
+    "BRANCH_BUILDING_NF_SF": "TEST"
+  }
+}
