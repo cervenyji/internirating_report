@@ -9325,6 +9325,11 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
             title="Exportovat zafiltrované řádky a viditelné sloupce jako tabulátor-oddělený text">
       📄 Plaintext (TSV)
     </button>
+    <button id="ft-copy-tbl-{table_id}" class="ft-btn"
+            style="background:#fce4ec;border-color:#e91e63;color:#880e4f;"
+            title="Zkopírovat tabulku do schránky — po vložení do Teams nebo Outlooku se zobrazí jako formátovaná tabulka">
+      📋 Kopírovat (Teams)
+    </button>
     <button id="ft-groupby-btn-{table_id}" class="ft-btn"
             style="background:#f3e5f5;border-color:#9c27b0;color:#6a1b9a;font-weight:600;"
             title="Otevřít nástroj pro seskupení a agregaci dat">
@@ -9383,6 +9388,11 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
       <button id="ft-gb-dl-tsv-{table_id}" class="ft-btn"
               style="display:none;background:#e3f2fd;border-color:#1976d2;color:#1565c0;">
         📄 Stáhnout TSV
+      </button>
+      <button id="ft-gb-copy-{table_id}" class="ft-btn"
+              style="display:none;background:#fce4ec;border-color:#e91e63;color:#880e4f;"
+              title="Zkopírovat výsledek do schránky — po vložení do Teams nebo Outlooku se zobrazí jako tabulka">
+        📋 Kopírovat (Teams)
       </button>
     </div>
     <div id="ft-gb-result-{table_id}"
@@ -10455,10 +10465,72 @@ setTimeout(function() {{
     setTimeout(function() {{ URL.revokeObjectURL(url); }}, 500);
   }}
 
+  function _copyData(data, btn) {{
+    // HTML table — Teams/Outlook paste renders this as a formatted table
+    var _ht = '<table><thead><tr>'
+      + data.headers.map(function(h) {{
+          return '<th style="border:1px solid #999;padding:4px 8px;background:#e8edf8;font-weight:bold;">'
+            + h.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</th>';
+        }}).join('') + '</tr></thead><tbody>'
+      + data.rows.map(function(r, ri) {{
+          var _bg = ri % 2 === 0 ? '#f8faff' : 'white';
+          return '<tr>' + r.map(function(c) {{
+            return '<td style="border:1px solid #ccc;padding:4px 8px;background:' + _bg + ';">'
+              + String(c !== undefined ? c : '').replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</td>';
+          }}).join('') + '</tr>';
+        }}).join('') + '</tbody></table>';
+    // Markdown-style text table for plain-text fallback
+    var _ws = data.headers.map(function(h, i) {{
+      var m = h.length;
+      data.rows.forEach(function(r) {{
+        var l = String(r[i] !== undefined ? r[i] : '').length;
+        if (l > m) m = l;
+      }});
+      return Math.max(m, 3);
+    }});
+    function _pad(s, w) {{ s = String(s); while (s.length < w) s += ' '; return s; }}
+    var _ml = [
+      '| ' + data.headers.map(function(h, i) {{ return _pad(h, _ws[i]); }}).join(' | ') + ' |',
+      '| ' + _ws.map(function(w) {{ var s = ''; for (var j = 0; j < w; j++) s += '-'; return s; }}).join(' | ') + ' |'
+    ];
+    data.rows.forEach(function(r) {{
+      _ml.push('| ' + r.map(function(c, i) {{ return _pad(c !== undefined ? c : '', _ws[i]); }}).join(' | ') + ' |');
+    }});
+    var _pt = _ml.join('\\n');
+    var _ok = function() {{
+      if (!btn) return;
+      var _ot = btn.textContent, _ob = btn.style.background, _oc = btn.style.color, _oe = btn.style.borderColor;
+      btn.textContent = '✓ Zkopírováno!';
+      btn.style.background = '#e8f5e9'; btn.style.borderColor = '#4caf50'; btn.style.color = '#2e7d32';
+      setTimeout(function() {{
+        btn.textContent = _ot;
+        btn.style.background = _ob; btn.style.borderColor = _oe; btn.style.color = _oc;
+      }}, 2000);
+    }};
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {{
+      try {{
+        navigator.clipboard.write([new ClipboardItem({{
+          'text/html':  new Blob([_ht], {{ type: 'text/html' }}),
+          'text/plain': new Blob([_pt], {{ type: 'text/plain' }})
+        }})]).then(_ok).catch(function() {{ navigator.clipboard.writeText(_pt).then(_ok); }});
+      }} catch(e) {{ navigator.clipboard.writeText(_pt).then(_ok); }}
+    }} else if (navigator.clipboard && navigator.clipboard.writeText) {{
+      navigator.clipboard.writeText(_pt).then(_ok);
+    }} else {{
+      var _ta = document.createElement('textarea');
+      _ta.value = _pt; _ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0;';
+      document.body.appendChild(_ta); _ta.select();
+      try {{ document.execCommand('copy'); _ok(); }} catch(e) {{}}
+      document.body.removeChild(_ta);
+    }}
+  }}
+
   var _bExpX = document.getElementById('ft-export-xlsx-{table_id}');
   var _bExpT = document.getElementById('ft-export-tsv-{table_id}');
+  var _bCopy = document.getElementById('ft-copy-tbl-{table_id}');
   if (_bExpX) {{ _bExpX.addEventListener('click', function() {{ _xlsxDownload(_getExportData(), 'pobocky-export.xlsx'); }}); }}
   if (_bExpT) {{ _bExpT.addEventListener('click', function() {{ _tsvDownload(_getExportData(), 'pobocky-export.tsv'); }}); }}
+  if (_bCopy) {{ _bCopy.addEventListener('click', function() {{ _copyData(_getExportData(), _bCopy); }}); }}
 
   // ─── Group-by modal ──────────────────────────────────────────────────────────
   var _gbModal   = document.getElementById('ft-gb-modal-{table_id}');
@@ -10469,6 +10541,7 @@ setTimeout(function() {{
   var _gbRunBtn  = document.getElementById('ft-gb-run-{table_id}');
   var _gbDlX     = document.getElementById('ft-gb-dl-xlsx-{table_id}');
   var _gbDlT     = document.getElementById('ft-gb-dl-tsv-{table_id}');
+  var _gbCopy    = document.getElementById('ft-gb-copy-{table_id}');
   var _gbResult  = document.getElementById('ft-gb-result-{table_id}');
   var _gbData    = null;
 
@@ -10525,8 +10598,9 @@ setTimeout(function() {{
       _buildGbModal();
       _gbModal.style.display = '';
       if (_gbResult) {{ _gbResult.style.display = 'none'; _gbResult.innerHTML = ''; }}
-      if (_gbDlX) _gbDlX.style.display = 'none';
-      if (_gbDlT) _gbDlT.style.display = 'none';
+      if (_gbDlX)  _gbDlX.style.display  = 'none';
+      if (_gbDlT)  _gbDlT.style.display  = 'none';
+      if (_gbCopy) _gbCopy.style.display = 'none';
       _gbData = null;
     }});
     if (_gbClose) {{ _gbClose.addEventListener('click', function() {{ _gbModal.style.display='none'; }}); }}
@@ -10613,13 +10687,15 @@ setTimeout(function() {{
           + '<tbody>' + tb2 + '</tbody></table>';
         _gbResult.style.display = '';
       }}
-      if (_gbDlX) _gbDlX.style.display = '';
-      if (_gbDlT) _gbDlT.style.display = '';
+      if (_gbDlX)  _gbDlX.style.display  = '';
+      if (_gbDlT)  _gbDlT.style.display  = '';
+      if (_gbCopy) _gbCopy.style.display = '';
     }});
   }}
 
-  if (_gbDlX) {{ _gbDlX.addEventListener('click', function() {{ if(_gbData) _xlsxDownload(_gbData,'seskupeni-export.xlsx'); }}); }}
-  if (_gbDlT) {{ _gbDlT.addEventListener('click', function() {{ if(_gbData) _tsvDownload(_gbData,'seskupeni-export.tsv'); }}); }}
+  if (_gbDlX)  {{ _gbDlX.addEventListener('click',  function() {{ if(_gbData) _xlsxDownload(_gbData,'seskupeni-export.xlsx'); }}); }}
+  if (_gbDlT)  {{ _gbDlT.addEventListener('click',  function() {{ if(_gbData) _tsvDownload(_gbData,'seskupeni-export.tsv'); }}); }}
+  if (_gbCopy) {{ _gbCopy.addEventListener('click', function() {{ if(_gbData) _copyData(_gbData, _gbCopy); }}); }}
   // ─── End Export & Group-by ───────────────────────────────────────────────────
 
 }}, 0);
