@@ -10445,9 +10445,9 @@ setTimeout(function() {{
   }}
 
   function _tsvDownload(data, filename) {{
-    var txt = [data.headers.join('\t')].concat(
-      data.rows.map(function(r) {{ return r.join('\t'); }})
-    ).join('\n');
+    var txt = [data.headers.join('\\t')].concat(
+      data.rows.map(function(r) {{ return r.join('\\t'); }})
+    ).join('\\n');
     var blob = new Blob([txt], {{ type: 'text/tab-separated-values;charset=utf-8;' }});
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
@@ -10557,7 +10557,7 @@ setTimeout(function() {{
           var td = row.querySelector('td[data-col-idx="' + gc.idx + '"]');
           return td ? td.textContent.trim() : '';
         }});
-        var key = kp.join('\x00');
+        var key = kp.join('\\x00');
         if (!groups[key]) {{
           var ad = {{}};
           aggCols.forEach(function(ac) {{ ad[ac.idx] = []; }});
