@@ -9312,10 +9312,82 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
     <button id="ft-desel-{table_id}" class="ft-btn ft-btn-red"  style="display:none;">✖ Zrušit výběr</button>
   </div>
 
+  <!-- Export & Group-by bar -->
+  <div class="ft-bar" style="margin-bottom:10px;">
+    <span class="ft-label">📤 Export:</span>
+    <button id="ft-export-xlsx-{table_id}" class="ft-btn"
+            style="background:#e8f5e9;border-color:#4caf50;color:#2e7d32;font-weight:600;"
+            title="Exportovat zafiltrované řádky a viditelné sloupce do Excelu">
+      📥 Excel (XLSX)
+    </button>
+    <button id="ft-export-tsv-{table_id}" class="ft-btn"
+            style="background:#e3f2fd;border-color:#1976d2;color:#1565c0;"
+            title="Exportovat zafiltrované řádky a viditelné sloupce jako tabulátor-oddělený text">
+      📄 Plaintext (TSV)
+    </button>
+    <button id="ft-groupby-btn-{table_id}" class="ft-btn"
+            style="background:#f3e5f5;border-color:#9c27b0;color:#6a1b9a;font-weight:600;"
+            title="Otevřít nástroj pro seskupení a agregaci dat">
+      📊 Seskupit (Group by)
+    </button>
+  </div>
+
   <div class="table-responsive tbl-scroll-wrap" style="max-height:900px; min-height:120px; overflow-y:auto; overflow-x:auto; position:relative;">
     {html_table}
   </div>
 
+</div>
+
+<!-- Group-by / aggregation modal -->
+<div id="ft-gb-modal-{table_id}"
+     style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;
+            background:rgba(0,0,0,0.55);z-index:9999;overflow-y:auto;padding:20px 10px;">
+  <div style="background:white;max-width:860px;margin:0 auto;border-radius:12px;
+               padding:24px 28px;box-shadow:0 8px 40px rgba(0,0,0,0.3);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+      <h3 style="margin:0;font-size:1.1rem;color:#1a3a6b;">📊 Seskupení a agregace dat</h3>
+      <button id="ft-gb-close-{table_id}"
+              style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:#888;line-height:1;"
+              title="Zavřít">✕</button>
+    </div>
+    <div style="margin-bottom:14px;">
+      <div style="font-weight:600;color:#333;margin-bottom:6px;font-size:0.88rem;">
+        🔗 Seskupit podle (Group by) — vyberte jeden nebo více sloupců:
+      </div>
+      <div id="ft-gb-cols-{table_id}"
+           style="display:flex;flex-wrap:wrap;gap:5px;background:#f8faff;
+                  padding:10px;border:1px solid #dde4f5;border-radius:6px;
+                  max-height:160px;overflow-y:auto;min-height:40px;">
+      </div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <div style="font-weight:600;color:#333;margin-bottom:4px;font-size:0.88rem;">
+        ➕ Agregační funkce pro číselné sloupce:
+      </div>
+      <div style="font-size:0.78rem;color:#888;margin-bottom:6px;">
+        Zaškrtněte sloupce a vyberte funkci SUM / AVG / COUNT / MIN / MAX
+      </div>
+      <div id="ft-gb-aggs-{table_id}"
+           style="background:#f8faff;padding:10px;border:1px solid #dde4f5;
+                  border-radius:6px;max-height:240px;overflow-y:auto;">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+      <button id="ft-gb-run-{table_id}" class="ft-btn ft-btn-blue" style="font-weight:600;">
+        ▶ Zobrazit výsledek
+      </button>
+      <button id="ft-gb-dl-xlsx-{table_id}" class="ft-btn"
+              style="display:none;background:#e8f5e9;border-color:#4caf50;color:#2e7d32;font-weight:600;">
+        📥 Stáhnout Excel
+      </button>
+      <button id="ft-gb-dl-tsv-{table_id}" class="ft-btn"
+              style="display:none;background:#e3f2fd;border-color:#1976d2;color:#1565c0;">
+        📄 Stáhnout TSV
+      </button>
+    </div>
+    <div id="ft-gb-result-{table_id}"
+         style="display:none;overflow-x:auto;max-height:400px;overflow-y:auto;"></div>
+  </div>
 </div>
 
 <script>
@@ -10332,6 +10404,223 @@ setTimeout(function() {{
     }});
   }}
   // ─── End Column picker ───────────────────────────────────────────────────────
+
+  // ─── Export & Group-by ───────────────────────────────────────────────────────
+  function _getExportData() {{
+    var _vh = [], _vi = [];
+    headerCells.forEach(function(th) {{
+      if (th.style.display !== 'none') {{
+        _vh.push(th.textContent.replace(/[↕↑↓]/g,'').replace(/[↕↑↓]/g,'').trim());
+        _vi.push(th.getAttribute('data-col-idx'));
+      }}
+    }});
+    var _vr = rows.filter(function(r) {{ return r.style.display !== 'none'; }});
+    return {{
+      headers: _vh,
+      rows: _vr.map(function(row) {{
+        return _vi.map(function(cidx) {{
+          var td = row.querySelector('td[data-col-idx="' + cidx + '"]');
+          return td ? td.textContent.trim() : '';
+        }});
+      }})
+    }};
+  }}
+
+  function _loadXLSX(cb) {{
+    if (window.XLSX) {{ cb(); return; }}
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload = cb;
+    s.onerror = function() {{ alert('Nelze načíst XLSX knihovnu. Zkontrolujte připojení k internetu.'); }};
+    document.head.appendChild(s);
+  }}
+
+  function _xlsxDownload(data, filename) {{
+    _loadXLSX(function() {{
+      var wb = XLSX.utils.book_new();
+      var ws = XLSX.utils.aoa_to_sheet([data.headers].concat(data.rows));
+      XLSX.utils.book_append_sheet(wb, ws, 'Export');
+      XLSX.writeFile(wb, filename);
+    }});
+  }}
+
+  function _tsvDownload(data, filename) {{
+    var txt = [data.headers.join('\t')].concat(
+      data.rows.map(function(r) {{ return r.join('\t'); }})
+    ).join('\n');
+    var blob = new Blob([txt], {{ type: 'text/tab-separated-values;charset=utf-8;' }});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    setTimeout(function() {{ URL.revokeObjectURL(url); }}, 500);
+  }}
+
+  var _bExpX = document.getElementById('ft-export-xlsx-{table_id}');
+  var _bExpT = document.getElementById('ft-export-tsv-{table_id}');
+  if (_bExpX) {{ _bExpX.addEventListener('click', function() {{ _xlsxDownload(_getExportData(), 'pobocky-export.xlsx'); }}); }}
+  if (_bExpT) {{ _bExpT.addEventListener('click', function() {{ _tsvDownload(_getExportData(), 'pobocky-export.tsv'); }}); }}
+
+  // ─── Group-by modal ──────────────────────────────────────────────────────────
+  var _gbModal   = document.getElementById('ft-gb-modal-{table_id}');
+  var _gbBtn     = document.getElementById('ft-groupby-btn-{table_id}');
+  var _gbClose   = document.getElementById('ft-gb-close-{table_id}');
+  var _gbColsDiv = document.getElementById('ft-gb-cols-{table_id}');
+  var _gbAggsDiv = document.getElementById('ft-gb-aggs-{table_id}');
+  var _gbRunBtn  = document.getElementById('ft-gb-run-{table_id}');
+  var _gbDlX     = document.getElementById('ft-gb-dl-xlsx-{table_id}');
+  var _gbDlT     = document.getElementById('ft-gb-dl-tsv-{table_id}');
+  var _gbResult  = document.getElementById('ft-gb-result-{table_id}');
+  var _gbData    = null;
+
+  function _buildGbModal() {{
+    if (!_gbColsDiv || !_gbAggsDiv) return;
+    _gbColsDiv.innerHTML = ''; _gbAggsDiv.innerHTML = '';
+    headerCells.forEach(function(th) {{
+      if (th.style.display === 'none') return;
+      var cname = th.textContent.replace(/[↕↑↓]/g,'').replace(/[↕↑↓]/g,'').trim();
+      var cidx  = th.getAttribute('data-col-idx');
+
+      // Group-by pill checkbox
+      var lbl = document.createElement('label');
+      lbl.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:3px 8px;' +
+        'background:white;border:1px solid #c8d4e8;border-radius:4px;cursor:pointer;' +
+        'font-size:0.81rem;white-space:nowrap;user-select:none;';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.setAttribute('data-gb-cidx', cidx);
+      cb.setAttribute('data-gb-cname', cname);
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(' ' + cname));
+      _gbColsDiv.appendChild(lbl);
+
+      // Aggregation row (numeric columns only)
+      if (_aggCfg[cname]) {{
+        var arow = document.createElement('div');
+        arow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 2px;' +
+          'border-bottom:1px solid #f0f0f0;font-size:0.82rem;';
+        var acb = document.createElement('input');
+        acb.type = 'checkbox';
+        acb.setAttribute('data-agg-cidx', cidx);
+        acb.setAttribute('data-agg-cname', cname);
+        var asel = document.createElement('select');
+        asel.setAttribute('data-agg-fn', cidx);
+        asel.style.cssText = 'padding:2px 4px;border:1px solid #ccc;border-radius:3px;font-size:0.81rem;';
+        ['SUM','AVG','COUNT','MIN','MAX'].forEach(function(fn) {{
+          var opt = document.createElement('option');
+          opt.value = fn; opt.textContent = fn;
+          if ((_aggCfg[cname]==='sum'&&fn==='SUM')||(_aggCfg[cname]==='avg'&&fn==='AVG')) opt.selected=true;
+          asel.appendChild(opt);
+        }});
+        var asp = document.createElement('span');
+        asp.textContent = cname;
+        asp.style.cssText = 'color:#333;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        arow.appendChild(acb); arow.appendChild(asel); arow.appendChild(asp);
+        _gbAggsDiv.appendChild(arow);
+      }}
+    }});
+  }}
+
+  if (_gbModal && _gbBtn) {{
+    _gbBtn.addEventListener('click', function() {{
+      _buildGbModal();
+      _gbModal.style.display = '';
+      if (_gbResult) {{ _gbResult.style.display = 'none'; _gbResult.innerHTML = ''; }}
+      if (_gbDlX) _gbDlX.style.display = 'none';
+      if (_gbDlT) _gbDlT.style.display = 'none';
+      _gbData = null;
+    }});
+    if (_gbClose) {{ _gbClose.addEventListener('click', function() {{ _gbModal.style.display='none'; }}); }}
+    _gbModal.addEventListener('click', function(e) {{ if(e.target===_gbModal) _gbModal.style.display='none'; }});
+  }}
+
+  if (_gbRunBtn) {{
+    _gbRunBtn.addEventListener('click', function() {{
+      var gbCols = [];
+      if (_gbColsDiv) {{
+        Array.from(_gbColsDiv.querySelectorAll('input[data-gb-cidx]:checked')).forEach(function(cb) {{
+          gbCols.push({{ idx: cb.getAttribute('data-gb-cidx'), name: cb.getAttribute('data-gb-cname') }});
+        }});
+      }}
+      if (!gbCols.length) {{ alert('Vyberte alespoň jeden sloupec pro seskupení (Group by).'); return; }}
+      var aggCols = [];
+      if (_gbAggsDiv) {{
+        Array.from(_gbAggsDiv.querySelectorAll('input[data-agg-cidx]:checked')).forEach(function(cb) {{
+          var cidx = cb.getAttribute('data-agg-cidx');
+          var sel  = _gbAggsDiv.querySelector('select[data-agg-fn="' + cidx + '"]');
+          aggCols.push({{ idx: cidx, name: cb.getAttribute('data-agg-cname'), fn: sel ? sel.value : 'SUM' }});
+        }});
+      }}
+      var visR = rows.filter(function(r) {{ return r.style.display !== 'none'; }});
+      var groups = {{}}, gOrder = [];
+      visR.forEach(function(row) {{
+        var kp = gbCols.map(function(gc) {{
+          var td = row.querySelector('td[data-col-idx="' + gc.idx + '"]');
+          return td ? td.textContent.trim() : '';
+        }});
+        var key = kp.join('\x00');
+        if (!groups[key]) {{
+          var ad = {{}};
+          aggCols.forEach(function(ac) {{ ad[ac.idx] = []; }});
+          groups[key] = {{ vals: kp, count: 0, ad: ad }};
+          gOrder.push(key);
+        }}
+        groups[key].count++;
+        aggCols.forEach(function(ac) {{
+          var td = row.querySelector('td[data-col-idx="' + ac.idx + '"]');
+          var raw = td ? (td.getAttribute('data-sort') || td.textContent.trim()) : '';
+          var n = parseFloat(raw.replace(',','.'));
+          if (isFinite(n) && !isNaN(n)) groups[key].ad[ac.idx].push(n);
+        }});
+      }});
+      var hdrs = gbCols.map(function(gc) {{ return gc.name; }});
+      hdrs.push('Počet');
+      aggCols.forEach(function(ac) {{ hdrs.push(ac.fn + '(' + ac.name + ')'); }});
+      var drows = gOrder.map(function(key) {{
+        var g = groups[key], r = g.vals.slice();
+        r.push(String(g.count));
+        aggCols.forEach(function(ac) {{
+          var vs = g.ad[ac.idx];
+          if (!vs.length) {{ r.push('—'); return; }}
+          var v;
+          if      (ac.fn==='SUM')   v = vs.reduce(function(a,b){{return a+b;}},0);
+          else if (ac.fn==='AVG')   v = vs.reduce(function(a,b){{return a+b;}},0)/vs.length;
+          else if (ac.fn==='COUNT') v = vs.length;
+          else if (ac.fn==='MIN')   v = Math.min.apply(null,vs);
+          else                      v = Math.max.apply(null,vs);
+          r.push(String(Math.round(v*100)/100));
+        }});
+        return r;
+      }});
+      _gbData = {{ headers: hdrs, rows: drows }};
+      var th2 = hdrs.map(function(h) {{
+        return '<th style="padding:6px 10px;border:1px solid #1e5bc9;text-align:left;white-space:nowrap;">'
+          + h.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</th>';
+      }}).join('');
+      var tb2 = drows.map(function(r, ri) {{
+        return '<tr style="background:' + (ri%2===0?'#f8faff':'white') + ';">'
+          + r.map(function(c, ci) {{
+              return '<td style="padding:5px 10px;border:1px solid #dee2e6;white-space:nowrap;text-align:'
+                + (ci<gbCols.length?'left':'right') + ';">'
+                + String(c).replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</td>';
+            }}).join('') + '</tr>';
+      }}).join('');
+      if (_gbResult) {{
+        _gbResult.innerHTML =
+          '<div style="font-size:0.81rem;color:#666;margin-bottom:8px;">'
+            + drows.length + ' skupin · ' + visR.length + ' řádků seskupeno</div>'
+          + '<table style="border-collapse:collapse;font-size:0.83rem;min-width:100%;">'
+          + '<thead><tr style="background:#2770f0;color:white;">' + th2 + '</tr></thead>'
+          + '<tbody>' + tb2 + '</tbody></table>';
+        _gbResult.style.display = '';
+      }}
+      if (_gbDlX) _gbDlX.style.display = '';
+      if (_gbDlT) _gbDlT.style.display = '';
+    }});
+  }}
+
+  if (_gbDlX) {{ _gbDlX.addEventListener('click', function() {{ if(_gbData) _xlsxDownload(_gbData,'seskupeni-export.xlsx'); }}); }}
+  if (_gbDlT) {{ _gbDlT.addEventListener('click', function() {{ if(_gbData) _tsvDownload(_gbData,'seskupeni-export.tsv'); }}); }}
+  // ─── End Export & Group-by ───────────────────────────────────────────────────
 
 }}, 0);
 </script>
