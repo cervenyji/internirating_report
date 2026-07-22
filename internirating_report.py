@@ -502,6 +502,7 @@ MERGE_COLS = {
 # Pořadí odpovídá pořadí skupin v COL_GROUPS
 NOVE_NAZVY = {
     # ── Identita ──────────────────────────────────────────────────
+    "BRANCH_CLOSED": "Aktuálně otevřeno",
     "BRANCH_CODE":   "ID Pobočky",
     "BRANCH_NAME":   "Název pobočky",
     "REGION_NAME":   "Region",
@@ -8542,6 +8543,17 @@ def _apply_common_formatting(d, cols_to_show):
         if _bc in cols_to_show and _bc in d.columns:
             d[_bc] = d[_bc].apply(_fmt_bool)
 
+    # BRANCH_CLOSED → "Aktuálně otevřeno": False=Y zelená, True=N červená
+    if 'BRANCH_CLOSED' in cols_to_show and 'BRANCH_CLOSED' in d.columns:
+        def _fmt_open(x):
+            closed = (str(x).strip().upper() in ('TRUE', '1', 'YES', 'Y')) if not isinstance(x, bool) else bool(x)
+            if not closed:
+                return ("<span style='background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;"
+                        "border-radius:10px;padding:2px 8px;font-size:0.75rem;font-weight:700;'>&#x2713; Y</span>")
+            return ("<span style='background:#fde8e8;color:#9b1c1c;border:1px solid #fca5a5;"
+                    "border-radius:10px;padding:2px 8px;font-size:0.75rem;font-weight:700;'>&#x2717; N</span>")
+        d['BRANCH_CLOSED'] = d['BRANCH_CLOSED'].apply(_fmt_open)
+
     # Bezhotovostní — Ano modrý badge jako NF, Ne šedý badge jako SF
     _BLUE_BADGE_ANO = ("<span style='background:#2770f0;color:white;border-radius:10px;"
                        "padding:2px 8px;font-size:0.75rem;font-weight:700;'>Ano</span>")
@@ -9262,7 +9274,7 @@ def write_excel_sheet(ws, df_excel, freeze="D2"):
 COL_GROUPS = [
     # ── 🗄️ Databáze síť ───────────────────────────────────────────────────────
     ("📍 Adresa",              ["Oblast", "Region fixed", "Město", "Obvod / část", "Ulice", "Č. popisné", "Č. orientační", "RUIAN ID", "ORP", "ORP kód"], "#f0f4f8"),
-    ("🏢 Budova",              ["Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Jednočlenný provoz", "Pobočka v OC", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
+    ("🏢 Budova",              ["Aktuálně otevřeno", "Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Jednočlenný provoz", "Pobočka v OC", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
     ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
     # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
     ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25",
@@ -9931,6 +9943,16 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
         no_rating_codes = '[]'
     no_rating_count = len(json.loads(no_rating_codes))
 
+    # Kódy aktuálně zavřených poboček (BRANCH_CLOSED == True) pro JS quick-filter
+    if 'BRANCH_CODE' in target_df.columns and 'BRANCH_CLOSED' in target_df.columns:
+        _closed_mask = target_df['BRANCH_CLOSED'].apply(
+            lambda x: (str(x).strip().upper() in ('TRUE', '1', 'YES', 'Y')) if not isinstance(x, bool) else bool(x)
+        )
+        closed_branch_codes = json.dumps([int(c) for c in target_df.loc[_closed_mask, 'BRANCH_CODE'].tolist()])
+    else:
+        closed_branch_codes = '[]'
+    closed_branch_count = len(json.loads(closed_branch_codes))
+
     return f"""
 <style>
   #wrapper-{table_id} .ft-bar {{
@@ -10090,6 +10112,11 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
             title="Pobočky bez vypočítaného interního ratingu">
       👁 Zobrazit bez ratingu
     </button>
+    <button id="ft-only-open-{table_id}" class="ft-btn"
+            style="background:#d1fae5;border-color:#6ee7b7;color:#065f46;font-size:0.82rem;font-weight:600;"
+            title="Zobrazit pouze aktuálně otevřené pobočky (BRANCH_CLOSED = False)">
+      &#x2713; Pouze otevřené ({closed_branch_count} zavřených)
+    </button>
     <span   id="ft-count-{table_id}" class="ft-count"></span>
   </div>
 
@@ -10225,8 +10252,10 @@ setTimeout(function() {{
   var btnAll      = document.getElementById("col-all-{table_id}");
   var btnNone     = document.getElementById("col-none-{table_id}");
   var btnNoRating = document.getElementById("ft-no-rating-{table_id}");
-  var noRatingCodes = new Set({no_rating_codes});
-  var showNoRating  = false;
+  var noRatingCodes    = new Set({no_rating_codes});
+  var showNoRating     = false;
+  var closedCodes      = new Set({closed_branch_codes});
+  var onlyOpenActive   = false;
 
   if (!tbl) return;
 
@@ -10432,6 +10461,7 @@ setTimeout(function() {{
       var name    = cells[2] ? cells[2].textContent.toLowerCase() : "";
       var isNoRat = noRatingCodes.has(codeNum);
       if (isNoRat && !showNoRating) {{ r.style.display = "none"; return; }}
+      if (onlyOpenActive && closedCodes.has(codeNum)) {{ r.style.display = "none"; return; }}
       if (_obF !== "__all__") {{
         var trOb = r.getAttribute("data-ob-reg") || "";
         if (!trOb || trOb !== _obF) {{ r.style.display = "none"; return; }}
@@ -10500,6 +10530,7 @@ setTimeout(function() {{
       var q         = input.value.toLowerCase().trim();
       var isNoRat   = noRatingCodes.has(codeNum);
       if (isNoRat && !showNoRating) {{ r.style.display = "none"; return; }}
+      if (onlyOpenActive && closedCodes.has(codeNum)) {{ r.style.display = "none"; return; }}
       if (_obF !== "__all__") {{
         var trOb = r.getAttribute("data-ob-reg") || "";
         if (!trOb || trOb !== _obF) {{ r.style.display = "none"; return; }}
@@ -10717,6 +10748,24 @@ setTimeout(function() {{
     btnNoRating.addEventListener("click", function() {{
       showNoRating = !showNoRating;
       _updateNoRatingBtn();
+      doFilter();
+    }});
+  }}
+
+  var btnOnlyOpen = document.getElementById("ft-only-open-{table_id}");
+  if (btnOnlyOpen) {{
+    function _updateOnlyOpenBtn() {{
+      btnOnlyOpen.textContent = onlyOpenActive
+        ? "✓ Pouze otevřené (aktivní)"
+        : "✓ Pouze otevřené (" + closedCodes.size + " zavřených)";
+      btnOnlyOpen.style.background  = onlyOpenActive ? "#065f46" : "#d1fae5";
+      btnOnlyOpen.style.color       = onlyOpenActive ? "white"   : "#065f46";
+      btnOnlyOpen.style.borderColor = onlyOpenActive ? "#065f46" : "#6ee7b7";
+    }}
+    _updateOnlyOpenBtn();
+    btnOnlyOpen.addEventListener("click", function() {{
+      onlyOpenActive = !onlyOpenActive;
+      _updateOnlyOpenBtn();
       doFilter();
     }});
   }}
@@ -21277,6 +21326,29 @@ if 'REGION_NAME' in rating_status.columns:
         rating_status.loc[_bc_num == _bc_val, 'REGION_FIXED'] = _reg_val
 else:
     rating_status['REGION_FIXED'] = ''
+
+# ── Aktuální stav poboček z DBS xlsx (BRANCH_CLOSED) ────────────────────────
+print("📂 Načítám aktuální stav poboček z dbs_branch_network_epb.xlsx...")
+try:
+    _dbs_open_path = '../vypocet_ir_2026/zdroje/dbs_branch_network_epb.xlsx'
+    _dbs_open_xl = pd.read_excel(_dbs_open_path, usecols=['BRANCH_CODE', 'BRANCH_CLOSED'])
+    _dbs_open_xl['BRANCH_CODE'] = pd.to_numeric(_dbs_open_xl['BRANCH_CODE'], errors='coerce')
+    _dbs_open_xl = _dbs_open_xl.dropna(subset=['BRANCH_CODE'])
+    _dbs_open_xl['BRANCH_CODE'] = _dbs_open_xl['BRANCH_CODE'].astype(int)
+    _dbs_open_xl['BRANCH_CLOSED'] = _dbs_open_xl['BRANCH_CLOSED'].fillna(False).astype(bool)
+    _dbs_open_xl = _dbs_open_xl.drop_duplicates('BRANCH_CODE')
+    if 'BRANCH_CLOSED' in rating_status.columns:
+        rating_status = rating_status.drop(columns=['BRANCH_CLOSED'])
+    rating_status = rating_status.merge(
+        _dbs_open_xl[['BRANCH_CODE', 'BRANCH_CLOSED']], on='BRANCH_CODE', how='left'
+    )
+    rating_status['BRANCH_CLOSED'] = rating_status['BRANCH_CLOSED'].fillna(False).astype(bool)
+    _n_closed = int(rating_status['BRANCH_CLOSED'].sum())
+    print(f"  ✅ BRANCH_CLOSED načten — {_n_closed} zavřených, {len(rating_status) - _n_closed} otevřených")
+except Exception as _dbs_open_err:
+    print(f"  ⚠️  Nelze načíst dbs xlsx ({_dbs_open_err}) — BRANCH_CLOSED = False pro všechny")
+    if 'BRANCH_CLOSED' not in rating_status.columns:
+        rating_status['BRANCH_CLOSED'] = False
 
 # Statický report (celkový přehled)
 generate_report(rating_status, mode='static', output_prefix="report_rating_2026")
