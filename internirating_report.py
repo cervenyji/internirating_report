@@ -5905,12 +5905,9 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .cmp-table th.h250{{background:#eff6ff;color:#1d4ed8;}}
 .cmp-table th.h300{{background:#f5f3ff;color:#6d28d9;}}
 .br-table{{width:100%;border-collapse:collapse;font-size:0.82rem;}}
-.br-table thead tr.br-hdr-main th{{background:#2770f0;color:#fff;padding:8px 10px;
+.br-table thead th{{background:#2770f0;color:#fff;padding:7px 8px;
     border:1px solid #1a4db5;font-size:0.73rem;font-weight:700;white-space:nowrap;
     position:sticky;top:44px;z-index:10;}}
-.br-table thead tr.br-hdr-sub th{{background:#1e3a5f;color:#c7d9fb;padding:6px 10px;
-    border:1px solid #263851;font-size:0.68rem;font-weight:600;white-space:nowrap;
-    position:sticky;top:87px;z-index:10;}}
 .br-search{{padding:8px 14px;border:1px solid #d1d5db;border-radius:8px;
             font-size:0.85rem;width:280px;outline:none;}}
 .br-search:focus{{border-color:#2770f0;box-shadow:0 0 0 3px #2770f022;}}
@@ -6004,25 +6001,15 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <div style="overflow-x:auto;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);">
       <table class="br-table" id="br-tbl">
         <thead>
-          <tr class="br-hdr-main">
-            <th style="min-width:180px;text-align:left;">Pobo&#269;ka + interpretace</th>
-            <th style="text-align:center;min-width:60px;">Sim.</th>
-            <th style="min-width:110px;text-align:center;">Rating 2025&#x2192;2030</th>
-            <th colspan="2" style="text-align:center;min-width:240px;">
-              &#x1F4C9; C/I ratio &mdash; ni&#382;&#353;&#237; = lep&#353;&#237; &nbsp;(v&#225;ha 40&nbsp;%)</th>
-            <th colspan="2" style="text-align:center;min-width:240px;">
-              &#x1F4C8; Nov&#233; v&#253;nosy/kl. &mdash; vy&#353;&#353;&#237; = lep&#353;&#237; &nbsp;(v&#225;ha 60&nbsp;%)</th>
-            <th style="min-width:130px;text-align:left;">Klienti 2030</th>
-          </tr>
-          <tr class="br-hdr-sub">
-            <th></th>
-            <th></th>
-            <th style="color:#c7d9fb;font-style:italic;">IR rank (ni&#382;&#353;&#237; = lep&#353;&#237;)</th>
-            <th style="text-align:center;">Trend 2021&#x2013;2030</th>
-            <th>Hodnoty + v&#253;voj</th>
-            <th style="text-align:center;">Trend 2024&#x2013;2030</th>
-            <th>Nov&#233; v&#253;nosy + CAGR</th>
-            <th style="color:#c7d9fb;font-style:italic;">po p&#345;esunu ze zav&#345;. pobo&#269;ek</th>
+          <tr>
+            <th style="text-align:left;min-width:180px;">Pobo&#269;ka</th>
+            <th style="text-align:center;min-width:65px;">Sim.</th>
+            <th style="text-align:center;min-width:110px;">Rating 2025&#x2192;2030</th>
+            <th style="text-align:center;min-width:110px;">C/I trend<br><span style="font-weight:400;font-size:0.65rem;opacity:.85;">ni&#382;&#353;&#237; = lep&#353;&#237; &middot; v&#225;ha 40&nbsp;%</span></th>
+            <th style="text-align:left;min-width:130px;">C/I hodnoty</th>
+            <th style="text-align:center;min-width:110px;">V&#253;nosy trend<br><span style="font-weight:400;font-size:0.65rem;opacity:.85;">vy&#353;&#353;&#237; = lep&#353;&#237; &middot; v&#225;ha 60&nbsp;%</span></th>
+            <th style="text-align:left;min-width:140px;">Nov&#233; v&#253;nosy + CAGR</th>
+            <th style="text-align:left;min-width:130px;">Klienti 2030</th>
           </tr>
         </thead>
         <tbody id="br-tbody">
