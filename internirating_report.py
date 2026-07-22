@@ -109,6 +109,7 @@ SIM_300_KEEP_CODES: set = set()
 # Computed d_sim dataframes — nastavuje generate_network_simulation_200() pro standalone report
 SIM_250_DF: 'pd.DataFrame' = None
 SIM_300_DF: 'pd.DataFrame' = None
+SIM_BASE_DF: 'pd.DataFrame' = None  # baseline: žádné zavírání, všechny pobočky
 
 # IDs poboček s jednočlenným provozem
 JEDNOCLENNY_IDS: set = {
@@ -4767,17 +4768,16 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250, max_clos
     top  = d_sim.nsmallest(target_n, 'SIM_IR_2030').copy()
     rest = d_sim[~d_sim.index.isin(top.index)].sort_values('SIM_IR_2030').copy()
     # Exportuj kódy do globální proměnné pro sloupec SIM_250_FLAG v tabulce
-    global SIM_250_KEEP_CODES, SIM_300_KEEP_CODES, SIM_250_DF, SIM_300_DF
+    global SIM_250_KEEP_CODES, SIM_300_KEEP_CODES, SIM_250_DF, SIM_300_DF, SIM_BASE_DF
     _keep_codes = set(top['BRANCH_CODE'].dropna().astype(int).tolist())
     if target_n <= 250:
         SIM_250_KEEP_CODES = _keep_codes
         SIM_250_DF = d_sim.copy()
-    else:
+    elif target_n <= 350:
         SIM_300_KEEP_CODES = _keep_codes
         SIM_300_DF = d_sim.copy()
-    # Zpětná kompatibilita — SIM_250_KEEP_CODES vždy nastaven pro target_n==250
-    if target_n <= 250:
-        SIM_250_KEEP_CODES = _keep_codes
+    else:
+        SIM_BASE_DF = d_sim.copy()
 
     # ── 7. Bankéřská kapacita ─────────────────────────────────────
     # Předpočítej průměrný počet schůzek na klienta pro celou síť
@@ -5373,8 +5373,9 @@ def generate_simulation_standalone_report(html_250, html_300):
     """
     import math as _m
 
-    df250 = SIM_250_DF if SIM_250_DF is not None and not (hasattr(SIM_250_DF, 'empty') and SIM_250_DF.empty) else None
-    df300 = SIM_300_DF if SIM_300_DF is not None and not (hasattr(SIM_300_DF, 'empty') and SIM_300_DF.empty) else None
+    df250  = SIM_250_DF  if SIM_250_DF  is not None and not (hasattr(SIM_250_DF,  'empty') and SIM_250_DF.empty)  else None
+    df300  = SIM_300_DF  if SIM_300_DF  is not None and not (hasattr(SIM_300_DF,  'empty') and SIM_300_DF.empty)  else None
+    dfbase = SIM_BASE_DF if SIM_BASE_DF is not None and not (hasattr(SIM_BASE_DF, 'empty') and SIM_BASE_DF.empty) else None
 
     def _safe_float(v):
         try:
@@ -5782,12 +5783,14 @@ def generate_simulation_standalone_report(html_250, html_300):
                 f'</tr>'
             )
 
-    # ── Souhrnná porovnávací statistika 250 vs 300 ────────────────────────────
-    def _stat_row(label, v250, v300):
+    # ── Souhrnná porovnávací statistika: baseline vs 250 vs 300 ──────────────
+    def _stat_row(label, vbase, v250, v300):
         return (
             f'<tr>'
             f'<td style="padding:7px 12px;border:1px solid #e8edf5;font-size:0.82rem;font-weight:600;'
             f'color:#374151;">{label}</td>'
+            f'<td style="padding:7px 12px;border:1px solid #e8edf5;text-align:center;'
+            f'font-size:0.82rem;color:#059669;font-weight:700;">{vbase}</td>'
             f'<td style="padding:7px 12px;border:1px solid #e8edf5;text-align:center;'
             f'font-size:0.82rem;color:#2770f0;font-weight:700;">{v250}</td>'
             f'<td style="padding:7px 12px;border:1px solid #e8edf5;text-align:center;'
@@ -5806,8 +5809,9 @@ def generate_simulation_standalone_report(html_250, html_300):
             return None
         return df.nsmallest(n, 'SIM_IR_2030') if 'SIM_IR_2030' in df.columns else df.head(n)
 
-    top250 = _top_df(df250, 250)
-    top300 = _top_df(df300, 300)
+    top250  = _top_df(df250, 250)
+    top300  = _top_df(df300, 300)
+    topbase = dfbase  # baseline obsahuje všechny pobočky bez výběru top N
 
     def _ts(df, col, fn):
         if df is None or col not in df.columns:
@@ -5817,29 +5821,37 @@ def generate_simulation_standalone_report(html_250, html_300):
 
     comparison_rows = (
         _stat_row('Počet poboček v síti',
+                  str(len(topbase)) if topbase is not None else '—',
                   str(len(top250)) if top250 is not None else '—',
                   str(len(top300)) if top300 is not None else '—')
         + _stat_row('Průměrné C/I 2025 (stávající)',
-                    _ts(top250, 'PRIME_NAKLADY/VYNOSY', lambda s: f'{s.mean()*100:.1f} %'),
-                    _ts(top300, 'PRIME_NAKLADY/VYNOSY', lambda s: f'{s.mean()*100:.1f} %'))
+                    _ts(topbase, 'PRIME_NAKLADY/VYNOSY', lambda s: f'{s.mean()*100:.1f} %'),
+                    _ts(top250,  'PRIME_NAKLADY/VYNOSY', lambda s: f'{s.mean()*100:.1f} %'),
+                    _ts(top300,  'PRIME_NAKLADY/VYNOSY', lambda s: f'{s.mean()*100:.1f} %'))
         + _stat_row('Průměrné C/I 2030 (simulace)',
-                    _ts(top250, 'SIM_CI_2030', lambda s: f'{s.mean()*100:.1f} %'),
-                    _ts(top300, 'SIM_CI_2030', lambda s: f'{s.mean()*100:.1f} %'))
+                    _ts(topbase, 'SIM_CI_2030', lambda s: f'{s.mean()*100:.1f} %'),
+                    _ts(top250,  'SIM_CI_2030', lambda s: f'{s.mean()*100:.1f} %'),
+                    _ts(top300,  'SIM_CI_2030', lambda s: f'{s.mean()*100:.1f} %'))
         + _stat_row('Celkové výnosy 2025 (top N)',
-                    _ts(top250, 'VYNOSY', lambda s: format_money(s.sum())),
-                    _ts(top300, 'VYNOSY', lambda s: format_money(s.sum())))
+                    _ts(topbase, 'VYNOSY', lambda s: format_money(s.sum())),
+                    _ts(top250,  'VYNOSY', lambda s: format_money(s.sum())),
+                    _ts(top300,  'VYNOSY', lambda s: format_money(s.sum())))
         + _stat_row('Celkové výnosy 2030 (simulace)',
-                    _ts(top250, 'SIM_REV_2030', lambda s: format_money(s.sum())),
-                    _ts(top300, 'SIM_REV_2030', lambda s: format_money(s.sum())))
+                    _ts(topbase, 'SIM_REV_2030', lambda s: format_money(s.sum())),
+                    _ts(top250,  'SIM_REV_2030', lambda s: format_money(s.sum())),
+                    _ts(top300,  'SIM_REV_2030', lambda s: format_money(s.sum())))
         + _stat_row('Průměrný CAGR výnosů/r',
-                    _ts(top250, '_cagr', lambda s: f'{s.mean()*100:.2f} %'),
-                    _ts(top300, '_cagr', lambda s: f'{s.mean()*100:.2f} %'))
+                    _ts(topbase, '_cagr', lambda s: f'{s.mean()*100:.2f} %'),
+                    _ts(top250,  '_cagr', lambda s: f'{s.mean()*100:.2f} %'),
+                    _ts(top300,  '_cagr', lambda s: f'{s.mean()*100:.2f} %'))
         + _stat_row('Celkem klientů po přesunu',
-                    _ts(top250, 'SIM_KLIENTI', lambda s: f'{int(s.sum()):,}'),
-                    _ts(top300, 'SIM_KLIENTI', lambda s: f'{int(s.sum()):,}'))
+                    _ts(topbase, 'SIM_KLIENTI', lambda s: f'{int(s.sum()):,}'),
+                    _ts(top250,  'SIM_KLIENTI', lambda s: f'{int(s.sum()):,}'),
+                    _ts(top300,  'SIM_KLIENTI', lambda s: f'{int(s.sum()):,}'))
         + _stat_row('Klientů přesměrováno online',
-                    _ts(top250, 'SIM_KLIENTI_ONL', lambda s: f'{int(s.sum()):,}'),
-                    _ts(top300, 'SIM_KLIENTI_ONL', lambda s: f'{int(s.sum()):,}'))
+                    _ts(topbase, 'SIM_KLIENTI_ONL', lambda s: f'{int(s.sum()):,}'),
+                    _ts(top250,  'SIM_KLIENTI_ONL', lambda s: f'{int(s.sum()):,}'),
+                    _ts(top300,  'SIM_KLIENTI_ONL', lambda s: f'{int(s.sum()):,}'))
     )
 
     # Pobočky co jsou v 300 ale NE v 250
@@ -5902,6 +5914,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .cmp-table th{{background:#f8fbff;padding:8px 12px;border:1px solid #e8edf5;
                font-size:0.78rem;color:#555;text-align:center;}}
 .cmp-table th:first-child{{text-align:left;}}
+.cmp-table th.hbase{{background:#ecfdf5;color:#065f46;}}
 .cmp-table th.h250{{background:#eff6ff;color:#1d4ed8;}}
 .cmp-table th.h300{{background:#f5f3ff;color:#6d28d9;}}
 .br-table{{width:100%;border-collapse:collapse;font-size:0.82rem;}}
@@ -5937,6 +5950,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
         <thead>
           <tr>
             <th style="min-width:220px;">Ukazatel</th>
+            <th class="hbase">&#x1F4CA; Aktu&#225;ln&#237; s&#237;&#357; (bez zav&#237;r&#225;n&#237;)</th>
             <th class="h250">&#x1F3E6; Simulace 250</th>
             <th class="h300">&#x1F3E6; Simulace 300</th>
           </tr>
@@ -13826,6 +13840,11 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
                 except: return 'close'
             df_sorted['SIM_300_FLAG']     = df_sorted['BRANCH_CODE'].apply(_sflag300)
             rating_status['SIM_300_FLAG'] = rating_status['BRANCH_CODE'].apply(_sflag300)
+
+        print("  🔨 Generuji baseline simulaci (žádné zavírání)...")
+        # max_close_year=0 → while podmínka 0>=2020 je False → else větev → _cand=False → žádná pobočka nezavírá
+        # target_n=9999 → nsmallest vrátí všechny → SIM_BASE_DF obsahuje celou síť
+        generate_network_simulation_200(df_sorted, None, target_n=9999, max_close_year=0)
 
         print("  🔨 Generuji standalone simulační report...")
         try:
