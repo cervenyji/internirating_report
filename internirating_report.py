@@ -5091,6 +5091,15 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250, max_clos
     _deficit_lbl       = (f"+{int(_total_deficit):,} přebytek" if _total_deficit >= 0
                           else f"{int(_total_deficit):,} deficit")
 
+    # Pobočky v poolu, které simulace NEselektovala (nad rámec plánovaného close)
+    _n_sim_extra       = len(rest)
+    _rest_cli          = float(rest['POCET_KLIENTU'].fillna(0).sum()) if len(rest) > 0 else 0.0
+    # Výnosy a C/I 2030 (top N)
+    _rev_2025_top      = float(top['VYNOSY'].fillna(0).sum()) if 'VYNOSY' in top.columns else 0.0
+    _rev_2030_top      = float(top['SIM_REV_2030'].fillna(0).sum()) if 'SIM_REV_2030' in top.columns else 0.0
+    _ci_now_avg        = (_avg('PRIME_NAKLADY/VYNOSY', top) * 100) if not pd.isna(_avg('PRIME_NAKLADY/VYNOSY', top)) else None
+    _ci_2030_avg       = (_avg('SIM_CI_2030', top) * 100) if not pd.isna(_avg('SIM_CI_2030', top)) else None
+
     # ── Příklad výpočtu (první řádek tabulky) ─────────────────────
     _example_html = ""
     if len(top) > 0:
@@ -5258,20 +5267,36 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250, max_clos
   <div style="font-size:0.72rem;color:#2770f0;font-weight:700;text-transform:uppercase;
               letter-spacing:.5px;margin-bottom:6px;">🏦 Simulace sítě {target_n} poboček — výhled 2030</div>
 
-  <!-- Summary boxy -->
-  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+  <!-- Summary boxy — řádek 1: velikost sítě -->
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
     {"".join(f'''
-    <div style="background:#f8fbff;border-radius:8px;padding:10px 16px;border:1px solid #e8edf5;text-align:center;min-width:120px;">
-      <div style="font-size:1.4rem;font-weight:800;color:{vc};">{vv}</div>
-      <div style="font-size:0.68rem;color:#888;text-transform:uppercase;letter-spacing:.3px;">{vl}</div>
-    </div>''' for vv, vl, vc in [
-        (f"{len(top)}", f"top {target_n} v simulaci", "#2770f0"),
-        (f"{n_remain}", "celkem po close", "#6b7280"),
-        (f"{n_close}", "ke close", "#eb4d79"),
-        (f"{int(_total_close_cli):,}", "klientů ze zavřených", "#f59e0b"),
-        (f"{int(_total_online_cli):,}", "→ online", "#6b7280"),
-        (f"{_total_bankers:,}", "bankéřů celkem", "#2770f0"),
-        (f"{_deficit_lbl}", "bankéřská kap.", _deficit_col),
+    <div style="background:{bg};border-radius:8px;padding:9px 14px;border:1px solid {bc2};text-align:center;min-width:110px;">
+      <div style="font-size:1.35rem;font-weight:800;color:{vc};">{vv}</div>
+      <div style="font-size:0.65rem;color:#777;text-transform:uppercase;letter-spacing:.3px;margin-top:1px;">{vl}</div>
+    </div>''' for vv, vl, vc, bg, bc2 in [
+        (f"{len(top)}",        f"top {target_n} v simulaci",         "#2770f0", "#eff6ff", "#bfdbfe"),
+        (f"{n_remain}",        "v poolu (po plán. close)",            "#6b7280", "#f9fafb", "#e5e7eb"),
+        (f"{n_close}",         "plánovaně ke close ≤2027",            "#eb4d79", "#fff5f5", "#fecaca"),
+        (f"{_n_sim_extra}",    "navíc simulací uzavřených",           "#f97316", "#fff7ed", "#fed7aa"),
+        (f"{n_close + _n_sim_extra}", "uzavřených celkem",            "#7c3aed", "#faf5ff", "#ddd6fe"),
+    ])}
+  </div>
+  <!-- Summary boxy — řádek 2: klienti, výnosy, kapacita -->
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+    {"".join(f'''
+    <div style="background:{bg};border-radius:8px;padding:9px 14px;border:1px solid {bc2};text-align:center;min-width:110px;">
+      <div style="font-size:1.15rem;font-weight:800;color:{vc};">{vv}</div>
+      <div style="font-size:0.65rem;color:#777;text-transform:uppercase;letter-spacing:.3px;margin-top:1px;">{vl}</div>
+    </div>''' for vv, vl, vc, bg, bc2 in [
+        (f"{int(_total_close_cli):,}",  "klientů z plán. close",           "#f59e0b", "#fffbeb", "#fde68a"),
+        (f"{int(_rest_cli):,}",         "klientů ze sim. uzavřených",      "#f97316", "#fff7ed", "#fed7aa"),
+        (f"{int(_total_online_cli):,}", "→ online",                         "#6b7280", "#f9fafb", "#e5e7eb"),
+        (_fmtm(_rev_2025_top),          "výnosy 2025 (top N)",              "#059669", "#ecfdf5", "#a7f3d0"),
+        (_fmtm(_rev_2030_top),          "výnosy 2030 (sim.)",               "#0891b2", "#ecfeff", "#a5f3fc"),
+        (f"{_ci_now_avg:.1f} %" if _ci_now_avg else "—", "C/I 2025 průměr", "#6b7280", "#f9fafb", "#e5e7eb"),
+        (f"{_ci_2030_avg:.1f} %" if _ci_2030_avg else "—", "C/I 2030 (sim.)", "#2770f0", "#eff6ff", "#bfdbfe"),
+        (f"{_total_bankers:,}",         "bankéřů celkem",                   "#2770f0", "#eff6ff", "#bfdbfe"),
+        (f"{_deficit_lbl}",             "bankéřská kap.",                   _deficit_col, "#f9fafb", "#e5e7eb"),
     ])}
   </div>
 
