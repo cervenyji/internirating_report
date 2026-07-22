@@ -103,6 +103,13 @@ BNS_IR_TOP_N = 280
 # Kódy poboček z simulace sítě 250 — nastavuje generate_network_simulation_200()
 SIM_250_KEEP_CODES: set = set()
 
+# Kódy poboček z simulace sítě 300 — nastavuje generate_network_simulation_200()
+SIM_300_KEEP_CODES: set = set()
+
+# Computed d_sim dataframes — nastavuje generate_network_simulation_200() pro standalone report
+SIM_250_DF: 'pd.DataFrame' = None
+SIM_300_DF: 'pd.DataFrame' = None
+
 # IDs poboček s jednočlenným provozem
 JEDNOCLENNY_IDS: set = {
     423, 667, 593, 492, 294, 317, 273, 274, 254, 326, 304, 534,
@@ -631,6 +638,7 @@ NOVE_NAZVY = {
     "FOOTPRINT_STRATEGIE_(2030)":  "Strategie BNS",
     "BNS_IR_FLAG":                 "Strategie BNS dle IR 25",
     "SIM_250_FLAG":                "Simulace 250",
+    "SIM_300_FLAG":                "Simulace 300",
     "POOL_FHC":                    "Pool FHC",
     "POOL_NF":                     "Pool NF",
     "PLAN_CLOSE_(ROK)":            "Rok uzavření",
@@ -4730,8 +4738,17 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
     top  = d_sim.nsmallest(target_n, 'SIM_IR_2030').copy()
     rest = d_sim[~d_sim.index.isin(top.index)].sort_values('SIM_IR_2030').copy()
     # Exportuj kódy do globální proměnné pro sloupec SIM_250_FLAG v tabulce
-    global SIM_250_KEEP_CODES
-    SIM_250_KEEP_CODES = set(top['BRANCH_CODE'].dropna().astype(int).tolist())
+    global SIM_250_KEEP_CODES, SIM_300_KEEP_CODES, SIM_250_DF, SIM_300_DF
+    _keep_codes = set(top['BRANCH_CODE'].dropna().astype(int).tolist())
+    if target_n <= 250:
+        SIM_250_KEEP_CODES = _keep_codes
+        SIM_250_DF = d_sim.copy()
+    else:
+        SIM_300_KEEP_CODES = _keep_codes
+        SIM_300_DF = d_sim.copy()
+    # Zpětná kompatibilita — SIM_250_KEEP_CODES vždy nastaven pro target_n==250
+    if target_n <= 250:
+        SIM_250_KEEP_CODES = _keep_codes
 
     # ── 7. Bankéřská kapacita ─────────────────────────────────────
     # Předpočítej průměrný počet schůzek na klienta pro celou síť
@@ -5316,6 +5333,567 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
   window['simFilter{target_n}'] = simFilter;
 }})();
 </script>"""
+
+
+def generate_simulation_standalone_report(html_250, html_300):
+    """
+    Standalone HTML stránka se simulacemi 250 a 300 poboček:
+    — Porovnání obou simulací (souhrnné statistiky)
+    — Tabulky 250 a 300 (reuse HTML z generate_network_simulation_200)
+    — Vývoj sledovaných parametrů pro každou pobočku (SVG sparklines)
+    """
+    import math as _m
+
+    df250 = SIM_250_DF if SIM_250_DF is not None and not (hasattr(SIM_250_DF, 'empty') and SIM_250_DF.empty) else None
+    df300 = SIM_300_DF if SIM_300_DF is not None and not (hasattr(SIM_300_DF, 'empty') and SIM_300_DF.empty) else None
+
+    def _safe_float(v):
+        try:
+            f = float(v)
+            return None if (f != f) else f
+        except (TypeError, ValueError):
+            return None
+
+    def _fmtm(v):
+        try:
+            return format_money(float(v))
+        except Exception:
+            return '—'
+
+    def _fmtpct(v, decimals=1):
+        f = _safe_float(v)
+        if f is None:
+            return '—'
+        return f'{f * 100:.{decimals}f} %'
+
+    def _fmti(v):
+        f = _safe_float(v)
+        if f is None:
+            return '—'
+        return f'{int(f):,}'
+
+    def _sparkline(data, width=100, height=36, color_h='#475569', color_p='#f59e0b', invert=False):
+        """
+        data: list of (label, value_or_None, is_projected: bool)
+        invert=True: nižší hodnota = lepší = výše na grafu (pro C/I)
+        Vrací inline SVG nebo '—'.
+        """
+        pts = [(l, _safe_float(v), p) for l, v, p in data]
+        valid = [(l, v, p) for l, v, p in pts if v is not None]
+        if len(valid) < 2:
+            return '<span style="color:#ccc;font-size:0.7rem;">—</span>'
+
+        vals = [v for _, v, _ in valid]
+        vmin = min(vals)
+        vmax = max(vals)
+        if vmax <= vmin:
+            vmax = vmin + max(abs(vmin) * 0.05, 0.001)
+
+        n = len(pts)
+        xs = [2 + i * (width - 4) / max(n - 1, 1) for i in range(n)]
+
+        def vy(v):
+            if v is None:
+                return None
+            frac = (v - vmin) / (vmax - vmin)
+            if invert:
+                frac = 1.0 - frac
+            return round(height - 2 - frac * (height - 4), 1)
+
+        ys = [vy(v) for _, v, _ in pts]
+
+        parts = []
+        # Historická čára (solid)
+        hist_pts = [(xs[i], ys[i]) for i, (_, _, p) in enumerate(pts) if not p and ys[i] is not None]
+        if len(hist_pts) >= 2:
+            pts_str = ' '.join(f'{x:.1f},{y}' for x, y in hist_pts)
+            parts.append(
+                f'<polyline points="{pts_str}" fill="none" stroke="{color_h}"'
+                f' stroke-width="1.6" stroke-linejoin="round"/>'
+            )
+
+        # Projekční čára (dashed) — připojena od posledního hist. bodu
+        last_hist_i = max((i for i, (_, _, p) in enumerate(pts) if not p and ys[i] is not None), default=-1)
+        proj_is = [i for i, (_, _, p) in enumerate(pts) if p and ys[i] is not None]
+        if proj_is and last_hist_i >= 0:
+            conn_xys = [(xs[last_hist_i], ys[last_hist_i])] + [(xs[i], ys[i]) for i in proj_is]
+            pts_str = ' '.join(f'{x:.1f},{y}' for x, y in conn_xys)
+            parts.append(
+                f'<polyline points="{pts_str}" fill="none" stroke="{color_p}"'
+                f' stroke-width="1.6" stroke-linejoin="round" stroke-dasharray="4,2.5"/>'
+            )
+
+        # Tečky
+        if hist_pts:
+            lx, ly = hist_pts[-1]
+            parts.append(f'<circle cx="{lx:.1f}" cy="{ly}" r="2.2" fill="{color_h}"/>')
+        if proj_is:
+            li = proj_is[-1]
+            parts.append(f'<circle cx="{xs[li]:.1f}" cy="{ys[li]}" r="2.8" fill="{color_p}"/>')
+
+        return (
+            f'<svg width="{width}" height="{height}" style="display:block;overflow:visible;">'
+            + ''.join(parts)
+            + '</svg>'
+        )
+
+    # ── Legenda sparkline ─────────────────────────────────────────────────────
+    sparkline_legend = (
+        '<div style="display:flex;align-items:center;gap:12px;font-size:0.68rem;color:#888;margin-bottom:10px;">'
+        '<svg width="32" height="10"><line x1="0" y1="5" x2="20" y2="5" stroke="#475569" stroke-width="2"/>'
+        '<circle cx="20" cy="5" r="3" fill="#475569"/></svg> Historická data'
+        ' &nbsp;'
+        '<svg width="36" height="10"><line x1="0" y1="5" x2="24" y2="5" stroke="#f59e0b" stroke-width="2" stroke-dasharray="4,2"/>'
+        '<circle cx="24" cy="5" r="3" fill="#f59e0b"/></svg> Simulace 2030'
+        '</div>'
+    )
+
+    # ── Příprava dat per-pobočka ──────────────────────────────────────────────
+    CI_COLS_YEARS = [
+        ('C/I_RATIO_(YTD_2021)', 2021),
+        ('C/I_RATIO_(YTD_2022)', 2022),
+        ('C/I_RATIO_(YTD_2023)', 2023),
+        ('C/I_RATIO_(YTD_2024)', 2024),
+        ('PRIME_NAKLADY/VYNOSY',  2025),
+    ]
+    REV_COLS_YEARS = [
+        ('REVENUES_2022', 2022),
+        ('REVENUES_2023', 2023),
+        ('REVENUES_2024', 2024),
+        ('VYNOSY',         2025),
+    ]
+
+    branch_rows = ''
+    no_data_msg = ''
+
+    if df250 is None and df300 is None:
+        no_data_msg = (
+            '<p style="color:#aaa;font-style:italic;padding:20px;">'
+            'Data simulace nejsou k dispozici — report je třeba spustit nejdříve.</p>'
+        )
+    else:
+        # Sjednocení všech poboček z obou simulací
+        all_dfs = [d for d in [df250, df300] if d is not None]
+        all_bc = sorted(set(
+            int(bc) for d in all_dfs
+            for bc in d['BRANCH_CODE'].dropna().astype(int).tolist()
+        ))
+
+        # Indexy pro rychlé vyhledávání
+        idx250 = {} if df250 is None else {int(r['BRANCH_CODE']): r for _, r in df250.iterrows()}
+        idx300 = {} if df300 is None else {int(r['BRANCH_CODE']): r for _, r in df300.iterrows()}
+
+        _Q_COL = {1: '#0bb440', 2: '#4ade80', 3: '#f59e0b', 4: '#fb923c', 5: '#eb4d79'}
+
+        for bc in all_bc:
+            r250 = idx250.get(bc)
+            r300 = idx300.get(bc)
+            row  = r250 if r250 is not None else r300
+
+            bn   = str(row.get('BRANCH_NAME', bc) or bc)
+            reg  = str(row.get('REGION_NAME', '—') or '—')
+            fmt  = str(row.get('BRANCH_FORMAT', '—') or '—').lower().strip()
+            fmt_lbl = fmt.title() if fmt != '—' else '—'
+            fmt_colors = {'small': '#f59e0b', 'medium economy': '#fb923c', 'medium': '#2770f0', 'flagship': '#0bb440'}
+            fmt_col = fmt_colors.get(fmt, '#aaa')
+
+            in250 = bc in idx250
+            in300 = bc in idx300
+            s250 = ('<span style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;'
+                    'border-radius:5px;padding:1px 6px;font-size:0.7rem;font-weight:700;">250✓</span>'
+                    if in250 else
+                    '<span style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'
+                    'border-radius:5px;padding:1px 6px;font-size:0.7rem;font-weight:600;">250✗</span>')
+            s300 = ('<span style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;'
+                    'border-radius:5px;padding:1px 6px;font-size:0.7rem;font-weight:700;">300✓</span>'
+                    if in300 else
+                    '<span style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'
+                    'border-radius:5px;padding:1px 6px;font-size:0.7rem;font-weight:600;">300✗</span>')
+
+            ir25 = _safe_float(row.get('IR'))
+            ir30 = _safe_float(row.get('SIM_IR_2030'))
+            q30  = int(_safe_float(row.get('SIM_IR_Q_2030')) or 0)
+            qcol = _Q_COL.get(q30, '#aaa')
+            ir25_s = str(int(ir25)) if ir25 is not None else '—'
+            ir30_s = str(int(ir30)) if ir30 is not None else '—'
+            ir_diff = ''
+            if ir25 is not None and ir30 is not None:
+                d2 = int(ir30) - int(ir25)
+                if d2 < 0:
+                    ir_diff = f'<span style="color:#0bb440;font-weight:700;font-size:0.75rem;">▲{abs(d2)}</span>'
+                elif d2 > 0:
+                    ir_diff = f'<span style="color:#eb4d79;font-weight:700;font-size:0.75rem;">▼{abs(d2)}</span>'
+                else:
+                    ir_diff = '<span style="color:#aaa;font-size:0.7rem;">±0</span>'
+
+            # C/I sparkline
+            ci_data = [
+                (str(yr), row.get(col), False)
+                for col, yr in CI_COLS_YEARS
+                if col in row.index
+            ]
+            ci_data.append(('2030', row.get('SIM_CI_2030'), True))
+            ci_spark = _sparkline(ci_data, width=100, height=36, invert=True,
+                                  color_h='#475569', color_p='#f59e0b')
+
+            ci25_f = _safe_float(row.get('PRIME_NAKLADY/VYNOSY'))
+            ci30_f = _safe_float(row.get('SIM_CI_2030'))
+            ci25_s = _fmtpct(ci25_f) if ci25_f is not None else '—'
+            ci30_s = _fmtpct(ci30_f) if ci30_f is not None else '—'
+            if ci25_f is not None and ci30_f is not None:
+                ci_diff_pp = (ci30_f - ci25_f) * 100
+                ci_diff_col = '#0bb440' if ci_diff_pp <= 0 else '#eb4d79'
+                ci_diff_s = (f'<span style="color:{ci_diff_col};font-size:0.68rem;font-weight:700;">'
+                             f'{"▼" if ci_diff_pp <= 0 else "▲"}{abs(ci_diff_pp):.1f} pp</span>')
+            else:
+                ci_diff_s = ''
+
+            # Revenue sparkline
+            rev_data = [
+                (str(yr), row.get(col), False)
+                for col, yr in REV_COLS_YEARS
+                if col in row.index
+            ]
+            rev_data.append(('2030', row.get('SIM_REV_2030'), True))
+            rev_spark = _sparkline(rev_data, width=100, height=36, invert=False,
+                                   color_h='#2770f0', color_p='#f59e0b')
+
+            rev25_s = _fmtm(row.get('VYNOSY'))
+            rev30_s = _fmtm(row.get('SIM_REV_2030'))
+            cagr = _safe_float(row.get('_cagr'))
+            if cagr is not None:
+                cagr_col = '#0bb440' if cagr >= 0 else '#eb4d79'
+                cagr_s = (f'<span style="color:{cagr_col};font-size:0.7rem;font-weight:700;">'
+                          f'{"▲" if cagr >= 0 else "▼"}{abs(cagr * 100):.1f}%/r</span>')
+            else:
+                cagr_s = '—'
+
+            # Klienti
+            cli_now = _safe_float(row.get('POCET_KLIENTU')) or 0
+            cli_sim = _safe_float(row.get('SIM_KLIENTI')) or cli_now
+            cli_onl = _safe_float(row.get('SIM_KLIENTI_ONL')) or 0
+            cli_delta = cli_sim - cli_now
+            cli_d_s = (f'<span style="color:#2770f0;font-size:0.68rem;">+{int(cli_delta):,}</span>'
+                       if cli_delta > 0.5 else '')
+
+            # Výnos/klient
+            rpc_now  = _safe_float(row.get('_rev_per_cli_now'))
+            rpc_2030 = _safe_float(row.get('_rev_per_cli_2030'))
+            rpc_s = (f'{_fmtm(rpc_now)} → {_fmtm(rpc_2030)}') if rpc_now and rpc_2030 else '—'
+
+            row_bg = '#fff' if len(branch_rows) % 2 == 0 else '#fafbff'
+
+            branch_rows += (
+                f'<tr class="br-row" style="background:{row_bg};"'
+                f' data-name="{bn.lower()} {bc}">'
+                f'<td style="padding:6px 10px;border:1px solid #e8edf5;white-space:nowrap;min-width:160px;">'
+                f'<div style="font-weight:700;font-size:0.82rem;color:#0f172a;">{bn}</div>'
+                f'<div style="font-size:0.68rem;color:#aaa;">{reg} · #{bc}</div>'
+                f'<span style="background:{fmt_col}18;color:{fmt_col};border:1px solid {fmt_col}44;'
+                f'border-radius:4px;padding:0 5px;font-size:0.63rem;font-weight:700;">{fmt_lbl}</span>'
+                f'</td>'
+                f'<td style="padding:6px 8px;border:1px solid #e8edf5;white-space:nowrap;text-align:center;">'
+                f'<div style="display:flex;gap:3px;justify-content:center;">{s250} {s300}</div>'
+                f'</td>'
+                f'<td style="padding:6px 8px;border:1px solid #e8edf5;text-align:center;font-size:0.8rem;">'
+                f'<div>{ir25_s} → <b>{ir30_s}</b> {ir_diff}</div>'
+                f'<span style="background:{qcol}18;color:{qcol};border:1px solid {qcol}44;'
+                f'border-radius:6px;padding:0 6px;font-weight:700;font-size:0.72rem;">Q{q30}</span>'
+                f'</td>'
+                f'<td style="padding:6px 8px;border:1px solid #e8edf5;">'
+                f'{ci_spark}'
+                f'</td>'
+                f'<td style="padding:6px 8px;border:1px solid #e8edf5;font-size:0.75rem;white-space:nowrap;">'
+                f'<div>{ci25_s} → <b>{ci30_s}</b></div>'
+                f'<div>{ci_diff_s}</div>'
+                f'</td>'
+                f'<td style="padding:6px 8px;border:1px solid #e8edf5;">'
+                f'{rev_spark}'
+                f'</td>'
+                f'<td style="padding:6px 8px;border:1px solid #e8edf5;font-size:0.75rem;white-space:nowrap;">'
+                f'<div>{rev25_s} → <b>{rev30_s}</b></div>'
+                f'<div>{cagr_s}</div>'
+                f'</td>'
+                f'<td style="padding:6px 8px;border:1px solid #e8edf5;font-size:0.75rem;">'
+                f'<div><b>{_fmti(cli_sim)}</b> kl.'
+                f'{(" " + cli_d_s) if cli_d_s else ""}</div>'
+                f'<div style="font-size:0.65rem;color:#aaa;">'
+                f'bylo {_fmti(cli_now)}'
+                f'{(f" · online {_fmti(cli_onl)}") if cli_onl > 0.5 else ""}</div>'
+                f'<div style="font-size:0.68rem;color:#6b7280;">{rpc_s}/kl.</div>'
+                f'</td>'
+                f'</tr>'
+            )
+
+    # ── Souhrnná porovnávací statistika 250 vs 300 ────────────────────────────
+    def _stat_row(label, v250, v300):
+        return (
+            f'<tr>'
+            f'<td style="padding:7px 12px;border:1px solid #e8edf5;font-size:0.82rem;font-weight:600;'
+            f'color:#374151;">{label}</td>'
+            f'<td style="padding:7px 12px;border:1px solid #e8edf5;text-align:center;'
+            f'font-size:0.82rem;color:#2770f0;font-weight:700;">{v250}</td>'
+            f'<td style="padding:7px 12px;border:1px solid #e8edf5;text-align:center;'
+            f'font-size:0.82rem;color:#7c3aed;font-weight:700;">{v300}</td>'
+            f'</tr>'
+        )
+
+    def _dfstat(df, col, fn):
+        if df is None or col not in df.columns:
+            return '—'
+        s = pd.to_numeric(df[col], errors='coerce').dropna()
+        return fn(s) if len(s) > 0 else '—'
+
+    def _top_df(df, n):
+        if df is None:
+            return None
+        return df.nsmallest(n, 'SIM_IR_2030') if 'SIM_IR_2030' in df.columns else df.head(n)
+
+    top250 = _top_df(df250, 250)
+    top300 = _top_df(df300, 300)
+
+    def _ts(df, col, fn):
+        if df is None or col not in df.columns:
+            return '—'
+        s = pd.to_numeric(df[col], errors='coerce').dropna()
+        return fn(s) if len(s) > 0 else '—'
+
+    comparison_rows = (
+        _stat_row('Počet poboček v síti',
+                  str(len(top250)) if top250 is not None else '—',
+                  str(len(top300)) if top300 is not None else '—')
+        + _stat_row('Průměrné C/I 2025 (stávající)',
+                    _ts(top250, 'PRIME_NAKLADY/VYNOSY', lambda s: f'{s.mean()*100:.1f} %'),
+                    _ts(top300, 'PRIME_NAKLADY/VYNOSY', lambda s: f'{s.mean()*100:.1f} %'))
+        + _stat_row('Průměrné C/I 2030 (simulace)',
+                    _ts(top250, 'SIM_CI_2030', lambda s: f'{s.mean()*100:.1f} %'),
+                    _ts(top300, 'SIM_CI_2030', lambda s: f'{s.mean()*100:.1f} %'))
+        + _stat_row('Celkové výnosy 2025 (top N)',
+                    _ts(top250, 'VYNOSY', lambda s: format_money(s.sum())),
+                    _ts(top300, 'VYNOSY', lambda s: format_money(s.sum())))
+        + _stat_row('Celkové výnosy 2030 (simulace)',
+                    _ts(top250, 'SIM_REV_2030', lambda s: format_money(s.sum())),
+                    _ts(top300, 'SIM_REV_2030', lambda s: format_money(s.sum())))
+        + _stat_row('Průměrný CAGR výnosů/r',
+                    _ts(top250, '_cagr', lambda s: f'{s.mean()*100:.2f} %'),
+                    _ts(top300, '_cagr', lambda s: f'{s.mean()*100:.2f} %'))
+        + _stat_row('Celkem klientů po přesunu',
+                    _ts(top250, 'SIM_KLIENTI', lambda s: f'{int(s.sum()):,}'),
+                    _ts(top300, 'SIM_KLIENTI', lambda s: f'{int(s.sum()):,}'))
+        + _stat_row('Klientů přesměrováno online',
+                    _ts(top250, 'SIM_KLIENTI_ONL', lambda s: f'{int(s.sum()):,}'),
+                    _ts(top300, 'SIM_KLIENTI_ONL', lambda s: f'{int(s.sum()):,}'))
+    )
+
+    # Pobočky co jsou v 300 ale NE v 250
+    extra_300_html = ''
+    if df250 is not None and df300 is not None and 'SIM_IR_2030' in df300.columns:
+        bc250 = set(idx250.keys())
+        bc300 = set(idx300.keys())
+        extra_in_300 = sorted(bc300 - bc250)
+        if extra_in_300:
+            chips = ''
+            for ebc in extra_in_300:
+                er = idx300[ebc]
+                ename = str(er.get('BRANCH_NAME', ebc) or ebc)
+                eir = _safe_float(er.get('SIM_IR_2030'))
+                eq  = int(_safe_float(er.get('SIM_IR_Q_2030')) or 0)
+                eqcol = {1:'#0bb440',2:'#4ade80',3:'#f59e0b',4:'#fb923c',5:'#eb4d79'}.get(eq,'#aaa')
+                chips += (
+                    f'<span style="background:{eqcol}18;color:{eqcol};border:1px solid {eqcol}44;'
+                    f'border-radius:6px;padding:2px 8px;font-size:0.72rem;white-space:nowrap;">'
+                    f'{ename} #{ebc} Q{eq}</span> '
+                )
+            extra_300_html = (
+                f'<div style="background:#f5f0ff;border:1px solid #ddd6fe;border-radius:8px;'
+                f'padding:10px 14px;margin-top:12px;">'
+                f'<div style="font-weight:700;font-size:0.82rem;color:#7c3aed;margin-bottom:6px;">'
+                f'&#x2795; {len(extra_in_300)} poboček v síti 300 navíc (oproti 250)</div>'
+                f'<div style="display:flex;flex-wrap:wrap;gap:4px;">{chips}</div>'
+                f'</div>'
+            )
+
+    # ── Výstup — kompletní standalone HTML stránka ───────────────────────────
+    return f"""<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulace sítě poboček 2030</title>
+<style>
+*,*::before,*::after{{box-sizing:border-box;margin:0;padding:0;}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+     background:#f0f4fb;color:#0f172a;}}
+.page-header{{background:linear-gradient(135deg,#1e40af,#2770f0);color:#fff;
+              padding:22px 32px;}}
+.page-header h1{{font-size:1.5rem;font-weight:800;letter-spacing:-.5px;}}
+.page-header p{{font-size:0.82rem;opacity:.8;margin-top:4px;}}
+.tabs{{display:flex;gap:0;background:#fff;border-bottom:2px solid #e8edf5;
+       padding:0 24px;position:sticky;top:0;z-index:100;
+       box-shadow:0 2px 8px rgba(0,0,0,.06);}}
+.tab-btn{{padding:12px 20px;border:none;background:none;cursor:pointer;
+          font-size:0.85rem;font-weight:600;color:#64748b;border-bottom:3px solid transparent;
+          transition:all .15s;white-space:nowrap;}}
+.tab-btn.active{{color:#2770f0;border-bottom-color:#2770f0;}}
+.tab-btn:hover:not(.active){{color:#1e40af;background:#f8fbff;}}
+.tab-panel{{display:none;padding:24px;max-width:1600px;margin:0 auto;}}
+.tab-panel.active{{display:block;}}
+.card{{background:#fff;border-radius:10px;border:1px solid #e8edf5;
+       box-shadow:0 2px 8px rgba(0,0,0,.04);padding:18px 20px;margin-bottom:16px;}}
+.card-title{{font-size:1rem;font-weight:700;color:#1e3a5f;margin-bottom:14px;}}
+.cmp-table{{width:100%;border-collapse:collapse;}}
+.cmp-table th{{background:#f8fbff;padding:8px 12px;border:1px solid #e8edf5;
+               font-size:0.78rem;color:#555;text-align:center;}}
+.cmp-table th:first-child{{text-align:left;}}
+.cmp-table th.h250{{background:#eff6ff;color:#1d4ed8;}}
+.cmp-table th.h300{{background:#f5f3ff;color:#6d28d9;}}
+.br-table{{width:100%;border-collapse:collapse;font-size:0.82rem;}}
+.br-table thead th{{background:#1e3a5f;color:#fff;padding:8px 10px;border:1px solid #263851;
+                    font-size:0.73rem;font-weight:700;white-space:nowrap;
+                    position:sticky;top:44px;z-index:10;}}
+.br-search{{padding:8px 14px;border:1px solid #d1d5db;border-radius:8px;
+            font-size:0.85rem;width:280px;outline:none;}}
+.br-search:focus{{border-color:#2770f0;box-shadow:0 0 0 3px #2770f022;}}
+@media(max-width:768px){{
+  .tabs{{overflow-x:auto;}}
+  .tab-panel{{padding:12px;}}
+  .br-table{{font-size:0.72rem;}}
+}}
+</style>
+</head>
+<body>
+<div class="page-header">
+  <h1>&#x1F3E6; Simulace s&#237;t&#283; pobo&#269;ek &mdash; v&#253;hled 2030</h1>
+  <p>Srovn&#225;n&#237; simulovan&#233; s&#237;t&#283; 250 a 300 pobo&#269;ek &middot; v&#253;voj sledovan&#253;ch parametr&#367; po&#269;&#237;naje rokem 2021</p>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="showTab('overview',this)">&#x1F4CA; Porovn&#225;n&#237;</button>
+  <button class="tab-btn" onclick="showTab('sim250',this)">&#x1F3E6; Simulace 250</button>
+  <button class="tab-btn" onclick="showTab('sim300',this)">&#x1F3E6; Simulace 300</button>
+  <button class="tab-btn" onclick="showTab('branches',this)">&#x1F4C8; V&#253;voj parametr&#367;</button>
+</div>
+
+<!-- ═══ TAB: Porovnání ═══ -->
+<div id="tab-overview" class="tab-panel active">
+  <div class="card">
+    <div class="card-title">&#x1F4CA; Souhrnné srovnání simulací</div>
+    <div style="overflow-x:auto;">
+      <table class="cmp-table">
+        <thead>
+          <tr>
+            <th style="min-width:220px;">Ukazatel</th>
+            <th class="h250">&#x1F3E6; Simulace 250</th>
+            <th class="h300">&#x1F3E6; Simulace 300</th>
+          </tr>
+        </thead>
+        <tbody>{comparison_rows}</tbody>
+      </table>
+    </div>
+    {extra_300_html}
+  </div>
+
+  <div class="card" style="font-size:0.82rem;color:#555;line-height:1.9;">
+    <div class="card-title">&#x1F4D0; Metodika simulace</div>
+    <b>Klienti:</b> Ze zavřených poboček přecházejí klienti dle spádových vah (% odhadovaného přesunu).
+    Kapacita formátu: Small +10&nbsp;%, Medium-Economy +25&nbsp;%, Medium +40&nbsp;%, Flagship +70&nbsp;%
+    fyzicky; zbytek přesměrován online.<br>
+    <b>Výnosy 2030:</b> výnos/klient<sub>2030</sub> = výnos/klient<sub>2025</sub> × (1 + r)<sup>5</sup>,
+    kde r = 40&nbsp;% trend nového výnosu/kl. 2024→2025 + 60&nbsp;% průměrný revenues trend 2022–2025
+    (clip ±15–25&nbsp;%/rok).<br>
+    <b>C/I 2030:</b> lineární extrapolace OLS z řady 2021–2025, max. změna ±15 pp za 6 let.<br>
+    <b>Rating 2030:</b> rank(CI_percentil × 40&nbsp;% + výnosové_pořadí × 60&nbsp;%).<br>
+    <b>Výběr poboček:</b> top N dle simulovaného ratingu 2030 (nižší rank = lepší).
+  </div>
+</div>
+
+<!-- ═══ TAB: Simulace 250 ═══ -->
+<div id="tab-sim250" class="tab-panel">
+  <div class="card" style="padding:12px 14px;">
+    {html_250}
+  </div>
+</div>
+
+<!-- ═══ TAB: Simulace 300 ═══ -->
+<div id="tab-sim300" class="tab-panel">
+  <div class="card" style="padding:12px 14px;">
+    {html_300}
+  </div>
+</div>
+
+<!-- ═══ TAB: Vývoj parametrů ═══ -->
+<div id="tab-branches" class="tab-panel">
+  <div class="card">
+    <div class="card-title">&#x1F4C8; V&#253;voj sledovan&#253;ch parametr&#367; dle pobo&#269;ky</div>
+    <p style="font-size:0.8rem;color:#555;margin-bottom:10px;">
+      Pro ka&#382;dou pobo&#269;ku zachycen v&#253;voj parametr&#367;, kter&#233; ovliv&#328;uj&#237; simulovan&#253; rating:
+      C/I ratio (v&#225;ha 40&nbsp;%) a v&#253;nosy (v&#225;ha 60&nbsp;%), CAGR a po&#269;et klient&#367;
+      po p&#345;esunu ze zav&#345;en&#253;ch pobo&#269;ek.
+    </p>
+    {sparkline_legend}
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+      <input class="br-search" id="br-search" type="text"
+             placeholder="&#x1F50D; Filtruj n&#225;zev nebo k&#243;d pobo&#269;ky&#8230;"
+             oninput="brFilter(this.value)">
+      <button onclick="brFilter('');document.getElementById('br-search').value='';"
+              style="padding:7px 12px;border:1px solid #d1d5db;border-radius:8px;
+                     background:#f9fafb;font-size:0.82rem;cursor:pointer;">&#x2716; Zru&#353;it</button>
+      <span id="br-count" style="font-size:0.78rem;color:#888;"></span>
+    </div>
+    {no_data_msg}
+    <div style="overflow-x:auto;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);">
+      <table class="br-table" id="br-tbl">
+        <thead>
+          <tr>
+            <th style="min-width:160px;text-align:left;">Pobo&#269;ka</th>
+            <th style="text-align:center;">Simulace</th>
+            <th style="min-width:100px;text-align:center;">Rating<br>2025 → 2030</th>
+            <th colspan="2" style="text-align:center;background:#374151;">
+              C/I ratio (ni&#382;&#353;&#237; = lep&#353;&#237;, v&#225;ha 40&nbsp;%)</th>
+            <th colspan="2" style="text-align:center;background:#374151;">
+              V&#253;nosy (vy&#353;&#353;&#237; = lep&#353;&#237;, v&#225;ha 60&nbsp;%)</th>
+            <th style="min-width:120px;text-align:left;">Klienti 2030</th>
+          </tr>
+        </thead>
+        <tbody id="br-tbody">
+          {branch_rows}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+function showTab(id, btn) {{
+  document.querySelectorAll('.tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
+  document.querySelectorAll('.tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
+  var panel = document.getElementById('tab-' + id);
+  if (panel) panel.classList.add('active');
+  if (btn) btn.classList.add('active');
+}}
+
+function brFilter(q) {{
+  q = (q || '').toLowerCase().trim();
+  var rows = document.querySelectorAll('#br-tbody .br-row');
+  var vis = 0;
+  rows.forEach(function(r) {{
+    var show = !q || (r.getAttribute('data-name') || '').indexOf(q) >= 0;
+    r.style.display = show ? '' : 'none';
+    if (show) vis++;
+  }});
+  var cnt = document.getElementById('br-count');
+  if (cnt) cnt.textContent = vis + ' z ' + rows.length + ' poboček';
+}}
+
+// Init count
+setTimeout(function() {{
+  brFilter('');
+}}, 0);
+</script>
+</body>
+</html>"""
+
+
     """Jedna široká souhrnná tabulka: region × (typologie + cashless + NF/SF)."""
     needed = ['REGION_NAME']
     if not all(c in df.columns for c in needed):
@@ -8515,7 +9093,7 @@ COL_GROUPS = [
         "Přítomnost segmentů",
     ], "#7ddbe3"),
     # ── 🎯 Strategie ──────────────────────────────────────────────────────────
-    ("🗺️ Strategie BNS",      ["Strategie BNS", "Strategie BNS dle IR 25", "Simulace 250",
+    ("🗺️ Strategie BNS",      ["Strategie BNS", "Strategie BNS dle IR 25", "Simulace 250", "Simulace 300",
                                "Pool FHC", "Pool NF",
                                "Rok uzavření", "Rok investice NF", "Rok investice FHC", "Rok plánované investice"], "#fff3e0"),
     ("💵 Strategie hotovosti", ["Rok cashless přechodu", "Status cashless", "Bezhotovostní", "Datum bezhotovostní"], "#ffe8c8"),
@@ -13065,9 +13643,9 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
             + _atm_static_html
         ) if _atm_static_html else ''
 
-        print("  🔨 Generuji analýzu korelace investice → výkon...")
+        print("  🔨 Generuji simulaci sítě 250 poboček...")
         _sp_arg = globals().get('spadovky')
-        _inv_impact_html = generate_network_simulation_200(df_sorted, _sp_arg)
+        _inv_impact_html = generate_network_simulation_200(df_sorted, _sp_arg, target_n=250)
         # SIM_250_KEEP_CODES je nyní naplněn — aktualizuj příznak v obou dataframe
         if SIM_250_KEEP_CODES:
             _sim_codes_upd = {int(c) for c in SIM_250_KEEP_CODES}
@@ -13076,6 +13654,28 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
                 except: return 'close'
             df_sorted['SIM_250_FLAG']     = df_sorted['BRANCH_CODE'].apply(_sflag_upd)
             rating_status['SIM_250_FLAG'] = rating_status['BRANCH_CODE'].apply(_sflag_upd)
+
+        print("  🔨 Generuji simulaci sítě 300 poboček...")
+        _inv_impact_300_html = generate_network_simulation_200(df_sorted, _sp_arg, target_n=300)
+        if SIM_300_KEEP_CODES:
+            _sim300_codes = {int(c) for c in SIM_300_KEEP_CODES}
+            def _sflag300(bc):
+                try: return 'keep' if int(bc) in _sim300_codes else 'close'
+                except: return 'close'
+            df_sorted['SIM_300_FLAG']     = df_sorted['BRANCH_CODE'].apply(_sflag300)
+            rating_status['SIM_300_FLAG'] = rating_status['BRANCH_CODE'].apply(_sflag300)
+
+        print("  🔨 Generuji standalone simulační report...")
+        try:
+            _sim_standalone_html = generate_simulation_standalone_report(
+                _inv_impact_html, _inv_impact_300_html
+            )
+            _sim_output = f"{output_prefix}_simulace.html"
+            with open(_sim_output, 'w', encoding='utf-8') as _fsim:
+                _fsim.write(_sim_standalone_html)
+            print(f"✅ Simulační report: {_sim_output}")
+        except Exception as _esim:
+            print(f"⚠ Standalone simulační report se nepodařilo vygenerovat: {_esim}")
 
         # bns_close_html až po aktualizaci SIM_250_FLAG — jinak by chyběla část Simulace 250
         bns_close_html = generate_bns_close_table(rating_status)
@@ -13266,6 +13866,11 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
     {_sc('simulace', make_collapsible("inv-impact-static", "🏦 Simulace sítě 250 poboček",
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Simulace optimalizované sítě 250 poboček pro rok 2030 — výnosy, C/I, bankéřská kapacita a přesun klientů ze zavřených poboček.</p>'
         + _inv_impact_html, default_open=False))}
+
+    <!-- 17b. Simulace sítě 300 -->
+    {_sc('simulace', make_collapsible("inv-impact-300-static", "🏦 Simulace sítě 300 poboček",
+        '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Simulace optimalizované sítě 300 poboček pro rok 2030 — výnosy, C/I, bankéřská kapacita a přesun klientů ze zavřených poboček.</p>'
+        + _inv_impact_300_html, default_open=False))}
 
     <!-- 18. Obsazení pozic -->
     {_sc('specialiste', make_collapsible("spec-static", "👷 Přehled obsazení pozic",
