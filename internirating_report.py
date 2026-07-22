@@ -4441,13 +4441,16 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250, max_clos
 
     # ── 1. Rozděl na close a zbývající ───────────────────────────
     if max_close_year is not None and 'PLAN_CLOSE_(ROK)' in d.columns:
-        # Vyřaď pobočky uzavírané v roce <= cutoff. Pokud by pool byl menší než
-        # target_n, snižuj cutoff rok po roku dokud pool nestačí (nebo cutoff < 2020).
-        _close_yr = pd.to_numeric(d['PLAN_CLOSE_(ROK)'], errors='coerce')
+        # Vyřaď pobočky uzavírané v roce <= cutoff. Pokud by pool poboček
+        # s platným IR byl menší než target_n, snižuj cutoff rok po roku.
+        _close_yr  = pd.to_numeric(d['PLAN_CLOSE_(ROK)'], errors='coerce')
+        # Maska poboček s platným IR (stejná podmínka jako d_sim níže)
+        _ir_num    = pd.to_numeric(d.get('IR', pd.Series(dtype=float)), errors='coerce')
+        _has_ir    = _ir_num.notna() & (_ir_num > 0)
         _cutoff = max_close_year
         while _cutoff >= 2020:
             _cand = _close_yr.notna() & (_close_yr <= _cutoff)
-            if int((~_cand).sum()) >= target_n:
+            if int((~_cand & _has_ir).sum()) >= target_n:
                 break
             _cutoff -= 1
         else:
@@ -4457,9 +4460,9 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250, max_clos
         if _cutoff < max_close_year:
             import warnings as _w
             _w.warn(
-                f'Sim {target_n}: pool po filtraci ≤{max_close_year} je příliš malý; '
+                f'Sim {target_n}: pool s IR po filtraci ≤{max_close_year} příliš malý; '
                 f'snížen cutoff na ≤{_cutoff} (vyřazeno {_is_close.sum()} poboček, '
-                f'pool {(~_is_close).sum()}).',
+                f'pool s IR: {(~_is_close & _has_ir).sum()}).',
                 stacklevel=2
             )
     elif 'FOOTPRINT_STRATEGIE_(2030)' in d.columns:
