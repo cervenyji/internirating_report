@@ -4441,11 +4441,27 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250, max_clos
 
     # ── 1. Rozděl na close a zbývající ───────────────────────────
     if max_close_year is not None and 'PLAN_CLOSE_(ROK)' in d.columns:
-        # Vyřaď pouze pobočky s plánovaným uzavřením v roce <= max_close_year.
-        # Pobočky s uzavřením v pozdějším roce (nebo bez roku) zůstávají v poolu —
-        # algoritmus pak sám rozhodne, zda se do top N vejdou dle simulovaného ratingu.
+        # Vyřaď pobočky uzavírané v roce <= cutoff. Pokud by pool byl menší než
+        # target_n, snižuj cutoff rok po roku dokud pool nestačí (nebo cutoff < 2020).
         _close_yr = pd.to_numeric(d['PLAN_CLOSE_(ROK)'], errors='coerce')
-        _is_close = _close_yr.notna() & (_close_yr <= max_close_year)
+        _cutoff = max_close_year
+        while _cutoff >= 2020:
+            _cand = _close_yr.notna() & (_close_yr <= _cutoff)
+            if int((~_cand).sum()) >= target_n:
+                break
+            _cutoff -= 1
+        else:
+            # Ani po stažení na 2019 nestačí — nevyřazuj nic dle roku
+            _cand = pd.Series(False, index=d.index)
+        _is_close = _cand
+        if _cutoff < max_close_year:
+            import warnings as _w
+            _w.warn(
+                f'Sim {target_n}: pool po filtraci ≤{max_close_year} je příliš malý; '
+                f'snížen cutoff na ≤{_cutoff} (vyřazeno {_is_close.sum()} poboček, '
+                f'pool {(~_is_close).sum()}).',
+                stacklevel=2
+            )
     elif 'FOOTPRINT_STRATEGIE_(2030)' in d.columns:
         _is_close = (
             d['FOOTPRINT_STRATEGIE_(2030)'].astype(str).str.lower()
