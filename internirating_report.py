@@ -4393,19 +4393,22 @@ def generate_cohort_analysis(df):
 </div>"""
 
 
-def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
+def generate_network_simulation_200(df, spadovky_df=None, target_n=250, max_close_year=None):
     """
-    Simulace sítě 250 poboček s výhledem do roku 2030.
+    Simulace sítě poboček s výhledem do roku 2030.
 
     Logika:
-    1. Vyřaď všechny pobočky označené ke close (jakýkoliv rok)
+    1. Vyřaď pobočky označené ke close:
+       — max_close_year=None → všechny pobočky s FOOTPRINT_STRATEGIE_(2030)='close'
+       — max_close_year=N   → pouze pobočky kde PLAN_CLOSE_(ROK) <= N
+         (pobočky s uzavřením v pozdějším roce zůstávají v poolu)
     2. Simuluj přesun klientů ze zavřených poboček dle spádovosti
        — kapacita dle formátu: small 10 %, medium-economy 25 %, medium 40 %, flagship 70 %
        — zbytek → online
     3. Simuluj interní rating 2030: C/I trend × 40 % + výnosový trend × 60 %
        (CAGR z REVENUES_2022→2024 projektován na +5 let)
     4. Sestav tabulku seřazenou dle simulovaného ratingu
-    5. Zobraz kapacitu osobních bankéřů (1 bankéř = 4 schůzky/den × 248 pracovních dnů)
+    5. Zobraz kapacitu osobních bankéřů (1 bankéř = 5 schůzek/den × 248 pracovních dnů)
     """
     import math as _math
 
@@ -4437,12 +4440,19 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250):
         d['BRANCH_FORMAT'] = 'medium'
 
     # ── 1. Rozděl na close a zbývající ───────────────────────────
-    _is_close = (
-        d['FOOTPRINT_STRATEGIE_(2030)'].astype(str).str.lower()
-         .str.contains('close', na=False)
-        if 'FOOTPRINT_STRATEGIE_(2030)' in d.columns
-        else pd.Series(False, index=d.index)
-    )
+    if max_close_year is not None and 'PLAN_CLOSE_(ROK)' in d.columns:
+        # Vyřaď pouze pobočky s plánovaným uzavřením v roce <= max_close_year.
+        # Pobočky s uzavřením v pozdějším roce (nebo bez roku) zůstávají v poolu —
+        # algoritmus pak sám rozhodne, zda se do top N vejdou dle simulovaného ratingu.
+        _close_yr = pd.to_numeric(d['PLAN_CLOSE_(ROK)'], errors='coerce')
+        _is_close = _close_yr.notna() & (_close_yr <= max_close_year)
+    elif 'FOOTPRINT_STRATEGIE_(2030)' in d.columns:
+        _is_close = (
+            d['FOOTPRINT_STRATEGIE_(2030)'].astype(str).str.lower()
+             .str.contains('close', na=False)
+        )
+    else:
+        _is_close = pd.Series(False, index=d.index)
     d_close  = d[_is_close].copy()
     d_remain = d[~_is_close].copy()
 
@@ -13656,7 +13666,11 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
             rating_status['SIM_250_FLAG'] = rating_status['BRANCH_CODE'].apply(_sflag_upd)
 
         print("  🔨 Generuji simulaci sítě 300 poboček...")
-        _inv_impact_300_html = generate_network_simulation_200(df_sorted, _sp_arg, target_n=300)
+        # max_close_year=2027: vyřazuje jen pobočky zavírané v 2026-2027,
+        # pobočky s uzavřením 2028+ zůstávají v poolu (pool musí mít ≥300 poboček)
+        _inv_impact_300_html = generate_network_simulation_200(
+            df_sorted, _sp_arg, target_n=300, max_close_year=2027
+        )
         if SIM_300_KEEP_CODES:
             _sim300_codes = {int(c) for c in SIM_300_KEEP_CODES}
             def _sflag300(bc):
