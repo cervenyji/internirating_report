@@ -644,6 +644,7 @@ NOVE_NAZVY = {
     "FOOTPRINT_STRATEGIE_(2030)":  "Strategie BNS",
     "BNS_IR_FLAG":                 "Strategie BNS dle IR 25",
     "SIM_250_FLAG":                "Simulace 250",
+    "SIM_280_FLAG":                "Simulace 280",
     "SIM_300_FLAG":                "Simulace 300",
     "POOL_FHC":                    "Pool FHC",
     "POOL_NF":                     "Pool NF",
@@ -4754,7 +4755,10 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250, max_clos
     d_remain['SIM_CI_2030'] = d_remain['SIM_CI_2030'].fillna(_ci_now)
 
     # Simulovaný rating 2030 (stejná metodika jako IR)
+    # Pool: pouze pobočky s platným IR a aktuálně otevřené (BRANCH_CLOSED == False)
     _mask = d_remain['IR'].notna() & (d_remain['IR'] > 0)
+    if 'BRANCH_CLOSED' in d_remain.columns:
+        _mask = _mask & (~d_remain['BRANCH_CLOSED'].fillna(False).astype(bool))
     d_sim = d_remain[_mask].copy()
 
     d_sim['SIM_REV_RNK_2030']  = d_sim['SIM_REV_2030'].rank(ascending=False, method='first').astype(int)
@@ -8543,15 +8547,15 @@ def _apply_common_formatting(d, cols_to_show):
         if _bc in cols_to_show and _bc in d.columns:
             d[_bc] = d[_bc].apply(_fmt_bool)
 
-    # BRANCH_CLOSED → "Aktuálně otevřeno": False=Y zelená, True=N červená
+    # BRANCH_CLOSED → "Aktuálně otevřeno": False=Ano zelená pill, True=Ne červená pill
     if 'BRANCH_CLOSED' in cols_to_show and 'BRANCH_CLOSED' in d.columns:
         def _fmt_open(x):
             closed = (str(x).strip().upper() in ('TRUE', '1', 'YES', 'Y')) if not isinstance(x, bool) else bool(x)
             if not closed:
                 return ("<span style='background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;"
-                        "border-radius:10px;padding:2px 8px;font-size:0.75rem;font-weight:700;'>&#x2713; Y</span>")
+                        "border-radius:10px;padding:2px 8px;font-size:0.75rem;font-weight:700;'>Ano</span>")
             return ("<span style='background:#fde8e8;color:#9b1c1c;border:1px solid #fca5a5;"
-                    "border-radius:10px;padding:2px 8px;font-size:0.75rem;font-weight:700;'>&#x2717; N</span>")
+                    "border-radius:10px;padding:2px 8px;font-size:0.75rem;font-weight:700;'>Ne</span>")
         d['BRANCH_CLOSED'] = d['BRANCH_CLOSED'].apply(_fmt_open)
 
     # Bezhotovostní — Ano modrý badge jako NF, Ne šedý badge jako SF
@@ -8738,7 +8742,7 @@ def _apply_common_formatting(d, cols_to_show):
     # Podbarvení FOOTPRINT_STRATEGIE_(2030) a odvozených příznaků
     if 'FOOTPRINT_STRATEGIE_(2030)' in cols_to_show and 'FOOTPRINT_STRATEGIE_(2030)' in d.columns:
         d['FOOTPRINT_STRATEGIE_(2030)'] = d['FOOTPRINT_STRATEGIE_(2030)'].apply(color_strategy_html)
-    for _flag_col in ['BNS_IR_FLAG', 'SIM_250_FLAG']:
+    for _flag_col in ['BNS_IR_FLAG', 'SIM_250_FLAG', 'SIM_280_FLAG', 'SIM_300_FLAG']:
         if _flag_col in cols_to_show and _flag_col in d.columns:
             d[_flag_col] = d[_flag_col].apply(color_strategy_html)
 
@@ -9337,7 +9341,7 @@ COL_GROUPS = [
         "Přítomnost segmentů",
     ], "#7ddbe3"),
     # ── 🎯 Strategie ──────────────────────────────────────────────────────────
-    ("🗺️ Strategie BNS",      ["Strategie BNS", "Strategie BNS dle IR 25", "Simulace 250", "Simulace 300",
+    ("🗺️ Strategie BNS",      ["Strategie BNS", "Strategie BNS dle IR 25", "Simulace 250", "Simulace 280", "Simulace 300",
                                "Pool FHC", "Pool NF",
                                "Rok uzavření", "Rok investice NF", "Rok investice FHC", "Rok plánované investice"], "#fff3e0"),
     ("💵 Strategie hotovosti", ["Rok cashless přechodu", "Status cashless", "Bezhotovostní", "Datum bezhotovostní"], "#ffe8c8"),
