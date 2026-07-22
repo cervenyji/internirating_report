@@ -114,6 +114,7 @@ SIM_250_DF: 'pd.DataFrame' = None
 SIM_280_DF: 'pd.DataFrame' = None
 SIM_300_DF: 'pd.DataFrame' = None
 SIM_BASE_DF: 'pd.DataFrame' = None  # baseline: žádné zavírání, všechny pobočky
+SIM_CLOSE_DF: 'pd.DataFrame' = None  # plánovaně zavřené pobočky (d_close při target_n≤250)
 
 # IDs poboček s jednočlenným provozem
 JEDNOCLENNY_IDS: set = {
@@ -4777,11 +4778,12 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250, max_clos
     top  = d_sim.nsmallest(target_n, 'SIM_IR_2030').copy()
     rest = d_sim[~d_sim.index.isin(top.index)].sort_values('SIM_IR_2030').copy()
     # Exportuj kódy do globální proměnné pro sloupec SIM_250_FLAG v tabulce
-    global SIM_250_KEEP_CODES, SIM_280_KEEP_CODES, SIM_300_KEEP_CODES, SIM_250_DF, SIM_280_DF, SIM_300_DF, SIM_BASE_DF
+    global SIM_250_KEEP_CODES, SIM_280_KEEP_CODES, SIM_300_KEEP_CODES, SIM_250_DF, SIM_280_DF, SIM_300_DF, SIM_BASE_DF, SIM_CLOSE_DF
     _keep_codes = set(top['BRANCH_CODE'].dropna().astype(int).tolist())
     if target_n <= 250:
         SIM_250_KEEP_CODES = _keep_codes
         SIM_250_DF = d_sim.copy()
+        SIM_CLOSE_DF = d_close.copy()
     elif target_n <= 280:
         SIM_280_KEEP_CODES = _keep_codes
         SIM_280_DF = d_sim.copy()
@@ -5941,6 +5943,172 @@ def generate_simulation_standalone_report(html_250, html_280, html_300):
                 f'</div>'
             )
 
+    # ── NPV výpočet (finanční dopad zavírání) ────────────────────────────────
+    _CHURN_RATE    = 0.06
+    _DISC_RATE     = 0.06
+    _YEARS         = 4      # 2026–2030
+    _ANN_F         = (1 - (1 + _DISC_RATE) ** (-_YEARS)) / _DISC_RATE   # ≈ 3.465
+
+    def _compute_npv_df(pool_df, keep_set):
+        if pool_df is None or not keep_set:
+            return pd.DataFrame()
+        _bc = pool_df['BRANCH_CODE'].dropna().astype(int)
+        _rest = pool_df[~_bc.isin(keep_set)].copy()
+        if _rest.empty:
+            return _rest
+        _rest['_rent']    = pd.to_numeric(_rest.get('ROCNI_SPLATKY_S_DPH_CZK', pd.Series(0.0, index=_rest.index)), errors='coerce').fillna(0)
+        _rest['_rev']     = pd.to_numeric(_rest.get('OBJEM_VYNOSU_CZK',         pd.Series(0.0, index=_rest.index)), errors='coerce').fillna(0)
+        _rest['_bankers'] = pd.to_numeric(_rest.get('BANKERS_COUNT',             pd.Series(0.0, index=_rest.index)), errors='coerce').fillna(0)
+        _rest['_churn']   = _rest['_rev'] * _CHURN_RATE
+        _rest['_net']     = _rest['_rent'] - _rest['_churn']
+        _rest['_onetime'] = _rest['_rent'] * 0.5 + _rest['_bankers'] * 80_000 * 3
+        _rest['_npv']     = -_rest['_onetime'] + _rest['_net'] * _ANN_F
+        return _rest
+
+    _npv250 = _compute_npv_df(df250, SIM_250_KEEP_CODES)
+    _npv280 = _compute_npv_df(df280, SIM_280_KEEP_CODES)
+    _npv300 = _compute_npv_df(df300, SIM_300_KEEP_CODES)
+
+    def _npv_summary(ndf):
+        if ndf is None or ndf.empty:
+            return {'n': 0, 'rent': 0, 'churn': 0, 'net': 0, 'onetime': 0, 'npv': 0, 'pos': 0, 'neg': 0}
+        return {
+            'n':      len(ndf),
+            'rent':   float(ndf['_rent'].sum()),
+            'churn':  float(ndf['_churn'].sum()),
+            'net':    float(ndf['_net'].sum()),
+            'onetime':float(ndf['_onetime'].sum()),
+            'npv':    float(ndf['_npv'].sum()),
+            'pos':    int((ndf['_npv'] > 0).sum()),
+            'neg':    int((ndf['_npv'] <= 0).sum()),
+        }
+
+    _ns250 = _npv_summary(_npv250)
+    _ns280 = _npv_summary(_npv280)
+    _ns300 = _npv_summary(_npv300)
+
+    def _npv_row(label, f250, f280, f300):
+        def _fmt(v): return '—' if v is None else v
+        return (
+            f'<tr>'
+            f'<td style="padding:7px 12px;border:1px solid #e8edf5;font-size:0.82rem;font-weight:600;color:#374151;">{label}</td>'
+            f'<td style="padding:7px 12px;border:1px solid #e8edf5;text-align:center;font-size:0.82rem;color:#2770f0;font-weight:700;">{_fmt(f250)}</td>'
+            f'<td style="padding:7px 12px;border:1px solid #e8edf5;text-align:center;font-size:0.82rem;color:#0891b2;font-weight:700;">{_fmt(f280)}</td>'
+            f'<td style="padding:7px 12px;border:1px solid #e8edf5;text-align:center;font-size:0.82rem;color:#7c3aed;font-weight:700;">{_fmt(f300)}</td>'
+            f'</tr>'
+        )
+
+    def _npv_val(ns, key, fmtfn):
+        return fmtfn(ns[key]) if ns['n'] > 0 else '—'
+
+    npv_summary_rows = (
+        _npv_row('Poboček ke zavření (navíc v simulaci)',
+                 _npv_val(_ns250, 'n', str),
+                 _npv_val(_ns280, 'n', str),
+                 _npv_val(_ns300, 'n', str))
+        + _npv_row('Ušetřené nájemné / rok',
+                   _npv_val(_ns250, 'rent', _fmtm),
+                   _npv_val(_ns280, 'rent', _fmtm),
+                   _npv_val(_ns300, 'rent', _fmtm))
+        + _npv_row('Ztráta z odchodu klientů / rok (6% churn)',
+                   _npv_val(_ns250, 'churn', _fmtm),
+                   _npv_val(_ns280, 'churn', _fmtm),
+                   _npv_val(_ns300, 'churn', _fmtm))
+        + _npv_row('Čistý roční přínos (nájem – churn)',
+                   _npv_val(_ns250, 'net', _fmtm),
+                   _npv_val(_ns280, 'net', _fmtm),
+                   _npv_val(_ns300, 'net', _fmtm))
+        + _npv_row('Jednorázové náklady zavření',
+                   _npv_val(_ns250, 'onetime', _fmtm),
+                   _npv_val(_ns280, 'onetime', _fmtm),
+                   _npv_val(_ns300, 'onetime', _fmtm))
+        + _npv_row('NPV celkem (4 roky, diskont 6 %)',
+                   _npv_val(_ns250, 'npv', _fmtm),
+                   _npv_val(_ns280, 'npv', _fmtm),
+                   _npv_val(_ns300, 'npv', _fmtm))
+        + _npv_row('Z toho poboček s pozitivním NPV',
+                   _npv_val(_ns250, 'pos', str),
+                   _npv_val(_ns280, 'pos', str),
+                   _npv_val(_ns300, 'pos', str))
+        + _npv_row('Z toho poboček se záporným NPV',
+                   _npv_val(_ns250, 'neg', str),
+                   _npv_val(_ns280, 'neg', str),
+                   _npv_val(_ns300, 'neg', str))
+    )
+
+    def _npv_branch_table(ndf, var_label, var_color):
+        if ndf is None or ndf.empty:
+            return f'<p style="color:#aaa;font-style:italic;">Žádná data ({var_label})</p>'
+        _sorted = ndf.sort_values('_npv', ascending=False)
+        rows = ''
+        for _i, (_idx, _r) in enumerate(_sorted.iterrows()):
+            _bg   = '#ffffff' if _i % 2 == 0 else '#f8fbff'
+            _bn   = str(_r.get('BRANCH_NAME', _r.get('BRANCH_CODE', '')) or '')
+            _reg  = str(_r.get('REGION_NAME', '') or '')
+            _bc   = int(_r.get('BRANCH_CODE', 0) or 0)
+            _npvv = float(_r.get('_npv', 0) or 0)
+            _npv_col  = '#059669' if _npvv > 0 else '#dc2626'
+            _npv_bg   = '#ecfdf5' if _npvv > 0 else '#fef2f2'
+            _rent_v   = float(_r.get('_rent', 0) or 0)
+            _churn_v  = float(_r.get('_churn', 0) or 0)
+            _net_v    = float(_r.get('_net', 0) or 0)
+            _ot_v     = float(_r.get('_onetime', 0) or 0)
+            _net_col  = '#059669' if _net_v > 0 else '#dc2626'
+            rows += (
+                f'<tr style="background:{_bg};">'
+                f'<td style="padding:5px 8px;border:1px solid #e8edf5;white-space:nowrap;">'
+                f'<div style="font-weight:700;font-size:0.8rem;color:#0f172a;">{_bn}</div>'
+                f'<div style="font-size:0.68rem;color:#94a3b8;">{_reg} · #{_bc}</div>'
+                f'</td>'
+                f'<td style="padding:5px 8px;border:1px solid #e8edf5;text-align:right;font-size:0.8rem;">{_fmtm(_rent_v)}</td>'
+                f'<td style="padding:5px 8px;border:1px solid #e8edf5;text-align:right;font-size:0.8rem;color:#dc2626;">−{_fmtm(_churn_v)}</td>'
+                f'<td style="padding:5px 8px;border:1px solid #e8edf5;text-align:right;font-size:0.8rem;color:{_net_col};font-weight:600;">{_fmtm(_net_v)}</td>'
+                f'<td style="padding:5px 8px;border:1px solid #e8edf5;text-align:right;font-size:0.8rem;color:#6b7280;">−{_fmtm(_ot_v)}</td>'
+                f'<td style="padding:5px 8px;border:1px solid #e8edf5;text-align:right;font-size:0.8rem;'
+                f'font-weight:700;color:{_npv_col};background:{_npv_bg};">{_fmtm(_npvv)}</td>'
+                f'</tr>'
+            )
+        return (
+            f'<div style="overflow-x:auto;margin-top:8px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);">'
+            f'<table style="width:100%;border-collapse:collapse;font-size:0.8rem;">'
+            f'<thead><tr style="background:{var_color};color:#fff;">'
+            f'<th style="padding:7px 8px;border:1px solid rgba(255,255,255,.2);text-align:left;min-width:180px;">Pobočka</th>'
+            f'<th style="padding:7px 8px;border:1px solid rgba(255,255,255,.2);text-align:right;min-width:120px;">Nájem / rok</th>'
+            f'<th style="padding:7px 8px;border:1px solid rgba(255,255,255,.2);text-align:right;min-width:120px;">Churn ztráta / rok</th>'
+            f'<th style="padding:7px 8px;border:1px solid rgba(255,255,255,.2);text-align:right;min-width:120px;">Čistý roční přínos</th>'
+            f'<th style="padding:7px 8px;border:1px solid rgba(255,255,255,.2);text-align:right;min-width:120px;">Jednorázové náklady</th>'
+            f'<th style="padding:7px 8px;border:1px solid rgba(255,255,255,.2);text-align:right;min-width:120px;">NPV (4 r., 6 %)</th>'
+            f'</tr></thead>'
+            f'<tbody>{rows}</tbody>'
+            f'</table></div>'
+        )
+
+    _npv_tab_250 = _npv_branch_table(_npv250, 'Simulace 250', '#2770f0')
+    _npv_tab_280 = _npv_branch_table(_npv280, 'Simulace 280', '#0891b2')
+    _npv_tab_300 = _npv_branch_table(_npv300, 'Simulace 300', '#7c3aed')
+
+    # ── Citlivostní analýza — příprava JSON dat ───────────────────────────────
+    import json as _sens_json_mod
+    _src_df = df250 if df250 is not None else (df280 if df280 is not None else df300)
+    if _src_df is not None and 'SIM_CI_2030' in _src_df.columns:
+        _sens_branches = []
+        for _, _sr in _src_df.iterrows():
+            _sens_branches.append({
+                'bc':  int(_sr.get('BRANCH_CODE') or 0),
+                'n':   str(_sr.get('BRANCH_NAME')  or ''),
+                'reg': str(_sr.get('REGION_NAME')  or ''),
+                'fmt': str(_sr.get('BRANCH_FORMAT') or '').lower().strip(),
+                'ci':  round(float(_sr.get('SIM_CI_2030') or 0.0), 5),
+                'rev': round(float(_sr.get('SIM_REV_2030') or 0.0), 0),
+            })
+        _sens_json    = _sens_json_mod.dumps(_sens_branches)
+        _keep250_json = _sens_json_mod.dumps(sorted(SIM_250_KEEP_CODES))
+        _keep280_json = _sens_json_mod.dumps(sorted(SIM_280_KEEP_CODES))
+        _keep300_json = _sens_json_mod.dumps(sorted(SIM_300_KEEP_CODES))
+    else:
+        _sens_json = '[]'
+        _keep250_json = _keep280_json = _keep300_json = '[]'
+
     # ── Výstup — kompletní standalone HTML stránka ───────────────────────────
     return f"""<!DOCTYPE html>
 <html lang="cs">
@@ -6000,6 +6168,8 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <button class="tab-btn" onclick="showTab('sim280',this)">&#x1F3E6; Simulace 280</button>
   <button class="tab-btn" onclick="showTab('sim300',this)">&#x1F3E6; Simulace 300</button>
   <button class="tab-btn" onclick="showTab('branches',this)">&#x1F4C8; V&#253;voj parametr&#367;</button>
+  <button class="tab-btn" onclick="showTab('npv',this)">&#x1F4B0; Finan&#269;n&#237; dopad</button>
+  <button class="tab-btn" onclick="showTab('sensitivity',this)">&#x1F3AF; Citlivostn&#237; anal&#253;za</button>
 </div>
 
 <!-- ═══ TAB: Porovnání ═══ -->
@@ -6100,6 +6270,103 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   </div>
 </div>
 
+<!-- ═══ TAB: Finanční dopad ═══ -->
+<div id="tab-npv" class="tab-panel">
+  <div class="card">
+    <div class="card-title">&#x1F4B0; Finan&#269;n&#237; dopad zav&#237;r&#225;n&#237; pobo&#269;ek</div>
+    <p style="font-size:0.82rem;color:#555;margin-bottom:14px;line-height:1.7;">
+      <b>NPV uzav&#345;en&#237;</b> = &minus;jednor&#225;zov&#233; n&#225;klady + &#269;ist&#253; ro&#269;n&#237; p&#345;&#237;nos &times; anuita (4&nbsp;roky, diskont&nbsp;6&nbsp;%).<br>
+      <b>&#268;ist&#253; ro&#269;n&#237; p&#345;&#237;nos</b> = u&#353;et&#345;en&#233; n&#225;jemn&#233; &minus; ztráta z odchodu klient&#367; (churn&nbsp;6&nbsp;% &times; v&#253;nosy).<br>
+      <b>Jednor&#225;zov&#233; n&#225;klady</b> = 6&nbsp;m&#283;s&#237;c&#367; n&#225;jmu (v&#253;pov&#283;&#271;) + 3&nbsp;m&#283;s&#237;ce mzdy na bank&#233;&#345;e (odhad 80&nbsp;000&nbsp;K&#269;).
+    </p>
+    <div style="overflow-x:auto;">
+      <table class="cmp-table">
+        <thead>
+          <tr>
+            <th style="min-width:260px;text-align:left;">Ukazatel</th>
+            <th class="h250">&#x1F3E6; Simulace 250</th>
+            <th class="h280">&#x1F3E6; Simulace 280</th>
+            <th class="h300">&#x1F3E6; Simulace 300</th>
+          </tr>
+        </thead>
+        <tbody>{npv_summary_rows}</tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:#2770f0;">&#x1F3E6; Simulace 250 &mdash; detail pobo&#269;ek ke zav&#345;en&#237;</div>
+    {_npv_tab_250}
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:#0891b2;">&#x1F3E6; Simulace 280 &mdash; detail pobo&#269;ek ke zav&#345;en&#237;</div>
+    {_npv_tab_280}
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:#7c3aed;">&#x1F3E6; Simulace 300 &mdash; detail pobo&#269;ek ke zav&#345;en&#237;</div>
+    {_npv_tab_300}
+  </div>
+</div>
+
+<!-- ═══ TAB: Citlivostní analýza ═══ -->
+<div id="tab-sensitivity" class="tab-panel">
+  <div class="card">
+    <div class="card-title">&#x1F3AF; Citlivostn&#237; anal&#253;za vah hodnocen&#237;</div>
+    <p style="font-size:0.82rem;color:#555;margin-bottom:16px;line-height:1.7;">
+      Simulovan&#253; rating 2030 = percentil C/I &times; <b>v&#225;ha C/I</b> + po&#345;ad&#237; v&#253;nos&#367; &times; <b>v&#225;ha v&#253;nos&#367;</b>.<br>
+      Zm&#283;&#328;te v&#225;hy pomoc&#237; slider&#367; &mdash; tabulka okam&#382;it&#283; uk&#225;&#382;e, kter&#233; pobo&#269;ky <b>p&#345;esko&#269;&#237;</b> ze zav&#345;en&#237; na ponech&#225;n&#237; nebo naopak.
+    </p>
+    <div style="display:flex;gap:32px;flex-wrap:wrap;align-items:flex-start;margin-bottom:20px;">
+      <div style="min-width:220px;">
+        <label style="font-size:0.85rem;font-weight:700;color:#374151;display:block;margin-bottom:6px;">
+          V&#225;ha C/I ratio: <span id="lbl-wci" style="color:#059669;">40&nbsp;%</span>
+        </label>
+        <input type="range" id="sl-wci" min="0" max="100" value="40" step="5"
+               style="width:100%;accent-color:#059669;" oninput="sensUpdate()">
+        <div style="font-size:0.72rem;color:#888;margin-top:2px;">0&nbsp;% = ignoruj C/I &nbsp;|&nbsp; 100&nbsp;% = pouze C/I</div>
+      </div>
+      <div style="min-width:220px;">
+        <label style="font-size:0.85rem;font-weight:700;color:#374151;display:block;margin-bottom:6px;">
+          V&#225;ha v&#253;nos&#367;: <span id="lbl-wrev" style="color:#2770f0;">60&nbsp;%</span>
+        </label>
+        <input type="range" id="sl-wrev" min="0" max="100" value="60" step="5"
+               style="width:100%;accent-color:#2770f0;" oninput="sensUpdate2()">
+        <div style="font-size:0.72rem;color:#888;margin-top:2px;">Automaticky = 100&nbsp;% &minus; v&#225;ha C/I</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;justify-content:flex-end;padding-bottom:4px;">
+        <button onclick="sensReset()"
+                style="padding:7px 14px;border:1px solid #d1d5db;border-radius:8px;
+                       background:#f9fafb;font-size:0.82rem;cursor:pointer;font-weight:600;">
+          &#x21BA; Reset (40/60)
+        </button>
+      </div>
+    </div>
+    <div id="sens-summary" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;"></div>
+    <div style="font-size:0.85rem;font-weight:700;color:#0f172a;margin-bottom:8px;">
+      Pobo&#269;ky m&#283;n&#237;c&#237; stav p&#345;i aktu&#225;ln&#237;ch v&#225;h&#225;ch
+      <span id="sens-mover-count" style="color:#2770f0;"></span>
+    </div>
+    <div style="overflow-x:auto;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);">
+      <table style="width:100%;border-collapse:collapse;font-size:0.8rem;" id="sens-tbl">
+        <thead>
+          <tr style="background:#1e3a5f;color:#fff;">
+            <th style="padding:7px 8px;border:1px solid rgba(255,255,255,.2);text-align:left;min-width:180px;">Pobo&#269;ka</th>
+            <th style="padding:7px 8px;border:1px solid rgba(255,255,255,.2);text-align:center;min-width:70px;">Nov&#253; rank</th>
+            <th style="padding:7px 8px;border:1px solid rgba(255,255,255,.2);text-align:center;min-width:70px;">C/I 2030</th>
+            <th style="padding:7px 8px;border:1px solid rgba(255,255,255,.2);text-align:center;min-width:90px;">V&#253;nosy 2030</th>
+            <th style="padding:7px 8px;border:1px solid rgba(255,255,255,.2);text-align:center;min-width:90px;">Sim 250</th>
+            <th style="padding:7px 8px;border:1px solid rgba(255,255,255,.2);text-align:center;min-width:90px;">Sim 280</th>
+            <th style="padding:7px 8px;border:1px solid rgba(255,255,255,.2);text-align:center;min-width:90px;">Sim 300</th>
+          </tr>
+        </thead>
+        <tbody id="sens-tbody"></tbody>
+      </table>
+    </div>
+    <p id="sens-nomover" style="display:none;color:#059669;font-size:0.85rem;font-weight:600;margin-top:8px;">
+      &#x2713; &#381;&#225;dn&#233; pobo&#269;ky nem&#283;n&#237; stav &mdash; simulace jsou robustn&#237; v&#367;&#269;i t&#233;to zm&#283;n&#283; vah.
+    </p>
+  </div>
+</div>
+
 <script>
 function showTab(id, btn) {{
   document.querySelectorAll('.tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
@@ -6126,6 +6393,139 @@ function brFilter(q) {{
 setTimeout(function() {{
   brFilter('');
 }}, 0);
+
+// ── Citlivostní analýza ────────────────────────────────────────────────────
+var sensBranches = {_sens_json};
+var origKeep250  = new Set({_keep250_json});
+var origKeep280  = new Set({_keep280_json});
+var origKeep300  = new Set({_keep300_json});
+
+function _fmtRevSens(v) {{
+  if (!v) return '—';
+  if (v >= 1e9)  return (v/1e9).toFixed(1) + ' mld';
+  if (v >= 1e6)  return (v/1e6).toFixed(1) + ' mil';
+  if (v >= 1e3)  return (v/1e3).toFixed(0) + ' tis';
+  return v.toFixed(0);
+}}
+function _fmtCIpct(v) {{ return (v * 100).toFixed(1) + ' %'; }}
+
+function sensUpdate() {{
+  var wci = parseInt(document.getElementById('sl-wci').value) / 100;
+  var wrev = 1.0 - wci;
+  document.getElementById('sl-wrev').value = Math.round(wrev * 100);
+  document.getElementById('lbl-wci').textContent  = Math.round(wci  * 100) + ' %';
+  document.getElementById('lbl-wrev').textContent = Math.round(wrev * 100) + ' %';
+  sensCompute(wci, wrev);
+}}
+function sensUpdate2() {{
+  var wrev = parseInt(document.getElementById('sl-wrev').value) / 100;
+  var wci  = 1.0 - wrev;
+  document.getElementById('sl-wci').value = Math.round(wci * 100);
+  document.getElementById('lbl-wci').textContent  = Math.round(wci  * 100) + ' %';
+  document.getElementById('lbl-wrev').textContent = Math.round(wrev * 100) + ' %';
+  sensCompute(wci, wrev);
+}}
+function sensReset() {{
+  document.getElementById('sl-wci').value  = 40;
+  document.getElementById('sl-wrev').value = 60;
+  document.getElementById('lbl-wci').textContent  = '40 %';
+  document.getElementById('lbl-wrev').textContent = '60 %';
+  sensCompute(0.40, 0.60);
+}}
+
+function sensCompute(wci, wrev) {{
+  var n = sensBranches.length;
+  if (n === 0) return;
+
+  // CI percentile: ascending rank (lower CI → lower percentile index → lower score contribution)
+  var byCI = sensBranches.slice().sort(function(a,b) {{ return a.ci - b.ci || a.bc - b.bc; }});
+  byCI.forEach(function(b, i) {{ b.ci_perc = Math.max(1, Math.round((i + 1) / n * 100)); }});
+
+  // Revenue rank: descending (higher rev → lower rank number → lower score contribution)
+  var byRev = sensBranches.slice().sort(function(a,b) {{ return b.rev - a.rev || a.bc - b.bc; }});
+  byRev.forEach(function(b, i) {{ b.rev_rnk = i + 1; }});
+
+  // Score & rank
+  sensBranches.forEach(function(b) {{ b.score = b.ci_perc * wci + b.rev_rnk * wrev; }});
+  var ranked = sensBranches.slice().sort(function(a,b) {{ return a.score - b.score || a.bc - b.bc; }});
+  ranked.forEach(function(b, i) {{ b.ir_rank = i + 1; }});
+
+  // New keep sets
+  var new250 = new Set(ranked.slice(0, 250).map(function(b) {{ return b.bc; }}));
+  var new280 = new Set(ranked.slice(0, 280).map(function(b) {{ return b.bc; }}));
+  var new300 = new Set(ranked.slice(0, 300).map(function(b) {{ return b.bc; }}));
+
+  // Movers
+  var movers = [];
+  sensBranches.forEach(function(b) {{
+    var w250 = origKeep250.has(b.bc), n250 = new250.has(b.bc);
+    var w280 = origKeep280.has(b.bc), n280 = new280.has(b.bc);
+    var w300 = origKeep300.has(b.bc), n300 = new300.has(b.bc);
+    if (w250 !== n250 || w280 !== n280 || w300 !== n300) {{
+      movers.push({{ b:b, w250:w250, n250:n250, w280:w280, n280:n280, w300:w300, n300:n300 }});
+    }}
+  }});
+  movers.sort(function(a, b) {{ return a.b.ir_rank - b.b.ir_rank; }});
+
+  // Summary chips
+  var sumEl = document.getElementById('sens-summary');
+  function _chip(lbl, val, col, bg) {{
+    return '<span style="background:' + bg + ';color:' + col + ';border:1px solid ' + col + '55;'
+         + 'border-radius:8px;padding:4px 11px;font-size:0.8rem;font-weight:700;white-space:nowrap;">'
+         + lbl + ': <b>' + val + '</b></span>';
+  }}
+  sumEl.innerHTML = (
+    _chip('250 vstoup&#237;',   movers.filter(function(m){{return !m.w250&&m.n250;}}).length, '#1d4ed8','#eff6ff') +
+    _chip('250 vystoup&#237;',  movers.filter(function(m){{return  m.w250&&!m.n250;}}).length,'#dc2626','#fef2f2') +
+    _chip('280 vstoup&#237;',   movers.filter(function(m){{return !m.w280&&m.n280;}}).length, '#155e75','#ecfeff') +
+    _chip('280 vystoup&#237;',  movers.filter(function(m){{return  m.w280&&!m.n280;}}).length,'#b45309','#fffbeb') +
+    _chip('300 vstoup&#237;',   movers.filter(function(m){{return !m.w300&&m.n300;}}).length, '#6d28d9','#f5f3ff') +
+    _chip('300 vystoup&#237;',  movers.filter(function(m){{return  m.w300&&!m.n300;}}).length,'#be123c','#fff1f2')
+  );
+
+  // Movers table
+  var tbody  = document.getElementById('sens-tbody');
+  var noMsg  = document.getElementById('sens-nomover');
+  document.getElementById('sens-mover-count').textContent = '(' + movers.length + ' pobo&#269;ek)';
+
+  function _stCell(was, now, lbl) {{
+    var td = '<td style="padding:5px 8px;border:1px solid #e8edf5;text-align:center;">';
+    if (!was && now) return td + '<span style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;border-radius:8px;padding:2px 7px;font-size:0.72rem;font-weight:700;">' + lbl + ' &#x2713;</span></td>';
+    if  (was && !now) return td + '<span style="background:#fde8e8;color:#9b1c1c;border:1px solid #fca5a5;border-radius:8px;padding:2px 7px;font-size:0.72rem;font-weight:700;">' + lbl + ' &#x2717;</span></td>';
+    if  (was &&  now) return td + '<span style="background:#eff6ff;color:#1d4ed8;border:1px solid #93c5fd;border-radius:8px;padding:2px 7px;font-size:0.72rem;">' + lbl + '</span></td>';
+    return td + '<span style="background:#f3f4f6;color:#9ca3af;border:1px solid #e5e7eb;border-radius:8px;padding:2px 7px;font-size:0.72rem;">—</span></td>';
+  }}
+
+  if (movers.length === 0) {{
+    tbody.innerHTML = '';
+    noMsg.style.display = 'block';
+  }} else {{
+    noMsg.style.display = 'none';
+    var html = '';
+    movers.forEach(function(m, i) {{
+      var bg  = i % 2 === 0 ? '#ffffff' : '#f8fbff';
+      var anyIn  = (!m.w250&&m.n250)||(!m.w280&&m.n280)||(!m.w300&&m.n300);
+      var anyOut = ( m.w250&&!m.n250)||( m.w280&&!m.n280)||( m.w300&&!m.n300);
+      var lb = anyIn ? '3px solid #059669' : (anyOut ? '3px solid #dc2626' : '1px solid #e8edf5');
+      var b  = m.b;
+      html += '<tr style="background:' + bg + ';border-left:' + lb + ';">';
+      html += '<td style="padding:5px 8px;border:1px solid #e8edf5;white-space:nowrap;">'
+            + '<div style="font-weight:700;font-size:0.8rem;">' + (b.n||b.bc) + '</div>'
+            + '<div style="font-size:0.68rem;color:#94a3b8;">' + b.reg + ' #' + b.bc + '</div></td>';
+      html += '<td style="padding:5px 8px;border:1px solid #e8edf5;text-align:center;font-weight:700;">' + b.ir_rank + '</td>';
+      html += '<td style="padding:5px 8px;border:1px solid #e8edf5;text-align:center;">' + _fmtCIpct(b.ci) + '</td>';
+      html += '<td style="padding:5px 8px;border:1px solid #e8edf5;text-align:center;">' + _fmtRevSens(b.rev) + '</td>';
+      html += _stCell(m.w250,m.n250,'250');
+      html += _stCell(m.w280,m.n280,'280');
+      html += _stCell(m.w300,m.n300,'300');
+      html += '</tr>';
+    }});
+    tbody.innerHTML = html;
+  }}
+}}
+
+// Init sensitivity
+setTimeout(function() {{ sensCompute(0.40, 0.60); }}, 50);
 </script>
 </body>
 </html>"""
