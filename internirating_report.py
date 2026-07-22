@@ -5905,9 +5905,6 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .cmp-table th.h250{{background:#eff6ff;color:#1d4ed8;}}
 .cmp-table th.h300{{background:#f5f3ff;color:#6d28d9;}}
 .br-table{{width:100%;border-collapse:collapse;font-size:0.82rem;}}
-.br-table thead th{{background:#2770f0;color:#fff;padding:7px 8px;
-    border:1px solid #1a4db5;font-size:0.73rem;font-weight:700;white-space:nowrap;
-    position:sticky;top:44px;z-index:10;}}
 .br-search{{padding:8px 14px;border:1px solid #d1d5db;border-radius:8px;
             font-size:0.85rem;width:280px;outline:none;}}
 .br-search:focus{{border-color:#2770f0;box-shadow:0 0 0 3px #2770f022;}}
@@ -6000,16 +5997,16 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     {no_data_msg}
     <div style="overflow-x:auto;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);">
       <table class="br-table" id="br-tbl">
-        <thead>
-          <tr>
-            <th style="text-align:left;min-width:180px;">Pobo&#269;ka</th>
-            <th style="text-align:center;min-width:65px;">Sim.</th>
-            <th style="text-align:center;min-width:110px;">Rating 2025&#x2192;2030</th>
-            <th style="text-align:center;min-width:110px;">C/I trend<br><span style="font-weight:400;font-size:0.65rem;opacity:.85;">ni&#382;&#353;&#237; = lep&#353;&#237; &middot; v&#225;ha 40&nbsp;%</span></th>
-            <th style="text-align:left;min-width:130px;">C/I hodnoty</th>
-            <th style="text-align:center;min-width:110px;">V&#253;nosy trend<br><span style="font-weight:400;font-size:0.65rem;opacity:.85;">vy&#353;&#353;&#237; = lep&#353;&#237; &middot; v&#225;ha 60&nbsp;%</span></th>
-            <th style="text-align:left;min-width:140px;">Nov&#233; v&#253;nosy + CAGR</th>
-            <th style="text-align:left;min-width:130px;">Klienti 2030</th>
+        <thead style="position:sticky;top:0;z-index:5;">
+          <tr style="background:#2770f0;color:white;">
+            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:left;min-width:180px;">Pobo&#269;ka</th>
+            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:center;min-width:65px;">Sim.</th>
+            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:center;min-width:110px;">Rating 2025&#x2192;2030</th>
+            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:center;min-width:110px;">C/I trend<br><span style="font-weight:400;font-size:0.65rem;opacity:.85;">ni&#382;&#353;&#237; = lep&#353;&#237; &middot; v&#225;ha 40&nbsp;%</span></th>
+            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:left;min-width:130px;">C/I hodnoty</th>
+            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:center;min-width:110px;">V&#253;nosy trend<br><span style="font-weight:400;font-size:0.65rem;opacity:.85;">vy&#353;&#353;&#237; = lep&#353;&#237; &middot; v&#225;ha 60&nbsp;%</span></th>
+            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:left;min-width:140px;">Nov&#233; v&#253;nosy + CAGR</th>
+            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:left;min-width:130px;">Klienti 2030</th>
           </tr>
         </thead>
         <tbody id="br-tbody">
