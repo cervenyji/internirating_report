@@ -116,6 +116,46 @@ SIM_300_DF: 'pd.DataFrame' = None
 SIM_BASE_DF: 'pd.DataFrame' = None  # baseline: žádné zavírání, všechny pobočky
 SIM_CLOSE_DF: 'pd.DataFrame' = None  # plánovaně zavřené pobočky (d_close při target_n≤250)
 
+# Krajská města ČR — sídla 14 krajů (Praha je sídlem Hl. m. Praha i Středočeského kraje)
+KRAJSKA_MESTA: frozenset = frozenset({
+    'Praha', 'České Budějovice', 'Plzeň', 'Karlovy Vary',
+    'Ústí nad Labem', 'Liberec', 'Hradec Králové', 'Pardubice',
+    'Jihlava', 'Brno', 'Olomouc', 'Zlín', 'Ostrava',
+})
+
+# Okresní města ČR — sídla 76 okresů + Praha (77 sídel, dedup na 75 unikátních)
+OKRESNI_MESTA: frozenset = frozenset({
+    # Středočeský kraj
+    'Benešov', 'Beroun', 'Kladno', 'Kolín', 'Kutná Hora', 'Mělník',
+    'Mladá Boleslav', 'Nymburk', 'Praha', 'Příbram', 'Rakovník',
+    # Jihočeský kraj
+    'České Budějovice', 'Český Krumlov', 'Jindřichův Hradec', 'Písek',
+    'Prachatice', 'Strakonice', 'Tábor',
+    # Plzeňský kraj
+    'Domažlice', 'Klatovy', 'Plzeň', 'Rokycany', 'Tachov',
+    # Karlovarský kraj
+    'Cheb', 'Karlovy Vary', 'Sokolov',
+    # Ústecký kraj
+    'Chomutov', 'Děčín', 'Litoměřice', 'Louny', 'Most', 'Teplice',
+    'Ústí nad Labem',
+    # Liberecký kraj
+    'Česká Lípa', 'Jablonec nad Nisou', 'Liberec', 'Semily',
+    # Královéhradecký kraj
+    'Hradec Králové', 'Jičín', 'Náchod', 'Rychnov nad Kněžnou', 'Trutnov',
+    # Pardubický kraj
+    'Chrudim', 'Pardubice', 'Svitavy', 'Ústí nad Orlicí',
+    # Kraj Vysočina
+    'Havlíčkův Brod', 'Jihlava', 'Pelhřimov', 'Třebíč', 'Žďár nad Sázavou',
+    # Jihomoravský kraj
+    'Blansko', 'Brno', 'Břeclav', 'Hodonín', 'Vyškov', 'Znojmo',
+    # Olomoucký kraj
+    'Jeseník', 'Olomouc', 'Prostějov', 'Přerov', 'Šumperk',
+    # Zlínský kraj
+    'Kroměříž', 'Uherské Hradiště', 'Vsetín', 'Zlín',
+    # Moravskoslezský kraj
+    'Bruntál', 'Frýdek-Místek', 'Karviná', 'Nový Jičín', 'Opava', 'Ostrava',
+})
+
 # IDs poboček s jednočlenným provozem
 JEDNOCLENNY_IDS: set = {
     423, 667, 593, 492, 294, 317, 273, 274, 254, 326, 304, 534,
@@ -521,6 +561,8 @@ NOVE_NAZVY = {
     "GPS_Y":             "GPS Y",
     "ORP_NAZEV":         "ORP",
     "ORP_KOD":           "ORP kód",
+    "IS_KRAJSKE_MESTO":  "Krajské město",
+    "IS_OKRESNI_MESTO":  "Okresní město",
 
     # ── 👥 Klienti ────────────────────────────────────────────────
     "POCET_KLIENTU_EOY_2021": "Klienti EOY 2021",
@@ -8958,6 +9000,19 @@ def _apply_common_formatting(d, cols_to_show):
                     "border-radius:10px;padding:2px 8px;font-size:0.75rem;font-weight:700;'>Ne</span>")
         d['BRANCH_CLOSED'] = d['BRANCH_CLOSED'].apply(_fmt_open)
 
+    # IS_KRAJSKE_MESTO / IS_OKRESNI_MESTO — Ano zlatá pill, Ne šedá proškrtnutá
+    def _fmt_mestotyp(x, truthy_label='Ano'):
+        is_true = (str(x).strip().upper() in ('TRUE', '1', 'YES', 'Y', 'ANO')) if not isinstance(x, bool) else bool(x)
+        if is_true:
+            return ("<span style='background:#fef9c3;color:#713f12;border:1px solid #fde047;"
+                    "border-radius:10px;padding:2px 8px;font-size:0.75rem;font-weight:700;'>"
+                    f"{truthy_label}</span>")
+        return "<span style='color:#d1d5db;font-size:0.75rem;'>—</span>"
+
+    for _mc in ['IS_KRAJSKE_MESTO', 'IS_OKRESNI_MESTO']:
+        if _mc in cols_to_show and _mc in d.columns:
+            d[_mc] = d[_mc].apply(_fmt_mestotyp)
+
     # Bezhotovostní — Ano modrý badge jako NF, Ne šedý badge jako SF
     _BLUE_BADGE_ANO = ("<span style='background:#2770f0;color:white;border-radius:10px;"
                        "padding:2px 8px;font-size:0.75rem;font-weight:700;'>Ano</span>")
@@ -9677,7 +9732,7 @@ def write_excel_sheet(ws, df_excel, freeze="D2"):
 # Skupiny sloupců pro přepínání v hlavní tabulce regionu
 COL_GROUPS = [
     # ── 🗄️ Databáze síť ───────────────────────────────────────────────────────
-    ("📍 Adresa",              ["Oblast", "Region fixed", "Město", "Obvod / část", "Ulice", "Č. popisné", "Č. orientační", "RUIAN ID", "ORP", "ORP kód"], "#f0f4f8"),
+    ("📍 Adresa",              ["Oblast", "Region fixed", "Město", "Obvod / část", "Ulice", "Č. popisné", "Č. orientační", "RUIAN ID", "ORP", "ORP kód", "Krajské město", "Okresní město"], "#f0f4f8"),
     ("🏢 Budova",              ["Aktuálně otevřeno", "Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Jednočlenný provoz", "Pobočka v OC", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
     ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
     # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
@@ -21730,6 +21785,25 @@ if 'REGION_NAME' in rating_status.columns:
         rating_status.loc[_bc_num == _bc_val, 'REGION_FIXED'] = _reg_val
 else:
     rating_status['REGION_FIXED'] = ''
+
+# ── Klasifikace polohy pobočky: krajské / okresní město ─────────────────────
+def _city_base(city_val):
+    """Normalizuje název města — Praha 1–22 → 'Praha'."""
+    if pd.isna(city_val):
+        return ''
+    import re as _re
+    c = str(city_val).strip()
+    if _re.match(r'^Praha\s+\d', c):
+        return 'Praha'
+    return c
+
+if 'CITY' in rating_status.columns:
+    _city_norm = rating_status['CITY'].apply(_city_base)
+    rating_status['IS_KRAJSKE_MESTO'] = _city_norm.isin(KRAJSKA_MESTA)
+    rating_status['IS_OKRESNI_MESTO'] = _city_norm.isin(OKRESNI_MESTA)
+else:
+    rating_status['IS_KRAJSKE_MESTO'] = False
+    rating_status['IS_OKRESNI_MESTO'] = False
 
 # ── Aktuální stav poboček z DBS xlsx (BRANCH_CLOSED) ────────────────────────
 print("📂 Načítám aktuální stav poboček z dbs_branch_network_epb.xlsx...")
