@@ -788,6 +788,7 @@ NOVE_NAZVY = {
     "IE_Q_HTML":               "Index expozice kvintil",
 
     # ── 🏧 ATM ────────────────────────────────────────────────────
+    "ATM_COUNT":         "Počet ATM",
     "ATM_SUMMARY_HTML":  "ATM přehled",
     "ATM_VOLNA_KAPACITA": "ATM volná kap. %",
     "ATM_VYBERY_MESIC":  "ATM výběry průměr/měs.",
@@ -8272,6 +8273,23 @@ def prepare_rating_status(df):
 
     if _exp_atm is not None or _kap_atm is not None:
         rating_status['ATM_SUMMARY_HTML'] = rating_status['BRANCH_CODE'].apply(_atm_summary_html)
+        # Počet ATM na pobočce (počet řádků v export_atm pro daný BRANCH_CODE)
+        if _exp_atm is not None and not _exp_atm.empty:
+            _atm_id_col = next((c for c in ['BRANCH_ID', 'BRANCH_CODE', 'POBOCKA']
+                                if c in _exp_atm.columns), None)
+            if _atm_id_col:
+                _atm_counts = (
+                    _exp_atm.assign(**{_atm_id_col: pd.to_numeric(_exp_atm[_atm_id_col], errors='coerce')})
+                    .groupby(_atm_id_col)
+                    .size()
+                    .rename('ATM_COUNT')
+                )
+                _bc_num = pd.to_numeric(rating_status['BRANCH_CODE'], errors='coerce')
+                rating_status['ATM_COUNT'] = _bc_num.map(_atm_counts).fillna(0).astype(int)
+            else:
+                rating_status['ATM_COUNT'] = 0
+        else:
+            rating_status['ATM_COUNT'] = 0
         # Samostatné numerické sloupce z kapacita_atm
         if _kap_atm is not None and not _kap_atm.empty:
             _kid = next((c for c in ['BRANCH_ID','BRANCH_CODE'] if c in _kap_atm.columns), None)
@@ -8305,6 +8323,7 @@ def prepare_rating_status(df):
             rating_status['ATM_VYBERY_PO_PREV'] = None
             rating_status['ATM_VKLADY_PO_PREV'] = None
     else:
+        rating_status['ATM_COUNT']          = 0
         rating_status['ATM_SUMMARY_HTML']   = '—'
         rating_status['ATM_VOLNA_KAPACITA'] = None
         rating_status['ATM_VYBERY_MESIC']   = None
@@ -9826,7 +9845,7 @@ COL_GROUPS = [
         "Celk. plocha pobočky", "Plocha pouze D5", "Plocha nad optimál",
     ], "#ddc5ea"),
     # ── 🔧 Ostatní ────────────────────────────────────────────────────────────
-    ("🏧 ATM",                ["ATM přehled", "ATM volná kap. %",
+    ("🏧 ATM",                ["Počet ATM", "ATM přehled", "ATM volná kap. %",
                                 "ATM výběry průměr/měs.", "ATM vklady průměr/měs.",
                                 "ATM výběry po převodu/měs.", "ATM vklady po převodu/měs."], "#e3f2fd"),
 ]
