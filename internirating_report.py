@@ -696,6 +696,10 @@ NOVE_NAZVY = {
     "INVESTICE_FHC_(ROK)":         "Rok investice FHC",
     "INVESTICE_NF_OR_FHC_(ROK)":   "Rok plánované investice",
 
+    # ── 🏗️ Modely (sim. 2030) ──────────────────────────────────────
+    "SIM_IR_2030":                 "Rating 2030 (sim.)",
+    "SIM_IR_Q_2030":               "Kvintil 2030 (sim.)",
+
     # ── 💵 Strategie hotovosti ────────────────────────────────────
     "PLAN_NEW_CASHIERLESS_(ROK)":  "Rok cashless přechodu",
     "NEW_CASHIERLESS_STATUS":      "Status cashless",
@@ -5308,6 +5312,99 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250, max_clos
             f'</div>'
         )
 
+    # ── 11b. BNS Strategie breakdown — pobočky mimo model ────────
+    _bns_breakdown_html = ''
+    _strat_col_bns = 'FOOTPRINT_STRATEGIE_(2030)'
+    _rok_col_bns   = 'PLAN_CLOSE_(ROK)'
+    # Combine d_close (pre-excluded from pool) + rest (pool but not top N)
+    _nm_parts = []
+    if len(d_close) > 0:  _nm_parts.append(d_close.copy())
+    if len(rest)   > 0:  _nm_parts.append(rest.copy())
+    if _nm_parts:
+        _non_model_df = pd.concat(_nm_parts, ignore_index=True)
+        if _strat_col_bns in _non_model_df.columns:
+            _non_model_df['_bns_norm'] = (
+                _non_model_df[_strat_col_bns].fillna('').astype(str).str.lower().str.strip()
+            )
+            _nm_close = _non_model_df[_non_model_df['_bns_norm'].str.contains('close', na=False)]
+            _nm_keep  = _non_model_df[_non_model_df['_bns_norm'].str.contains('keep',  na=False)]
+            _nm_other = _non_model_df[
+                ~_non_model_df['_bns_norm'].str.contains('close|keep', na=False)
+            ]
+            # Close — group by year
+            _close_rows = ''
+            if not _nm_close.empty:
+                if _rok_col_bns in _nm_close.columns:
+                    _yr_series = (
+                        _nm_close[_rok_col_bns]
+                        .fillna('neuvedeno').astype(str)
+                        .str.strip().replace({'nan': 'neuvedeno', 'None': 'neuvedeno', '': 'neuvedeno'})
+                    )
+                else:
+                    _yr_series = pd.Series(['neuvedeno'] * len(_nm_close), index=_nm_close.index)
+                for _yr, _cnt in _yr_series.value_counts().sort_index().items():
+                    _yr_lbl = str(_yr)
+                    _close_rows += (
+                        f'<tr><td style="padding:3px 10px;border:1px solid #fecaca;font-size:0.78rem;'
+                        f'white-space:nowrap;">{_yr_lbl}</td>'
+                        f'<td style="padding:3px 10px;border:1px solid #fecaca;font-size:0.78rem;'
+                        f'text-align:right;font-weight:700;color:#dc2626;">{_cnt}</td></tr>'
+                    )
+            _n_nm_close = len(_nm_close)
+            _n_nm_keep  = len(_nm_keep)
+            _n_nm_other = len(_nm_other)
+            _bns_breakdown_html = (
+                f'<div style="margin-top:16px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">'
+                f'<div style="background:#f8fafc;padding:8px 14px;border-bottom:1px solid #e5e7eb;'
+                f'font-size:0.82rem;font-weight:700;color:#374151;">'
+                f'📊 BNS Strategie — pobočky mimo model {target_n}'
+                f'</div>'
+                f'<div style="display:flex;gap:14px;flex-wrap:wrap;padding:12px 14px;">'
+                # Close block
+                f'<div style="flex:1;min-width:200px;">'
+                f'<div style="font-size:0.75rem;font-weight:700;color:#dc2626;margin-bottom:6px;">'
+                f'🔴 BNS strategie: CLOSE — celkem {_n_nm_close}</div>'
+                + (
+                    f'<table style="border-collapse:collapse;font-size:0.78rem;width:100%;">'
+                    f'<thead><tr style="background:#fef2f2;">'
+                    f'<th style="padding:3px 10px;border:1px solid #fecaca;text-align:left;'
+                    f'font-size:0.72rem;color:#9b1c1c;">Rok uzavření</th>'
+                    f'<th style="padding:3px 10px;border:1px solid #fecaca;text-align:right;'
+                    f'font-size:0.72rem;color:#9b1c1c;">Počet</th>'
+                    f'</tr></thead>'
+                    f'<tbody>{_close_rows}</tbody>'
+                    f'</table>'
+                    if _close_rows else
+                    f'<span style="color:#aaa;font-size:0.75rem;font-style:italic;">Žádné BNS-close pobočky mimo model.</span>'
+                )
+                + f'</div>'
+                # Keep block
+                f'<div style="flex:1;min-width:160px;">'
+                f'<div style="font-size:0.75rem;font-weight:700;color:#16a34a;margin-bottom:6px;">'
+                f'🟢 BNS strategie: KEEP — celkem {_n_nm_keep}</div>'
+                f'<div style="font-size:0.78rem;color:#374151;line-height:1.8;">'
+                f'Pobočky, které BNS plánuje zachovat, ale simulace je nezahrnuje do modelu {target_n}.'
+                f'</div>'
+                + (
+                    f'<div style="margin-top:4px;background:#f0fdf4;border:1px solid #86efac;'
+                    f'border-radius:6px;padding:5px 10px;font-size:0.82rem;font-weight:700;color:#16a34a;">'
+                    f'{_n_nm_keep} × BNS keep → mimo model {target_n}</div>'
+                    if _n_nm_keep > 0 else
+                    f'<div style="color:#aaa;font-size:0.75rem;font-style:italic;margin-top:4px;">'
+                    f'Žádné BNS-keep pobočky mimo model.</div>'
+                )
+                + f'</div>'
+                # Other block
+                + (
+                    f'<div style="flex:1;min-width:120px;">'
+                    f'<div style="font-size:0.75rem;font-weight:700;color:#6b7280;margin-bottom:6px;">'
+                    f'⚪ Bez strategie: {_n_nm_other}</div>'
+                    f'</div>'
+                    if _n_nm_other > 0 else ''
+                )
+                + f'</div></div>'
+            )
+
     # ── 12. HTML výstup ───────────────────────────────────────────
     return f"""
 <div style="background:#fff;border-radius:10px;padding:16px 18px;
@@ -5406,6 +5503,9 @@ def generate_network_simulation_200(df, spadovky_df=None, target_n=250, max_clos
 
   <!-- Pobočky mimo top {target_n} -->
   {_rest_section_html}
+
+  <!-- BNS strategie breakdown -->
+  {_bns_breakdown_html}
 
   <!-- Metodika -->
   <div style="background:#f8fbff;border-radius:8px;padding:10px 14px;margin-top:14px;
@@ -9220,6 +9320,33 @@ def _apply_common_formatting(d, cols_to_show):
         if _flag_col in cols_to_show and _flag_col in d.columns:
             d[_flag_col] = d[_flag_col].apply(color_strategy_html)
 
+    # SIM_IR_Q_2030 — kvintil badge Q1–Q5
+    if 'SIM_IR_Q_2030' in cols_to_show and 'SIM_IR_Q_2030' in d.columns:
+        _Q2030_COL = {1: '#16a34a', 2: '#65a30d', 3: '#eab308', 4: '#f97316', 5: '#dc2626'}
+        def _fmt_irq2030(x):
+            if pd.isna(x) or str(x).strip() in ('nan', 'None', ''):
+                return '<span style="color:#d1d5db;">—</span>'
+            try:
+                q = int(float(x))
+            except Exception:
+                return str(x)
+            c = _Q2030_COL.get(q, '#aaa')
+            return (f'<span style="background:{c}18;color:{c};border:1px solid {c}55;'
+                    f'border-radius:8px;padding:1px 8px;font-weight:700;font-size:0.8rem;">Q{q}</span>')
+        d['SIM_IR_Q_2030'] = d['SIM_IR_Q_2030'].apply(_fmt_irq2030)
+
+    # SIM_IR_2030 — rank integer, color-coded blue
+    if 'SIM_IR_2030' in cols_to_show and 'SIM_IR_2030' in d.columns:
+        def _fmt_ir2030(x):
+            if pd.isna(x) or str(x).strip() in ('nan', 'None', ''):
+                return '<span style="color:#d1d5db;">—</span>'
+            try:
+                v = int(float(x))
+            except Exception:
+                return str(x)
+            return f'<span style="font-weight:600;color:#2770f0;">#{v}</span>'
+        d['SIM_IR_2030'] = d['SIM_IR_2030'].apply(_fmt_ir2030)
+
     # Prodeje — celková čísla formát
     _prod_num_cols = (
         ['POCET_PRODEJU_CELKEM_2025'] +
@@ -9815,9 +9942,11 @@ COL_GROUPS = [
         "Přítomnost segmentů",
     ], "#7ddbe3"),
     # ── 🎯 Strategie ──────────────────────────────────────────────────────────
-    ("🗺️ Strategie BNS",      ["Strategie BNS", "Strategie BNS dle IR 25", "Simulace 250", "Simulace 280", "Simulace 300",
+    ("🗺️ Strategie BNS",      ["Strategie BNS", "Strategie BNS dle IR 25",
                                "Pool FHC", "Pool NF",
                                "Rok uzavření", "Rok investice NF", "Rok investice FHC", "Rok plánované investice"], "#fff3e0"),
+    ("🏗️ Modely",             ["Simulace 250", "Simulace 280", "Simulace 300",
+                               "Rating 2030 (sim.)", "Kvintil 2030 (sim.)"], "#f3e8ff"),
     ("💵 Strategie hotovosti", ["Rok cashless přechodu", "Status cashless", "Bezhotovostní", "Datum bezhotovostní"], "#ffe8c8"),
     # ── 👥 Klient a návštěvy ─────────────────────────────────────────────────
     ("👥 Klienti",             ["Klienti EOY 2021", "Klienti EOY 2022", "Klienti EOY 2023",
@@ -12372,45 +12501,279 @@ def generate_jednoclenny_map_html(df):
 
 
 def generate_map_html_with_toggle(df, title="🗺️ Mapa poboček — celá síť"):
-    """Mapa poboček s přepínačem: strategie poboček vs. jednočlenné provozy."""
+    """Mapa poboček s přepínačem: strategie, jednočlenné provozy, modely 250/280/300.
+    Modely zobrazují keep (zelená) / close (červená) s 10 km radius kružnicemi.
+    """
     import uuid
+    import math
+    import plotly.graph_objects as go
     _uid = uuid.uuid4().hex[:8]
 
+    # ── GPS data ──────────────────────────────────────────────────
+    _gdf = df.copy()
+    for _gc in ['GPS_X', 'GPS_Y']:
+        if _gc in _gdf.columns:
+            _gdf[_gc] = pd.to_numeric(_gdf[_gc], errors='coerce')
+    _gdf = _gdf[_gdf['GPS_X'].notna() & _gdf['GPS_Y'].notna()].copy()
+
+    # ── Haversine circle polygon ──────────────────────────────────
+    def _circle_latlons(lat, lon, radius_km=10.0, n_pts=24):
+        R = 6371.0
+        d = radius_km / R
+        lat_r = math.radians(lat)
+        lats, lons_out = [], []
+        for i in range(n_pts + 1):
+            bearing = 2.0 * math.pi * i / n_pts
+            lat2 = math.asin(
+                math.sin(lat_r) * math.cos(d) +
+                math.cos(lat_r) * math.sin(d) * math.cos(bearing)
+            )
+            lon2 = math.radians(lon) + math.atan2(
+                math.sin(bearing) * math.sin(d) * math.cos(lat_r),
+                math.cos(d) - math.sin(lat_r) * math.sin(lat2)
+            )
+            lats.append(math.degrees(lat2))
+            lons_out.append(math.degrees(lon2))
+        return lats, lons_out
+
+    def _build_circles_trace(sub_df, color='rgba(99,155,255,0.12)'):
+        clats, clons = [], []
+        for _, row in sub_df.iterrows():
+            pl, plo = _circle_latlons(float(row['GPS_X']), float(row['GPS_Y']), radius_km=10.0)
+            clats.extend(pl)
+            clons.extend(plo)
+            clats.append(None)
+            clons.append(None)
+        return go.Scattermapbox(
+            lat=clats, lon=clons,
+            mode='lines',
+            line=dict(color=color, width=1.2),
+            hoverinfo='skip',
+            showlegend=True,
+            name='⭕ 10 km dosah',
+            legendgroup='circles',
+        )
+
+    # ── Network density (avg dist to k nearest) ───────────────────
+    def _avg_dist_k_nearest(sub_df, k=3):
+        lats = sub_df['GPS_X'].values
+        lons = sub_df['GPS_Y'].values
+        n = len(lats)
+        if n <= k:
+            return float('nan')
+        R = 6371.0
+        totals = []
+        for i in range(n):
+            dists = []
+            for j in range(n):
+                if i == j: continue
+                dlat = math.radians(float(lats[j]) - float(lats[i]))
+                dlon = math.radians(float(lons[j]) - float(lons[i]))
+                a = (math.sin(dlat / 2) ** 2 +
+                     math.cos(math.radians(float(lats[i]))) *
+                     math.cos(math.radians(float(lats[j]))) *
+                     math.sin(dlon / 2) ** 2)
+                dists.append(2.0 * R * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1.0 - a))))
+            dists.sort()
+            totals.append(sum(dists[:k]) / k)
+        return sum(totals) / len(totals) if totals else float('nan')
+
+    def _fmt_d(d):
+        return f"{d:.1f} km" if (d == d and d is not None) else "—"
+
+    # Compute densities
+    _density_all = _avg_dist_k_nearest(_gdf) if len(_gdf) > 3 else float('nan')
+
+    def _keep_gdf(keep_codes):
+        if not keep_codes or _gdf.empty:
+            return _gdf.iloc[:0]
+        _mask = pd.to_numeric(_gdf['BRANCH_CODE'], errors='coerce').isin(keep_codes)
+        return _gdf[_mask]
+
+    _g250 = _keep_gdf(SIM_250_KEEP_CODES)
+    _g280 = _keep_gdf(SIM_280_KEEP_CODES)
+    _g300 = _keep_gdf(SIM_300_KEEP_CODES)
+    _density_250 = _avg_dist_k_nearest(_g250) if len(_g250) > 3 else float('nan')
+    _density_280 = _avg_dist_k_nearest(_g280) if len(_g280) > 3 else float('nan')
+    _density_300 = _avg_dist_k_nearest(_g300) if len(_g300) > 3 else float('nan')
+
+    _density_html = (
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 12px 0;'
+        'font-size:0.78rem;align-items:center;">'
+        '<span style="font-weight:600;color:#555;">📡 Hustota sítě (prům. vzdál. 3 nejbl. poboček):</span>'
+        f'<span style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:2px 10px;">'
+        f'Celá síť: <b>{_fmt_d(_density_all)}</b></span>'
+        f'<span style="background:#eff6ff;color:#2770f0;border:1px solid #bfdbfe;border-radius:10px;padding:2px 10px;">'
+        f'Model 250: <b>{_fmt_d(_density_250)}</b></span>'
+        f'<span style="background:#f0fdf4;color:#16a34a;border:1px solid #86efac;border-radius:10px;padding:2px 10px;">'
+        f'Model 280: <b>{_fmt_d(_density_280)}</b></span>'
+        f'<span style="background:#faf5ff;color:#7c3aed;border:1px solid #ddd6fe;border-radius:10px;padding:2px 10px;">'
+        f'Model 300: <b>{_fmt_d(_density_300)}</b></span>'
+        '</div>'
+    )
+
+    # ── Model variant map inner HTML ──────────────────────────────
+    def _sv(row, col, default='—'):
+        v = row.get(col, default)
+        return default if (v is None or (isinstance(v, float) and pd.isna(v))
+                           or str(v) in ('nan', 'None', '')) else str(v)
+
+    def _gen_model_inner(keep_codes, target_n, keep_color='#16a34a',
+                         close_color='#dc2626', circle_color='rgba(99,155,255,0.10)'):
+        if _gdf.empty:
+            return (f'<p style="color:#aaa;font-style:italic;">'
+                    f'Žádné GPS souřadnice pro model {target_n}.</p>')
+        _mdf = _gdf.copy()
+        _bc_num = pd.to_numeric(_mdf['BRANCH_CODE'], errors='coerce')
+        _mdf['_in_model'] = _bc_num.isin(keep_codes) if keep_codes else False
+
+        hovers = []
+        for _, row in _mdf.iterrows():
+            in_m = bool(row['_in_model'])
+            status_lbl = f'✅ V modelu {target_n}' if in_m else f'❌ Mimo model {target_n}'
+            hovers.append('<br>'.join([
+                f'<b>{_sv(row, "BRANCH_NAME")}</b>'
+                f' <span style="color:#aaa;">#{_sv(row, "BRANCH_CODE")}</span>',
+                f'📍 {_sv(row, "REGION_NAME")}',
+                f'⭐ IR 2025: <b>{_sv(row, "IR")}</b>',
+                status_lbl,
+            ]))
+        _mdf['_hover'] = hovers
+
+        sub_keep  = _mdf[_mdf['_in_model']].copy()
+        sub_close = _mdf[~_mdf['_in_model']].copy()
+
+        _traces = []
+        if not sub_keep.empty:
+            _traces.append(_build_circles_trace(sub_keep, color=circle_color))
+        if not sub_close.empty:
+            _traces.append(go.Scattermapbox(
+                lat=sub_close['GPS_X'].tolist(), lon=sub_close['GPS_Y'].tolist(),
+                mode='markers',
+                marker=dict(size=8, color=close_color, opacity=0.80),
+                text=sub_close['_hover'].tolist(),
+                hovertemplate='%{text}<extra></extra>',
+                name=f'❌ Mimo model ({len(sub_close)})',
+            ))
+        if not sub_keep.empty:
+            _traces.append(go.Scattermapbox(
+                lat=sub_keep['GPS_X'].tolist(), lon=sub_keep['GPS_Y'].tolist(),
+                mode='markers',
+                marker=dict(size=10, color=keep_color, opacity=0.90),
+                text=sub_keep['_hover'].tolist(),
+                hovertemplate='%{text}<extra></extra>',
+                name=f'✅ V modelu ({len(sub_keep)})',
+            ))
+
+        _fig = go.Figure(_traces)
+        _fig.update_layout(
+            mapbox=_mapbox_layout(center_lat=49.8, center_lon=15.5, zoom=6.5),
+            margin=dict(l=0, r=0, t=0, b=0),
+            height=580,
+            legend=dict(
+                bgcolor='rgba(255,255,255,0.93)', bordercolor='#ccc', borderwidth=1,
+                font=dict(size=11), x=0.01, y=0.99, xanchor='left', yanchor='top',
+            ),
+            paper_bgcolor='white',
+        )
+        _mdiv = _fig.to_html(
+            full_html=False, include_plotlyjs=False,
+            config={'displayModeBar': True, 'scrollZoom': True,
+                    'modeBarButtonsToRemove': ['toImage'], 'displaylogo': False},
+        )
+        n_k = len(sub_keep)
+        n_c = len(sub_close)
+        return (
+            f'  <div style="display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 8px 0;font-size:0.78rem;">'
+            f'<span style="background:#dcfce7;color:#16a34a;border:1px solid #86efac;'
+            f'border-radius:12px;padding:2px 10px;font-weight:600;">✅ V modelu: {n_k}</span>'
+            f'<span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;'
+            f'border-radius:12px;padding:2px 10px;font-weight:600;">❌ Uzavřeno: {n_c}</span>'
+            f'</div>\n'
+            f'  <div style="border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1);">\n'
+            f'{_mdiv}\n'
+            f'  </div>\n'
+            f'  <div style="font-size:0.71rem;color:#aaa;margin-top:4px;">'
+            f'🟢 Zelená = pobočky v modelu {target_n} · 🔴 Červená = mimo model · '
+            f'⭕ Kružnice = 10 km dosah keep poboček · Scroll = zoom.</div>'
+        )
+
+    # ── Build all views ───────────────────────────────────────────
     _strat = generate_map_html(df, _inner_only=True)
     _jp    = generate_jednoclenny_map_html(df)
+    _m250  = _gen_model_inner(SIM_250_KEEP_CODES, 250, circle_color='rgba(99,155,255,0.10)')
+    _m280  = _gen_model_inner(SIM_280_KEEP_CODES, 280, circle_color='rgba(80,200,130,0.10)')
+    _m300  = _gen_model_inner(SIM_300_KEEP_CODES, 300, circle_color='rgba(140,90,230,0.10)')
+
+    # ── Button bar ────────────────────────────────────────────────
+    _btn_defs = [
+        ('strat', '📋 Strategie poboček',  '#2563eb', True),
+        ('jp',    '👤 Jednočlenné provozy', '#f59e0b', False),
+        ('m250',  '🏦 Model 250',           '#2770f0', False),
+        ('m280',  '🏦 Model 280',           '#16a34a', False),
+        ('m300',  '🏦 Model 300',           '#7c3aed', False),
+    ]
+    _btns = []
+    for vid, lbl, col, active in _btn_defs:
+        _btns.append(
+            f'<button id="mapbtn-{vid}-{_uid}" onclick="mapSw_{_uid}(\'{vid}\')"'
+            f' style="padding:5px 16px;border-radius:20px;cursor:pointer;font-size:0.82rem;'
+            f'border:1px solid {col if active else "#d1d5db"};'
+            f'background:{col if active else "#fff"};'
+            f'color:{"#fff" if active else "#374151"};'
+            f'font-weight:{"700" if active else "normal"};">'
+            f'{lbl}</button>'
+        )
+        if vid == 'jp':
+            _btns.append('<span style="color:#d1d5db;padding:0 2px;font-size:0.9rem;">|</span>')
+    _btns_html = '\n    '.join(_btns)
 
     return f"""
 <div style="margin-top:24px;padding-top:20px;border-top:2px solid #e0e6f5;">
   <div class="section-header">{title}</div>
-  <div style="display:flex;gap:8px;margin:8px 0 12px 0;align-items:center;">
-    <button id="mapbtn-strat-{_uid}" onclick="mapSw_{_uid}('strat')"
-      style="padding:5px 16px;border-radius:20px;border:1px solid #2563eb;background:#2563eb;color:#fff;cursor:pointer;font-size:0.82rem;font-weight:600;">
-      📋 Strategie poboček
-    </button>
-    <button id="mapbtn-jp-{_uid}" onclick="mapSw_{_uid}('jp')"
-      style="padding:5px 16px;border-radius:20px;border:1px solid #d1d5db;background:#fff;color:#374151;cursor:pointer;font-size:0.82rem;">
-      👤 Jednočlenné provozy
-    </button>
+  <div style="display:flex;gap:8px;margin:8px 0 6px 0;align-items:center;flex-wrap:wrap;">
+    {_btns_html}
   </div>
-  <div id="mapview-strat-{_uid}">
+  {_density_html}
+  <div id="mapview-strat-{_uid}" style="width:100%;">
 {_strat}
   </div>
-  <div id="mapview-jp-{_uid}" style="display:none;">
+  <div id="mapview-jp-{_uid}" style="display:none;width:100%;">
 {_jp}
+  </div>
+  <div id="mapview-m250-{_uid}" style="display:none;width:100%;">
+{_m250}
+  </div>
+  <div id="mapview-m280-{_uid}" style="display:none;width:100%;">
+{_m280}
+  </div>
+  <div id="mapview-m300-{_uid}" style="display:none;width:100%;">
+{_m300}
   </div>
   <script>
   (function(){{
+    var _views = ['strat','jp','m250','m280','m300'];
+    var _cols  = {{'strat':'#2563eb','jp':'#f59e0b','m250':'#2770f0','m280':'#16a34a','m300':'#7c3aed'}};
     function mapSw_{_uid}(v) {{
-      document.getElementById('mapview-strat-{_uid}').style.display = v==='strat' ? '' : 'none';
-      document.getElementById('mapview-jp-{_uid}').style.display    = v==='jp'    ? '' : 'none';
-      var bs = document.getElementById('mapbtn-strat-{_uid}');
-      var bj = document.getElementById('mapbtn-jp-{_uid}');
-      bs.style.background  = v==='strat' ? '#2563eb' : '#fff';
-      bs.style.color       = v==='strat' ? '#fff'    : '#374151';
-      bs.style.borderColor = v==='strat' ? '#2563eb' : '#d1d5db';
-      bj.style.background  = v==='jp'    ? '#f59e0b' : '#fff';
-      bj.style.color       = v==='jp'    ? '#fff'    : '#374151';
-      bj.style.borderColor = v==='jp'    ? '#f59e0b' : '#d1d5db';
+      _views.forEach(function(vid) {{
+        var dv  = document.getElementById('mapview-' + vid + '-{_uid}');
+        var btn = document.getElementById('mapbtn-' + vid + '-{_uid}');
+        if (!dv || !btn) return;
+        var active = (vid === v);
+        dv.style.display      = active ? '' : 'none';
+        btn.style.background  = active ? _cols[vid] : '#fff';
+        btn.style.color       = active ? '#fff' : '#374151';
+        btn.style.borderColor = active ? _cols[vid] : '#d1d5db';
+        btn.style.fontWeight  = active ? '700' : 'normal';
+        if (active) {{
+          setTimeout(function() {{
+            var plots = dv.querySelectorAll('.js-plotly-plot');
+            plots.forEach(function(p) {{
+              if (window.Plotly) {{ try {{ Plotly.Plots.resize(p); }} catch(e) {{}} }}
+            }});
+          }}, 60);
+        }}
+      }});
     }}
     window['mapSw_{_uid}'] = mapSw_{_uid};
   }})();
@@ -14466,6 +14829,17 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
                 except: return 'close'
             df_sorted['SIM_300_FLAG']     = df_sorted['BRANCH_CODE'].apply(_sflag300)
             rating_status['SIM_300_FLAG'] = rating_status['BRANCH_CODE'].apply(_sflag300)
+
+        # Merge SIM_IR_2030 / SIM_IR_Q_2030 from SIM_250_DF (pool is identical across variants)
+        if SIM_250_DF is not None and 'SIM_IR_2030' in SIM_250_DF.columns:
+            _ir2030_map  = SIM_250_DF.set_index('BRANCH_CODE')['SIM_IR_2030']
+            _irq2030_map = SIM_250_DF.set_index('BRANCH_CODE')['SIM_IR_Q_2030']
+            _bc_num_rs   = pd.to_numeric(rating_status['BRANCH_CODE'], errors='coerce')
+            _bc_num_ds   = pd.to_numeric(df_sorted['BRANCH_CODE'],    errors='coerce')
+            rating_status['SIM_IR_2030']   = _bc_num_rs.map(_ir2030_map)
+            rating_status['SIM_IR_Q_2030'] = _bc_num_rs.map(_irq2030_map)
+            df_sorted['SIM_IR_2030']       = _bc_num_ds.map(_ir2030_map)
+            df_sorted['SIM_IR_Q_2030']     = _bc_num_ds.map(_irq2030_map)
 
         print("  🔨 Generuji baseline simulaci (žádné zavírání)...")
         # max_close_year=0 → while podmínka 0>=2020 je False → else větev → _cand=False → žádná pobočka nezavírá
