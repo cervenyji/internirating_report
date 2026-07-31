@@ -5612,9 +5612,9 @@ def generate_simulation_standalone_report(html_250, html_280, html_300):
                           'medium': '#2770f0', 'flagship': '#0bb440'}
             fmt_col = fmt_colors.get(fmt, '#aaa')
 
-            in250 = bc in idx250
-            in280 = bc in idx280
-            in300 = bc in idx300
+            in250 = bc in SIM_250_KEEP_CODES
+            in280 = bc in SIM_280_KEEP_CODES
+            in300 = bc in SIM_300_KEEP_CODES
 
             # ── Rating ──────────────────────────────────────────────────
             ir25 = _safe_float(row.get('IR'))
@@ -10889,31 +10889,54 @@ setTimeout(function() {{
     cb.type = "checkbox";
     cb.checked = true;
     cb.style.accentColor = g.accent;
-    cb.addEventListener("change", function() {{
-      groupActive[g.label] = cb.checked;
-      btn.className = "col-toggle-btn" + (cb.checked ? "" : " inactive");
-      applyColVisibility();
-    }});
+    (function(grp, groupCb) {{
+      groupCb.addEventListener("change", function() {{
+        groupActive[grp.label] = groupCb.checked;
+        btn.className = "col-toggle-btn" + (groupCb.checked ? "" : " inactive");
+        // Sync picker checkboxes pro sloupce v této skupině
+        grp.idxs.forEach(function(gIdx) {{ pickerChecked[gIdx] = groupCb.checked; }});
+        if (colPickerList) {{
+          Array.from(colPickerList.querySelectorAll("input[data-cp-idx]")).forEach(function(pcb) {{
+            if (grp.idxs.indexOf(parseInt(pcb.getAttribute("data-cp-idx"))) >= 0) {{
+              pcb.checked = groupCb.checked;
+            }}
+          }});
+        }}
+        applyColVisibility();
+      }});
+    }})(g, cb);
     btn.appendChild(cb);
     btn.appendChild(document.createTextNode(" " + g.label));
     toggleBar.appendChild(btn);
   }});
 
   btnAll.addEventListener("click", function() {{
-    groupColIdxs.forEach(function(g) {{ groupActive[g.label] = true; }});
+    groupColIdxs.forEach(function(g) {{
+      groupActive[g.label] = true;
+      g.idxs.forEach(function(idx) {{ pickerChecked[idx] = true; }});
+    }});
     toggleBar.querySelectorAll("input[type=checkbox]").forEach(function(cb) {{ cb.checked = true; }});
     toggleBar.querySelectorAll(".col-toggle-btn").forEach(function(b) {{
       b.className = "col-toggle-btn";
     }});
+    if (colPickerList) {{
+      Array.from(colPickerList.querySelectorAll("input[data-cp-idx]")).forEach(function(cb) {{ cb.checked = true; }});
+    }}
     applyColVisibility();
   }});
 
   btnNone.addEventListener("click", function() {{
-    groupColIdxs.forEach(function(g) {{ groupActive[g.label] = false; }});
+    groupColIdxs.forEach(function(g) {{
+      groupActive[g.label] = false;
+      g.idxs.forEach(function(idx) {{ pickerChecked[idx] = false; }});
+    }});
     toggleBar.querySelectorAll("input[type=checkbox]").forEach(function(cb) {{ cb.checked = false; }});
     toggleBar.querySelectorAll(".col-toggle-btn").forEach(function(b) {{
       b.className = "col-toggle-btn inactive";
     }});
+    if (colPickerList) {{
+      Array.from(colPickerList.querySelectorAll("input[data-cp-idx]")).forEach(function(cb) {{ cb.checked = false; }});
+    }}
     applyColVisibility();
   }});
 
