@@ -12554,35 +12554,86 @@ def generate_map_html_with_toggle(df, title="🗺️ Mapa poboček — celá sí
             legendgroup='circles',
         )
 
-    # ── Network density (avg dist to k nearest) ───────────────────
-    def _avg_dist_k_nearest(sub_df, k=3):
-        lats = sub_df['GPS_X'].values
-        lons = sub_df['GPS_Y'].values
-        n = len(lats)
+    # ── Network density (avg dist to k nearest) — numpy vectorized ─
+    def _avg_dist_k_nearest(sub_df, k=5):
+        _lats = np.array(sub_df['GPS_X'].values, dtype=float)
+        _lons = np.array(sub_df['GPS_Y'].values, dtype=float)
+        n = len(_lats)
         if n <= k:
             return float('nan')
         R = 6371.0
-        totals = []
-        for i in range(n):
-            dists = []
-            for j in range(n):
-                if i == j: continue
-                dlat = math.radians(float(lats[j]) - float(lats[i]))
-                dlon = math.radians(float(lons[j]) - float(lons[i]))
-                a = (math.sin(dlat / 2) ** 2 +
-                     math.cos(math.radians(float(lats[i]))) *
-                     math.cos(math.radians(float(lats[j]))) *
-                     math.sin(dlon / 2) ** 2)
-                dists.append(2.0 * R * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1.0 - a))))
-            dists.sort()
-            totals.append(sum(dists[:k]) / k)
-        return sum(totals) / len(totals) if totals else float('nan')
+        # pairwise haversine (n×n)
+        dlat = np.radians(_lats[:, None] - _lats[None, :])
+        dlon = np.radians(_lons[:, None] - _lons[None, :])
+        a = (np.sin(dlat / 2) ** 2 +
+             np.cos(np.radians(_lats[:, None])) *
+             np.cos(np.radians(_lats[None, :])) *
+             np.sin(dlon / 2) ** 2)
+        dm = 2.0 * R * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
+        np.fill_diagonal(dm, np.inf)  # exclude self
+        dm.sort(axis=1)
+        return float(dm[:, :k].mean())
+
+    # ── Coverage heatmap (uncovered areas > 10 km from keep branch) ─
+    def _build_coverage_heatmap(keep_df, threshold_km=10.0):
+        """Densitymapbox highlighting grid cells >threshold_km from any keep branch."""
+        if keep_df.empty:
+            return None
+        _br_lats = np.array(keep_df['GPS_X'].values, dtype=float)
+        _br_lons = np.array(keep_df['GPS_Y'].values, dtype=float)
+        # Grid over Czech Republic + slight buffer
+        _lat_g = np.linspace(48.4, 51.3, 42)
+        _lon_g = np.linspace(11.9, 19.1, 58)
+        _lon_2d, _lat_2d = np.meshgrid(_lon_g, _lat_g)
+        _glat = _lat_2d.flatten()
+        _glon = _lon_2d.flatten()
+        # Vectorized haversine: shape (n_grid, n_branches)
+        R = 6371.0
+        dlat = np.radians(_br_lats[None, :] - _glat[:, None])
+        dlon = np.radians(_br_lons[None, :] - _glon[:, None])
+        a = (np.sin(dlat / 2) ** 2 +
+             np.cos(np.radians(_glat[:, None])) *
+             np.cos(np.radians(_br_lats[None, :])) *
+             np.sin(dlon / 2) ** 2)
+        min_dist = (2.0 * R * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))).min(axis=1)
+        mask = min_dist > threshold_km
+        if not mask.any():
+            return None
+        _unc_z = (min_dist[mask] - threshold_km).tolist()  # 0=barely uncovered, 50=deep gap
+        return go.Densitymapbox(
+            lat=_glat[mask].tolist(),
+            lon=_glon[mask].tolist(),
+            z=_unc_z,
+            radius=30,
+            colorscale=[
+                [0.00, 'rgba(255,235,50,0.00)'],
+                [0.12, 'rgba(255,210,20,0.38)'],
+                [0.30, 'rgba(255,150,20,0.52)'],
+                [0.55, 'rgba(230,60,10,0.62)'],
+                [0.80, 'rgba(185,10,0,0.70)'],
+                [1.00, 'rgba(120,0,0,0.78)'],
+            ],
+            zmin=0,
+            zmax=50,
+            showscale=True,
+            colorbar=dict(
+                title=dict(text='Vzdál.<br>od pobočky<br>(km)',
+                           font=dict(size=9, color='#555')),
+                thickness=10, len=0.42, x=1.01,
+                tickfont=dict(size=9),
+                tickvals=[0, 15, 30, 45],
+                ticktext=['10', '25', '40', '55+'],
+            ),
+            hoverinfo='skip',
+            name='🔥 Nepokryté oblasti',
+            showlegend=True,
+        )
 
     def _fmt_d(d):
         return f"{d:.1f} km" if (d == d and d is not None) else "—"
 
     # Compute densities
-    _density_all = _avg_dist_k_nearest(_gdf) if len(_gdf) > 3 else float('nan')
+    _density_all = _avg_dist_k_nearest(_gdf) if len(_gdf) > 5 else float('nan')
 
     def _keep_gdf(keep_codes):
         if not keep_codes or _gdf.empty:
@@ -12593,14 +12644,14 @@ def generate_map_html_with_toggle(df, title="🗺️ Mapa poboček — celá sí
     _g250 = _keep_gdf(SIM_250_KEEP_CODES)
     _g280 = _keep_gdf(SIM_280_KEEP_CODES)
     _g300 = _keep_gdf(SIM_300_KEEP_CODES)
-    _density_250 = _avg_dist_k_nearest(_g250) if len(_g250) > 3 else float('nan')
-    _density_280 = _avg_dist_k_nearest(_g280) if len(_g280) > 3 else float('nan')
-    _density_300 = _avg_dist_k_nearest(_g300) if len(_g300) > 3 else float('nan')
+    _density_250 = _avg_dist_k_nearest(_g250) if len(_g250) > 5 else float('nan')
+    _density_280 = _avg_dist_k_nearest(_g280) if len(_g280) > 5 else float('nan')
+    _density_300 = _avg_dist_k_nearest(_g300) if len(_g300) > 5 else float('nan')
 
     _density_html = (
         '<div style="display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 12px 0;'
         'font-size:0.78rem;align-items:center;">'
-        '<span style="font-weight:600;color:#555;">📡 Hustota sítě (prům. vzdál. 3 nejbl. poboček):</span>'
+        '<span style="font-weight:600;color:#555;">📡 Hustota sítě (prům. vzdál. 5 nejbl. poboček):</span>'
         f'<span style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:2px 10px;">'
         f'Celá síť: <b>{_fmt_d(_density_all)}</b></span>'
         f'<span style="background:#eff6ff;color:#2770f0;border:1px solid #bfdbfe;border-radius:10px;padding:2px 10px;">'
@@ -12644,8 +12695,14 @@ def generate_map_html_with_toggle(df, title="🗺️ Mapa poboček — celá sí
         sub_close = _mdf[~_mdf['_in_model']].copy()
 
         _traces = []
+        # Heatmap: uncovered areas (furthest from any keep branch) — behind everything
+        _hm = _build_coverage_heatmap(sub_keep, threshold_km=10.0)
+        if _hm is not None:
+            _traces.append(_hm)
+        # 10km radius circles around keep branches
         if not sub_keep.empty:
             _traces.append(_build_circles_trace(sub_keep, color=circle_color))
+        # Close branches (red)
         if not sub_close.empty:
             _traces.append(go.Scattermapbox(
                 lat=sub_close['GPS_X'].tolist(), lon=sub_close['GPS_Y'].tolist(),
@@ -12655,6 +12712,7 @@ def generate_map_html_with_toggle(df, title="🗺️ Mapa poboček — celá sí
                 hovertemplate='%{text}<extra></extra>',
                 name=f'❌ Mimo model ({len(sub_close)})',
             ))
+        # Keep branches (green, on top)
         if not sub_keep.empty:
             _traces.append(go.Scattermapbox(
                 lat=sub_keep['GPS_X'].tolist(), lon=sub_keep['GPS_Y'].tolist(),
@@ -12695,7 +12753,7 @@ def generate_map_html_with_toggle(df, title="🗺️ Mapa poboček — celá sí
             f'  </div>\n'
             f'  <div style="font-size:0.71rem;color:#aaa;margin-top:4px;">'
             f'🟢 Zelená = pobočky v modelu {target_n} · 🔴 Červená = mimo model · '
-            f'⭕ Kružnice = 10 km dosah keep poboček · Scroll = zoom.</div>'
+            f'⭕ Kružnice = 10 km dosah · 🔥 Teplá barva = nepokrytá oblast (>10 km od nejbl. pobočky) · Scroll = zoom.</div>'
         )
 
     # ── Build all views ───────────────────────────────────────────
