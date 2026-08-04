@@ -14949,6 +14949,255 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
         # bns_close_html až po aktualizaci SIM_250_FLAG — jinak by chyběla část Simulace 250
         bns_close_html = generate_bns_close_table(rating_status)
 
+        # ── FTE dopad sekce pro statický report ───────────────────────────────
+        _ste_fte_html = _ste_fte_yr_html = _ste_fte_models_html = ''
+        try:
+            _ste_strat_col = 'FOOTPRINT_STRATEGIE_(2030)'
+            _ste_yr_col    = 'PLAN_CLOSE_(ROK)'
+            _ste_fte_cols  = [c for c in ['FTE', 'BANKERS_COUNT', 'OBCHODNI_FTE'] if c in rating_status.columns]
+
+            if _ste_strat_col in rating_status.columns and _ste_fte_cols and 'REGION_NAME' in rating_status.columns:
+                _ste_df_cl = rating_status[
+                    rating_status[_ste_strat_col].astype(str).str.lower().str.contains('close', na=False)
+                ].copy()
+                for _fc in _ste_fte_cols:
+                    _ste_df_cl[_fc] = pd.to_numeric(_ste_df_cl[_fc], errors='coerce').fillna(0)
+
+                _ste_regs      = sorted([r for r in rating_status['REGION_NAME'].dropna().unique()
+                                          if str(r) not in ('', 'nan', 'None')])
+                _ste_have_fte  = 'FTE' in _ste_fte_cols
+                _ste_have_bnk  = 'BANKERS_COUNT' in _ste_fte_cols
+                _ste_have_obch = 'OBCHODNI_FTE' in _ste_fte_cols
+
+                # ── 1. Základní FTE dopad per region ─────────────────────────
+                if not _ste_df_cl.empty:
+                    _ste_fr = ''; _ste_tn = 0; _ste_tf = 0.0; _ste_tb = 0.0; _ste_to = 0.0
+                    for _brn in _ste_regs:
+                        _dr = _ste_df_cl[_ste_df_cl['REGION_NAME'] == _brn]
+                        if _dr.empty: continue
+                        _nc = len(_dr)
+                        _sf = float(_dr['FTE'].sum()) if _ste_have_fte else 0.0
+                        _sb = float(_dr['BANKERS_COUNT'].sum()) if _ste_have_bnk else 0.0
+                        _so = float(_dr['OBCHODNI_FTE'].sum()) if _ste_have_obch else 0.0
+                        _ste_tn += _nc; _ste_tf += _sf; _ste_tb += _sb; _ste_to += _so
+                        _ste_fr += (
+                            f'<tr style="border-bottom:1px solid #f0f4f8;">'
+                            f'<td style="padding:6px 10px;font-weight:600;font-size:0.8rem;">{_brn}</td>'
+                            f'<td style="padding:6px 10px;font-size:0.8rem;text-align:center;color:#d62728;font-weight:700;">{_nc}</td>'
+                            + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{_sf:.1f}</td>' if _ste_have_fte else '')
+                            + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{_sb:.1f}</td>' if _ste_have_bnk else '')
+                            + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;font-weight:700;color:#d62728;">{_so:.1f}</td>' if _ste_have_obch else '')
+                            + '</tr>'
+                        )
+                    _ste_fr += (
+                        f'<tr style="background:#fff8f8;font-weight:700;border-top:2px solid #fecaca;">'
+                        f'<td style="padding:6px 10px;font-size:0.8rem;">CELKEM</td>'
+                        f'<td style="padding:6px 10px;font-size:0.8rem;text-align:center;color:#d62728;">{_ste_tn}</td>'
+                        + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{_ste_tf:.1f}</td>' if _ste_have_fte else '')
+                        + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;">{_ste_tb:.1f}</td>' if _ste_have_bnk else '')
+                        + (f'<td style="padding:6px 10px;font-size:0.8rem;text-align:right;color:#d62728;">{_ste_to:.1f}</td>' if _ste_have_obch else '')
+                        + '</tr>'
+                    )
+                    _ste_hdr = (
+                        '<th style="padding:7px 10px;background:#d62728;color:white;font-size:0.78rem;text-align:left;">Region</th>'
+                        '<th style="padding:7px 10px;background:#d62728;color:white;font-size:0.78rem;text-align:center;">Uzavíraných poboček</th>'
+                        + ('<th style="padding:7px 10px;background:#d62728;color:white;font-size:0.78rem;text-align:right;">FTE celkem</th>' if _ste_have_fte else '')
+                        + ('<th style="padding:7px 10px;background:#d62728;color:white;font-size:0.78rem;text-align:right;">Bankéři</th>' if _ste_have_bnk else '')
+                        + ('<th style="padding:7px 10px;background:#d62728;color:white;font-size:0.78rem;text-align:right;">Obchodní FTE</th>' if _ste_have_obch else '')
+                    )
+                    _ste_fte_html = make_collapsible(
+                        'ste-fte',
+                        f'👥 Dopad do FTE — uzavírané pobočky ({_ste_tn} poboček)',
+                        (f'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'
+                         f'<thead><tr>{_ste_hdr}</tr></thead><tbody>{_ste_fr}</tbody></table></div>'
+                         f'<div style="font-size:0.72rem;color:#888;margin-top:6px;">'
+                         f'Celkový dopad: {_ste_tn} poboček &nbsp;·&nbsp; {_ste_tf:.1f} FTE &nbsp;·&nbsp; {_ste_to:.1f} obchodních FTE</div>'),
+                        default_open=True,
+                    )
+
+                # ── 2. FTE po letech uzavírání ────────────────────────────────
+                if not _ste_df_cl.empty and _ste_yr_col in _ste_df_cl.columns:
+                    _ste_df_yr = _ste_df_cl.copy()
+                    _ste_df_yr[_ste_yr_col] = pd.to_numeric(_ste_df_yr[_ste_yr_col], errors='coerce')
+                    _ste_cyrs = sorted([int(y) for y in _ste_df_yr[_ste_yr_col].dropna().unique() if y > 2000])
+                    _ste_yc   = {2027:'#dc2626', 2028:'#e07a2a', 2029:'#ca8a04', 2030:'#1d4ed8'}
+                    _ste_nc_yr = 1 + (1 if _ste_have_fte else 0) + (1 if _ste_have_obch else 0)
+
+                    def _ste_th_grp(cs, txt, bg):
+                        return (f'<th colspan="{cs}" style="padding:5px 8px;background:{bg};color:white;'
+                                f'font-size:0.73rem;text-align:center;border:1px solid rgba(255,255,255,.2);'
+                                f'white-space:nowrap;">{txt}</th>')
+
+                    _ste_h1 = (
+                        f'<tr>'
+                        f'<th rowspan="2" style="padding:5px 10px;background:#1e293b;color:white;'
+                        f'font-size:0.73rem;text-align:left;border:1px solid rgba(255,255,255,.2);">Region</th>'
+                        f'<th rowspan="2" style="padding:5px 8px;background:#1e293b;color:white;'
+                        f'font-size:0.73rem;text-align:center;border:1px solid rgba(255,255,255,.2);">Celkem</th>'
+                    )
+                    for _cy in _ste_cyrs:
+                        _ste_h1 += _ste_th_grp(_ste_nc_yr, str(_cy), _ste_yc.get(_cy, '#475569'))
+                    _ste_h1 += _ste_th_grp(_ste_nc_yr, 'CELKEM', '#334155') + '</tr>'
+
+                    def _ste_subcols(bg):
+                        _s = (f'<th style="padding:4px 8px;background:{bg};color:white;font-size:0.7rem;'
+                              f'text-align:center;border:1px solid rgba(255,255,255,.2);">Poboček</th>')
+                        if _ste_have_fte:
+                            _s += (f'<th style="padding:4px 8px;background:{bg};color:white;font-size:0.7rem;'
+                                   f'text-align:right;border:1px solid rgba(255,255,255,.2);">FTE</th>')
+                        if _ste_have_obch:
+                            _s += (f'<th style="padding:4px 8px;background:{bg};color:white;font-size:0.7rem;'
+                                   f'text-align:right;border:1px solid rgba(255,255,255,.2);">Obch. FTE</th>')
+                        return _s
+
+                    _ste_h2 = '<tr>'
+                    for _cy in _ste_cyrs:
+                        _ste_h2 += _ste_subcols(_ste_yc.get(_cy, '#475569') + 'cc')
+                    _ste_h2 += _ste_subcols('#334155cc') + '</tr>'
+
+                    _ste_grp = {}
+                    for _brn in _ste_regs:
+                        _dr = _ste_df_yr[_ste_df_yr['REGION_NAME'] == _brn] if 'REGION_NAME' in _ste_df_yr.columns else pd.DataFrame()
+                        _ste_grp[_brn] = {
+                            '_total': {'n': len(_dr), 'fte': float(_dr['FTE'].sum()) if _ste_have_fte and not _dr.empty else 0.0,
+                                       'obch': float(_dr['OBCHODNI_FTE'].sum()) if _ste_have_obch and not _dr.empty else 0.0}
+                        }
+                        for _cy in _ste_cyrs:
+                            _dy = _dr[_dr[_ste_yr_col] == _cy]
+                            _ste_grp[_brn][_cy] = {'n': len(_dy), 'fte': float(_dy['FTE'].sum()) if _ste_have_fte and not _dy.empty else 0.0,
+                                                    'obch': float(_dy['OBCHODNI_FTE'].sum()) if _ste_have_obch and not _dy.empty else 0.0}
+
+                    _ste_tot_yr = {
+                        _cy: {'n': sum(_ste_grp.get(_b, {}).get(_cy, {'n': 0})['n'] for _b in _ste_regs),
+                              'fte': sum(_ste_grp.get(_b, {}).get(_cy, {'fte': 0.0})['fte'] for _b in _ste_regs),
+                              'obch': sum(_ste_grp.get(_b, {}).get(_cy, {'obch': 0.0})['obch'] for _b in _ste_regs)}
+                        for _cy in _ste_cyrs
+                    }
+                    _ste_tot_yr['_total'] = {
+                        'n': sum(_ste_grp.get(_b, {}).get('_total', {'n': 0})['n'] for _b in _ste_regs),
+                        'fte': sum(_ste_grp.get(_b, {}).get('_total', {'fte': 0.0})['fte'] for _b in _ste_regs),
+                        'obch': sum(_ste_grp.get(_b, {}).get('_total', {'obch': 0.0})['obch'] for _b in _ste_regs),
+                    }
+
+                    def _ste_yr_cell(d):
+                        _n_v = d['n']; _f_v = d['fte']; _o_v = d['obch']
+                        _ns = str(_n_v) if _n_v else '—'; _fs = f'{_f_v:.1f}' if _n_v else '—'; _os = f'{_o_v:.1f}' if _n_v else '—'
+                        _r = f'<td style="padding:5px 8px;text-align:center;font-size:0.78rem;border:1px solid #e2e8f0;color:#d62728;font-weight:600;">{_ns}</td>'
+                        if _ste_have_fte:
+                            _r += f'<td style="padding:5px 8px;text-align:right;font-size:0.78rem;border:1px solid #e2e8f0;">{_fs}</td>'
+                        if _ste_have_obch:
+                            _r += f'<td style="padding:5px 8px;text-align:right;font-size:0.78rem;border:1px solid #e2e8f0;color:#d62728;font-weight:600;">{_os}</td>'
+                        return _r
+
+                    _ste_yr_rows = ''
+                    for _i2, _brn in enumerate(_ste_regs):
+                        if _brn not in _ste_grp or _ste_grp[_brn]['_total']['n'] == 0: continue
+                        _bg2 = '#ffffff' if _i2 % 2 == 0 else '#f8fafc'
+                        _ste_yr_rows += f'<tr style="background:{_bg2};">'
+                        _ste_yr_rows += f'<td style="padding:5px 10px;font-size:0.8rem;font-weight:600;border:1px solid #e2e8f0;">{_brn}</td>'
+                        _ste_yr_rows += f'<td style="padding:5px 8px;text-align:center;font-size:0.78rem;border:1px solid #e2e8f0;color:#475569;">{_ste_grp[_brn]["_total"]["n"]}</td>'
+                        for _cy in _ste_cyrs:
+                            _ste_yr_rows += _ste_yr_cell(_ste_grp[_brn][_cy])
+                        _ste_yr_rows += _ste_yr_cell(_ste_grp[_brn]['_total']) + '</tr>'
+
+                    _ste_yr_rows += (
+                        f'<tr style="background:#fff8f8;font-weight:700;border-top:2px solid #fecaca;">'
+                        f'<td style="padding:5px 10px;font-size:0.8rem;border:1px solid #e2e8f0;">CELKEM</td>'
+                        f'<td style="padding:5px 8px;text-align:center;font-size:0.78rem;border:1px solid #e2e8f0;color:#d62728;">{_ste_tot_yr["_total"]["n"]}</td>'
+                    )
+                    for _cy in _ste_cyrs:
+                        _ste_yr_rows += _ste_yr_cell(_ste_tot_yr[_cy])
+                    _ste_yr_rows += _ste_yr_cell(_ste_tot_yr['_total']) + '</tr>'
+
+                    _ste_fte_yr_html = make_collapsible(
+                        'ste-fte-yr',
+                        '📅 Dopad do FTE po letech uzavírání — BNS strategie',
+                        (f'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'
+                         f'<thead>{_ste_h1}{_ste_h2}</thead><tbody>{_ste_yr_rows}</tbody></table></div>'),
+                        default_open=False,
+                    )
+
+                # ── 3. FTE po modelech 250 / 280 / 300 ───────────────────────
+                _ste_sim_defs = [('SIM_250_FLAG', 250, '#2770f0'), ('SIM_280_FLAG', 280, '#16a34a'), ('SIM_300_FLAG', 300, '#7c3aed')]
+                _ste_sim_av   = [(col, n, c) for col, n, c in _ste_sim_defs
+                                 if col in rating_status.columns and rating_status[col].astype(str).str.lower().isin(['keep','close']).any()]
+
+                if _ste_sim_av and _ste_fte_cols:
+                    _ste_nc_sm = 1 + (1 if _ste_have_fte else 0) + (1 if _ste_have_obch else 0)
+
+                    def _ste_sm_th(cs, txt, bg):
+                        return (f'<th colspan="{cs}" style="padding:5px 8px;background:{bg};color:white;'
+                                f'font-size:0.73rem;text-align:center;border:1px solid rgba(255,255,255,.2);'
+                                f'white-space:nowrap;">{txt}</th>')
+
+                    _ste_sm_h1 = (
+                        f'<tr><th rowspan="2" style="padding:5px 10px;background:#1e293b;color:white;'
+                        f'font-size:0.73rem;text-align:left;border:1px solid rgba(255,255,255,.2);">Region</th>'
+                    )
+                    for _scol, _sn, _sc in _ste_sim_av:
+                        _ste_sm_h1 += _ste_sm_th(_ste_nc_sm, f'🏦 Simulace {_sn}', _sc)
+                    _ste_sm_h1 += '</tr>'
+
+                    def _ste_sm_subcols(bg):
+                        _s = (f'<th style="padding:4px 8px;background:{bg};color:white;font-size:0.7rem;'
+                              f'text-align:center;border:1px solid rgba(255,255,255,.2);">Close</th>')
+                        if _ste_have_fte:
+                            _s += (f'<th style="padding:4px 8px;background:{bg};color:white;font-size:0.7rem;'
+                                   f'text-align:right;border:1px solid rgba(255,255,255,.2);">FTE</th>')
+                        if _ste_have_obch:
+                            _s += (f'<th style="padding:4px 8px;background:{bg};color:white;font-size:0.7rem;'
+                                   f'text-align:right;border:1px solid rgba(255,255,255,.2);">Obch. FTE</th>')
+                        return _s
+
+                    _ste_sm_h2 = '<tr>'
+                    for _scol, _sn, _sc in _ste_sim_av:
+                        _ste_sm_h2 += _ste_sm_subcols(_sc + 'cc')
+                    _ste_sm_h2 += '</tr>'
+
+                    _ste_sm_cdfs = {}
+                    for _scol, _sn, _sc in _ste_sim_av:
+                        _sdf = rating_status[rating_status[_scol].astype(str).str.lower() == 'close'].copy()
+                        for _fc in _ste_fte_cols:
+                            _sdf[_fc] = pd.to_numeric(_sdf[_fc], errors='coerce').fillna(0)
+                        _ste_sm_cdfs[_sn] = _sdf
+
+                    def _ste_sm_cell(d, clr):
+                        _n_v = d['n']; _f_v = d['fte']; _o_v = d['obch']
+                        _ns = str(_n_v) if _n_v else '—'; _fs = f'{_f_v:.1f}' if _n_v else '—'; _os = f'{_o_v:.1f}' if _n_v else '—'
+                        _r = f'<td style="padding:5px 8px;text-align:center;font-size:0.78rem;border:1px solid #e2e8f0;color:{clr};font-weight:600;">{_ns}</td>'
+                        if _ste_have_fte:
+                            _r += f'<td style="padding:5px 8px;text-align:right;font-size:0.78rem;border:1px solid #e2e8f0;">{_fs}</td>'
+                        if _ste_have_obch:
+                            _r += f'<td style="padding:5px 8px;text-align:right;font-size:0.78rem;border:1px solid #e2e8f0;font-weight:600;color:{clr};">{_os}</td>'
+                        return _r
+
+                    _ste_sm_rows = ''
+                    for _i3, _brn in enumerate(_ste_regs):
+                        _bg3 = '#ffffff' if _i3 % 2 == 0 else '#f8fafc'
+                        _ste_sm_rows += f'<tr style="background:{_bg3};"><td style="padding:5px 10px;font-size:0.8rem;font-weight:600;border:1px solid #e2e8f0;">{_brn}</td>'
+                        for _scol, _sn, _sc in _ste_sim_av:
+                            _sdf_r = _ste_sm_cdfs[_sn]
+                            _dr3 = _sdf_r[_sdf_r['REGION_NAME'] == _brn] if 'REGION_NAME' in _sdf_r.columns else pd.DataFrame()
+                            _ste_sm_rows += _ste_sm_cell({'n': len(_dr3), 'fte': float(_dr3['FTE'].sum()) if _ste_have_fte and not _dr3.empty else 0.0, 'obch': float(_dr3['OBCHODNI_FTE'].sum()) if _ste_have_obch and not _dr3.empty else 0.0}, _sc)
+                        _ste_sm_rows += '</tr>'
+
+                    _ste_sm_rows += '<tr style="background:#f0f6ff;font-weight:700;border-top:2px solid #bfdbfe;"><td style="padding:5px 10px;font-size:0.8rem;border:1px solid #e2e8f0;">CELKEM</td>'
+                    for _scol, _sn, _sc in _ste_sim_av:
+                        _sdf_t = _ste_sm_cdfs[_sn]
+                        _ste_sm_rows += _ste_sm_cell({'n': len(_sdf_t), 'fte': float(_sdf_t['FTE'].sum()) if _ste_have_fte and not _sdf_t.empty else 0.0, 'obch': float(_sdf_t['OBCHODNI_FTE'].sum()) if _ste_have_obch and not _sdf_t.empty else 0.0}, _sc)
+                    _ste_sm_rows += '</tr>'
+
+                    _ste_fte_models_html = make_collapsible(
+                        'ste-fte-models',
+                        '🏦 Dopad do FTE — modely Simulace 250 / 280 / 300',
+                        (f'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'
+                         f'<thead>{_ste_sm_h1}{_ste_sm_h2}</thead><tbody>{_ste_sm_rows}</tbody></table></div>'),
+                        default_open=False,
+                    )
+        except Exception as _ste_fte_e:
+            _ste_fte_html = _ste_fte_yr_html = _ste_fte_models_html = ''
+            print(f'  ⚠ FTE dopad statický report: {_ste_fte_e}')
+
         print("  💎 Generuji heatmapu výnosových klientů...")
         _pf_arg = globals().get('parties_full')
         _rev_heatmap_html = generate_revenue_client_heatmap(df_sorted, _pf_arg)
@@ -15037,7 +15286,10 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
       Sloupec <b>Keep 20XX</b> = pobočky, které ještě nebudou uzavřeny ke konci daného roku.
       Vychází ze sloupce <b>Rok uzavření</b> a příznaku close v <b>Strategie BNS</b>.
     </p>
-    <div style="margin:0 0 20px 0;width:100%;">{bns_close_html}</div>""")}
+    <div style="margin:0 0 16px 0;width:100%;">{bns_close_html}</div>
+    {_ste_fte_html}
+    {_ste_fte_yr_html}
+    {_ste_fte_models_html}""")}
 
     <!-- 3b. ORP pokrytí -->
     {_sc('orp', make_collapsible("orp-static", "&#x1F5FA; Pokrytí ORP — analýza",
@@ -22587,14 +22839,21 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None):
     import plotly.graph_objects as go
     import datetime
 
-    # ── Načtení CSV ──────────────────────────────────────────────
-    try:
-        _raw = pd.read_csv(jp_csv_path, encoding='utf-8')
-    except Exception:
-        try:
-            _raw = pd.read_csv(jp_csv_path, encoding='cp1250')
-        except Exception as _e:
-            return f'<html><body><p style="color:red;">Nepodařilo se načíst CSV: {_e}</p></body></html>'
+    # ── Načtení CSV (auto-detekce encoding + separátoru) ──────────
+    _raw = None
+    for _enc in ('utf-8', 'cp1250', 'utf-8-sig'):
+        for _sep in (',', ';', '\t'):
+            try:
+                _tmp = pd.read_csv(jp_csv_path, encoding=_enc, sep=_sep)
+                if len(_tmp.columns) >= 5:   # smysluplný počet sloupců → správný separátor
+                    _raw = _tmp
+                    break
+            except Exception:
+                pass
+        if _raw is not None:
+            break
+    if _raw is None:
+        return f'<html><body><p style="color:red;">Nepodařilo se načíst CSV ze souboru: {jp_csv_path}</p></body></html>'
     if _raw.empty:
         return '<html><body><p>CSV neobsahuje data.</p></body></html>'
 
@@ -22664,7 +22923,8 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None):
         })
 
     df_jp  = pd.DataFrame(records)
-    df_req = df_jp[df_jp['pozadavek'] == 'zadost'].copy()
+    # Zahrnujeme všechny záznamy — žádosti i zrušení; zrušení počítáme zvlášť pro info
+    df_req = df_jp.copy()
 
     # ── Metriky ──────────────────────────────────────────────────
     total_hours = float(df_req['hours'].sum())
