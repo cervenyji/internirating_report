@@ -22302,6 +22302,481 @@ except Exception as _dbs_open_err:
     if 'BRANCH_CLOSED' not in rating_status.columns:
         rating_status['BRANCH_CLOSED'] = False
 
+def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None):
+    """
+    Standalone HTML report — analýza jednočlenného provozu poboček.
+
+    Vstupy:
+        jp_csv_path: cesta k 'Jednočlenný provoz poboček.csv'
+        oteviraci_df: volitelný DataFrame s OD_PH_TYDEN per BRANCH_CODE
+    Returns: HTML string (kompletní stránka)
+    """
+    import plotly.graph_objects as go
+    import datetime
+
+    # ── Načtení CSV ──────────────────────────────────────────────
+    try:
+        _raw = pd.read_csv(jp_csv_path, encoding='utf-8')
+    except Exception:
+        try:
+            _raw = pd.read_csv(jp_csv_path, encoding='cp1250')
+        except Exception as _e:
+            return f'<html><body><p style="color:red;">Nepodařilo se načíst CSV: {_e}</p></body></html>'
+    if _raw.empty:
+        return '<html><body><p>CSV neobsahuje data.</p></body></html>'
+
+    # ── Parsery ───────────────────────────────────────────────────
+    def _pdate(s):
+        if pd.isna(s) or str(s).strip() == '': return None
+        for fmt in ('%d-%m-%Y', '%d.%m.%Y', '%Y-%m-%d'):
+            try: return datetime.datetime.strptime(str(s).strip(), fmt).date()
+            except ValueError: pass
+        return None
+
+    def _ptime(s):
+        if pd.isna(s) or str(s).strip() == '': return None
+        t = str(s).strip()
+        # normalize dots/commas used as separators ("13.00" → "13:00")
+        if ':' not in t:
+            t = t.replace('.', ':').replace(',', ':')
+        parts = t.split(':')
+        try:
+            h, m = int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
+            return datetime.time(max(0, min(23, h)), max(0, min(59, m)))
+        except Exception:
+            return None
+
+    def _workdays(d_start, d_end):
+        n, cur = 0, d_start
+        while cur <= d_end:
+            if cur.weekday() < 5: n += 1
+            cur += datetime.timedelta(days=1)
+        return n
+
+    def _session_hours(row):
+        d_from = _pdate(row.get('Datum od'))
+        d_to   = _pdate(row.get('Datum do'))
+        t_from = _ptime(row.get('Čas od'))
+        t_to   = _ptime(row.get('Čas do'))
+        if not all([d_from, d_to, t_from, t_to]):
+            return 0.0
+        if d_from == d_to:
+            dt1 = datetime.datetime.combine(d_from, t_from)
+            dt2 = datetime.datetime.combine(d_to, t_to)
+            return max(0.0, (dt2 - dt1).total_seconds() / 3600)
+        # Multi-day: daily hours × počet pracovních dní
+        daily_h = (datetime.datetime.combine(d_from, t_to) -
+                   datetime.datetime.combine(d_from, t_from)).total_seconds() / 3600
+        return max(0.0, _workdays(d_from, d_to) * daily_h)
+
+    # ── Zpracování ────────────────────────────────────────────────
+    records = []
+    for _, row in _raw.iterrows():
+        d_from = _pdate(row.get('Datum od'))
+        d_to   = _pdate(row.get('Datum do'))
+        records.append({
+            'branch_id':   int(row.get('ID pobočky', 0) or 0),
+            'branch_name': str(row.get('Název pobočky', '—')),
+            'region':      str(row.get('Region', '—')),
+            'typ':         str(row.get('Typ požadavku', '')),
+            'pozadavek':   ('zruseni' if 'zrušení' in str(row.get('Typ požadavku', '')).lower()
+                            else 'zadost'),
+            'datum_od':    d_from,
+            'datum_do':    d_to,
+            'cas_od':      str(row.get('Čas od', '')),
+            'cas_do':      str(row.get('Čas do', '')),
+            'hours':       _session_hours(row),
+            'month':       d_from.strftime('%Y-%m') if d_from else None,
+            'autor':       str(row.get('Autor', '')),
+        })
+
+    df_jp  = pd.DataFrame(records)
+    df_req = df_jp[df_jp['pozadavek'] == 'zadost'].copy()
+
+    # ── Metriky ──────────────────────────────────────────────────
+    total_hours = float(df_req['hours'].sum())
+    n_sessions  = len(df_req)
+    n_branches  = df_req['branch_id'].nunique()
+    n_cancel    = int((df_jp['pozadavek'] == 'zruseni').sum())
+
+    # Agregace dle pobočky
+    br_agg = (
+        df_req.groupby(['branch_id', 'branch_name', 'region'])
+        .agg(total_hours=('hours', 'sum'), n_sessions=('hours', 'count'))
+        .reset_index()
+        .sort_values('total_hours', ascending=False)
+    )
+
+    # Otevírací hodiny z oteviraci_df
+    if oteviraci_df is not None and not oteviraci_df.empty and 'OD_PH_TYDEN' in oteviraci_df.columns:
+        _od = (oteviraci_df
+               .rename(columns={'BRANCH_CODE': '_brc'})[['_brc', 'OD_PH_TYDEN']]
+               .assign(_brc=lambda x: pd.to_numeric(x['_brc'], errors='coerce')))
+        br_agg['_brid'] = pd.to_numeric(br_agg['branch_id'], errors='coerce')
+        br_agg = br_agg.merge(_od, left_on='_brid', right_on='_brc', how='left')
+        br_agg['OD_PH_TYDEN'] = br_agg['OD_PH_TYDEN'].fillna(40.0)
+    else:
+        br_agg['OD_PH_TYDEN'] = 40.0
+
+    # Délka sledovaného období
+    _all_dates = df_req['datum_od'].dropna().tolist() + df_req['datum_do'].dropna().tolist()
+    if _all_dates:
+        _p_start = min(_all_dates)
+        _p_end   = max(_all_dates)
+        _n_weeks = max(1.0, (_p_end - _p_start).days / 7)
+    else:
+        _p_start = _p_end = None
+        _n_weeks = 6.0
+
+    br_agg['ot_hours_period'] = br_agg['OD_PH_TYDEN'] * _n_weeks
+    br_agg['pct_single']      = (br_agg['total_hours'] / br_agg['ot_hours_period'] * 100).clip(0, 100)
+
+    # Agregace dle regionu
+    reg_agg = (df_req.groupby('region')
+               .agg(total_hours=('hours', 'sum'), n_sessions=('hours', 'count'),
+                    n_branches=('branch_id', 'nunique'))
+               .reset_index().sort_values('total_hours', ascending=True))
+
+    # Denní počet poboček v JČP
+    _daily = []
+    for _, rw in df_req.iterrows():
+        if not rw['datum_od']: continue
+        d_end = rw['datum_do'] if rw['datum_do'] else rw['datum_od']
+        cur = rw['datum_od']
+        while cur <= d_end:
+            if cur.weekday() < 5:
+                _daily.append({'date': cur, 'bid': rw['branch_id']})
+            cur += datetime.timedelta(days=1)
+    if _daily:
+        df_d = pd.DataFrame(_daily)
+        daily_cnt = df_d.groupby('date')['bid'].nunique().reset_index(name='n')
+        daily_cnt = daily_cnt.sort_values('date')
+    else:
+        daily_cnt = pd.DataFrame(columns=['date', 'n'])
+
+    # ── Plotly ────────────────────────────────────────────────────
+    _cfg = {'displayModeBar': False, 'responsive': True}
+
+    # Graf 1: hodiny JČP dle pobočky (horizontal bar, top 25)
+    _bh = br_agg.head(25).sort_values('total_hours', ascending=True)
+    _pct_color = lambda p: '#dc2626' if p >= 20 else ('#f59e0b' if p >= 10 else '#16a34a')
+
+    fig_hours = go.Figure(go.Bar(
+        x=_bh['total_hours'].tolist(), y=_bh['branch_name'].tolist(),
+        orientation='h', marker_color='#2770f0',
+        text=[f'{h:.1f} h' for h in _bh['total_hours']],
+        textposition='outside',
+        hovertemplate='<b>%{y}</b><br>%{x:.1f} h<extra></extra>',
+    ))
+    fig_hours.update_layout(
+        height=max(320, len(_bh) * 26 + 80), margin=dict(l=0, r=80, t=10, b=10),
+        xaxis_title='Hodiny JČP', plot_bgcolor='white', paper_bgcolor='white',
+        font=dict(size=11), xaxis=dict(showgrid=True, gridcolor='#f0f0f0'),
+        yaxis=dict(automargin=True),
+    )
+
+    # Graf 2: % otevírací doby dle pobočky
+    _bp = br_agg.sort_values('pct_single', ascending=True)
+    fig_pct = go.Figure(go.Bar(
+        x=_bp['pct_single'].tolist(), y=_bp['branch_name'].tolist(),
+        orientation='h',
+        marker_color=[_pct_color(p) for p in _bp['pct_single']],
+        text=[f'{p:.1f}%' for p in _bp['pct_single']],
+        textposition='outside',
+        hovertemplate='<b>%{y}</b><br>%{x:.1f}%<extra></extra>',
+    ))
+    fig_pct.update_layout(
+        height=max(320, len(_bp) * 26 + 80), margin=dict(l=0, r=80, t=10, b=10),
+        xaxis_title='% otevírací doby', plot_bgcolor='white', paper_bgcolor='white',
+        font=dict(size=11),
+        xaxis=dict(showgrid=True, gridcolor='#f0f0f0', ticksuffix='%'),
+        yaxis=dict(automargin=True),
+    )
+
+    # Graf 3: denní počet poboček v JČP
+    fig_daily = go.Figure()
+    if not daily_cnt.empty:
+        _days_str = [str(d) for d in daily_cnt['date']]
+        fig_daily.add_trace(go.Bar(
+            x=_days_str, y=daily_cnt['n'].tolist(),
+            marker_color='#2770f0',
+            hovertemplate='%{x}<br><b>%{y} poboček</b><extra></extra>',
+        ))
+    fig_daily.update_layout(
+        height=240, margin=dict(l=0, r=10, t=10, b=70),
+        yaxis_title='Počet poboček', plot_bgcolor='white', paper_bgcolor='white',
+        font=dict(size=11),
+        yaxis=dict(showgrid=True, gridcolor='#f0f0f0', dtick=1),
+        xaxis=dict(tickangle=-45),
+    )
+
+    # Graf 4: region
+    fig_reg = go.Figure(go.Bar(
+        x=reg_agg['region'].tolist(), y=reg_agg['total_hours'].tolist(),
+        marker_color='#7c3aed',
+        text=[f'{h:.0f} h / {n} pob.' for h, n in
+              zip(reg_agg['total_hours'], reg_agg['n_branches'])],
+        textposition='outside',
+        hovertemplate='<b>%{x}</b><br>%{y:.1f} h<extra></extra>',
+    ))
+    fig_reg.update_layout(
+        height=260, margin=dict(l=0, r=10, t=10, b=100),
+        yaxis_title='Hodiny JČP', plot_bgcolor='white', paper_bgcolor='white',
+        font=dict(size=11),
+        yaxis=dict(showgrid=True, gridcolor='#f0f0f0'),
+        xaxis=dict(tickangle=-35, automargin=True),
+    )
+
+    # Graf 5: scatter — hodiny JČP vs % ot. doby (bubble = počet žádostí)
+    fig_scatter = go.Figure(go.Scatter(
+        x=br_agg['total_hours'].tolist(),
+        y=br_agg['pct_single'].tolist(),
+        mode='markers+text',
+        text=br_agg['branch_name'].tolist(),
+        textposition='top center',
+        textfont=dict(size=9),
+        marker=dict(
+            size=[max(8, min(30, n * 4)) for n in br_agg['n_sessions']],
+            color=br_agg['pct_single'].tolist(),
+            colorscale=[[0, '#16a34a'], [0.4, '#f59e0b'], [1, '#dc2626']],
+            cmin=0, cmax=25,
+            showscale=True,
+            colorbar=dict(title='% ot. doby', thickness=10, len=0.7, ticksuffix='%'),
+            line=dict(color='white', width=1),
+        ),
+        hovertemplate=(
+            '<b>%{text}</b><br>'
+            'Hodiny JČP: %{x:.1f} h<br>'
+            '% ot. doby: %{y:.1f}%<extra></extra>'
+        ),
+    ))
+    fig_scatter.update_layout(
+        height=380, margin=dict(l=0, r=60, t=10, b=40),
+        xaxis_title='Hodiny v JČP', yaxis_title='% otevírací doby',
+        plot_bgcolor='white', paper_bgcolor='white', font=dict(size=11),
+        xaxis=dict(showgrid=True, gridcolor='#f0f0f0'),
+        yaxis=dict(showgrid=True, gridcolor='#f0f0f0', ticksuffix='%'),
+    )
+
+    # Konvertuj do HTML
+    _gh = fig_hours.to_html(full_html=False, include_plotlyjs='cdn', config=_cfg)
+    _gp = fig_pct.to_html(full_html=False, include_plotlyjs=False, config=_cfg)
+    _gd = fig_daily.to_html(full_html=False, include_plotlyjs=False, config=_cfg)
+    _gr = fig_reg.to_html(full_html=False, include_plotlyjs=False, config=_cfg)
+    _gs = fig_scatter.to_html(full_html=False, include_plotlyjs=False, config=_cfg)
+
+    # ── HTML tabulky ──────────────────────────────────────────────
+    def _td(v, cls=''):
+        return f'<td class="{cls}">{v}</td>'
+
+    def _badge(txt, bg, fg, border):
+        return (f'<span style="background:{bg};color:{fg};border:1px solid {border};'
+                f'border-radius:8px;padding:1px 8px;font-size:0.72rem;font-weight:700;">{txt}</span>')
+
+    # Branch summary table
+    _br_rows = ''
+    for _, row in br_agg.sort_values('total_hours', ascending=False).iterrows():
+        pct = float(row['pct_single'])
+        pc  = _pct_color(pct)
+        _pct_bar = (
+            f'<div style="display:flex;align-items:center;gap:6px;">'
+            f'<div style="background:#f3f4f6;border-radius:3px;height:6px;width:60px;overflow:hidden;">'
+            f'<div style="background:{pc};width:{min(pct*4, 100):.0f}%;height:100%;border-radius:3px;"></div></div>'
+            f'<span style="font-weight:700;color:{pc};font-size:0.8rem;">{pct:.1f}%</span>'
+            f'</div>'
+        )
+        _br_rows += (
+            f'<tr>'
+            f'<td class="bn">{row["branch_name"]}</td>'
+            f'<td class="reg">{row["region"]}</td>'
+            f'<td class="c">{int(row["n_sessions"])}</td>'
+            f'<td class="r bold blue">{float(row["total_hours"]):.1f} h</td>'
+            f'<td class="r">{float(row["OD_PH_TYDEN"]):.0f} h/týd.</td>'
+            f'<td style="padding:5px 8px;">{_pct_bar}</td>'
+            f'</tr>\n'
+        )
+
+    # Session log table
+    _ses_rows = ''
+    for _, row in df_jp.sort_values(['branch_name', 'datum_od']).iterrows():
+        is_z = row['pozadavek'] == 'zruseni'
+        _typ_b = (_badge('Zrušení', '#fee2e2', '#dc2626', '#fca5a5') if is_z
+                  else _badge('Žádost', '#eff6ff', '#2770f0', '#bfdbfe'))
+        _dur = f'{row["hours"]:.1f} h' if row['hours'] > 0 else '—'
+        d1 = row['datum_od'].strftime('%d.%m.%Y') if row['datum_od'] else '—'
+        d2 = row['datum_do'].strftime('%d.%m.%Y') if row['datum_do'] else '—'
+        same = (row['datum_od'] == row['datum_do']) if (row['datum_od'] and row['datum_do']) else True
+        _when = (f'{d1}&nbsp;{row["cas_od"]}–{row["cas_do"]}' if same
+                 else f'{d1}&nbsp;{row["cas_od"]} → {d2}&nbsp;{row["cas_do"]}')
+        _ses_rows += (
+            f'<tr>'
+            f'<td class="bn">{row["branch_name"]}</td>'
+            f'<td class="reg">{row["region"]}</td>'
+            f'<td style="padding:5px 8px;font-size:0.78rem;white-space:nowrap;">{_when}</td>'
+            f'<td class="r bold blue">{_dur}</td>'
+            f'<td style="padding:5px 8px;">{_typ_b}</td>'
+            f'<td class="reg">{row["autor"]}</td>'
+            f'</tr>\n'
+        )
+
+    # ── KPI tiles ────────────────────────────────────────────────
+    avg_pct    = float(br_agg['pct_single'].mean()) if not br_agg.empty else 0.0
+    top_br     = br_agg.iloc[0]['branch_name'] if not br_agg.empty else '—'
+    top_h      = float(br_agg.iloc[0]['total_hours']) if not br_agg.empty else 0.0
+    top_pct    = float(br_agg.sort_values('pct_single', ascending=False).iloc[0]['pct_single']) if not br_agg.empty else 0.0
+    top_pct_br = str(br_agg.sort_values('pct_single', ascending=False).iloc[0]['branch_name']) if not br_agg.empty else '—'
+
+    def _kpi(val, lbl, col='#2770f0', bg='#eff6ff', bo='#bfdbfe'):
+        return (
+            f'<div style="background:{bg};border:1px solid {bo};border-radius:10px;'
+            f'padding:12px 18px;text-align:center;min-width:120px;flex:1;">'
+            f'<div style="font-size:1.4rem;font-weight:800;color:{col};">{val}</div>'
+            f'<div style="font-size:0.68rem;color:#777;text-transform:uppercase;'
+            f'letter-spacing:.3px;margin-top:2px;">{lbl}</div>'
+            f'</div>'
+        )
+
+    _period_str = (f'{_p_start.strftime("%d.%m.%Y")} – {_p_end.strftime("%d.%m.%Y")}'
+                   if _p_start else '—')
+
+    kpis = (
+        _kpi(str(n_sessions), 'žádostí celkem') +
+        _kpi(str(n_branches), 'unikátních poboček', '#7c3aed', '#faf5ff', '#ddd6fe') +
+        _kpi(f'{total_hours:.0f} h', 'hodin celkem JČP', '#059669', '#ecfdf5', '#a7f3d0') +
+        _kpi(f'{avg_pct:.1f}%', 'průměr % ot. doby',
+             '#dc2626' if avg_pct >= 10 else '#f59e0b', '#fff7ed', '#fed7aa') +
+        _kpi(f'{n_cancel}', 'zrušení JČP', '#6b7280', '#f9fafb', '#e5e7eb')
+    )
+
+    # ── Full HTML page ────────────────────────────────────────────
+    return f"""<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Jednočlenný provoz poboček — Analýza</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+     background:#f0f4fb;color:#1e2a38;}}
+.hdr{{background:linear-gradient(135deg,#1a3a6c 0%,#2770f0 100%);
+      color:white;padding:22px 32px 18px;}}
+.hdr h1{{font-size:1.45rem;font-weight:800;margin-bottom:3px;}}
+.hdr p{{font-size:0.8rem;opacity:.75;}}
+.wrap{{max-width:1150px;margin:0 auto;padding:22px 18px;}}
+.card{{background:white;border-radius:12px;padding:18px 20px;
+       box-shadow:0 1px 5px rgba(0,0,0,.07);margin-bottom:18px;}}
+.ct{{font-size:0.72rem;font-weight:700;color:#2770f0;text-transform:uppercase;
+     letter-spacing:.5px;margin-bottom:12px;}}
+.krow{{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;}}
+.g2{{display:grid;grid-template-columns:1fr 1fr;gap:16px;}}
+@media(max-width:680px){{.g2{{grid-template-columns:1fr;}}}}
+.info{{font-size:0.71rem;color:#94a3b8;margin-top:7px;line-height:1.6;}}
+table{{width:100%;border-collapse:collapse;font-size:0.8rem;}}
+th{{background:#f8fafc;padding:6px 8px;font-size:0.71rem;font-weight:700;
+    color:#64748b;border-bottom:2px solid #e2e8f0;white-space:nowrap;}}
+td{{padding:5px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle;}}
+tr:last-child td{{border-bottom:none;}}
+tr:hover td{{background:#f8fafc;}}
+td.bn{{font-weight:600;font-size:0.82rem;white-space:nowrap;}}
+td.reg{{font-size:0.72rem;color:#64748b;}}
+td.c{{text-align:center;}}
+td.r{{text-align:right;}}
+td.bold{{font-weight:700;}}
+td.blue{{color:#2770f0;}}
+.hi{{background:#fef9c3;}}
+.ovr-note{{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;
+           padding:8px 14px;font-size:0.75rem;color:#92400e;margin-bottom:14px;}}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <h1>👤 Analýza jednočlenného provozu poboček</h1>
+  <p>Schválené JČP sloty · Období: {_period_str} · {_n_weeks:.1f} sledovaných týdnů</p>
+</div>
+<div class="wrap">
+
+  <!-- KPI -->
+  <div class="krow">{kpis}</div>
+
+  <div class="ovr-note">
+    ℹ️ <b>Nejvíce hodin:</b> {top_br} — {top_h:.1f} h &nbsp;·&nbsp;
+    <b>Nejvyšší podíl ot. doby:</b> {top_pct_br} — {top_pct:.1f}% &nbsp;·&nbsp;
+    <b>% ot. doby</b> = JČP hodiny / (týdenní ot. hodiny × {_n_weeks:.1f} týdnů)
+  </div>
+
+  <!-- Denní timeline -->
+  <div class="card">
+    <div class="ct">📅 Denní počet poboček v jednočlenném provozu (pracovní dny)</div>
+    {_gd}
+  </div>
+
+  <!-- 2-col: hodiny + % -->
+  <div class="g2">
+    <div class="card">
+      <div class="ct">⏱ Celkové hodiny JČP dle pobočky</div>
+      {_gh}
+    </div>
+    <div class="card">
+      <div class="ct">📊 Podíl na otevírací době dle pobočky</div>
+      {_gp}
+      <div class="info">🟢 &lt;10 % · 🟡 10–20 % · 🔴 ≥20 % celkové ot. doby v období<br>
+      Výpočet: JČP hodiny / (OD_PH_TYDEN × {_n_weeks:.1f} týdnů)</div>
+    </div>
+  </div>
+
+  <!-- Scatter -->
+  <div class="card">
+    <div class="ct">🔵 Scatter — hodiny JČP vs. podíl ot. doby (velikost = počet žádostí)</div>
+    {_gs}
+  </div>
+
+  <!-- Region -->
+  <div class="card">
+    <div class="ct">🗺️ Přehled dle regionu</div>
+    {_gr}
+  </div>
+
+  <!-- Branch summary -->
+  <div class="card">
+    <div class="ct">🏦 Souhrnná tabulka dle pobočky</div>
+    <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Pobočka</th><th>Region</th>
+          <th class="c">Žádostí</th>
+          <th class="r">Hodiny JČP</th>
+          <th class="r">Ot. doba</th>
+          <th style="min-width:140px;">% ot. doby</th>
+        </tr>
+      </thead>
+      <tbody>{_br_rows}</tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- Session log -->
+  <div class="card">
+    <div class="ct">📋 Přehled všech žádostí ({len(df_jp)} záznamů)</div>
+    <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Pobočka</th><th>Region</th><th>Datum a čas</th>
+          <th class="r">Délka</th><th>Typ</th><th>Autor žádosti</th>
+        </tr>
+      </thead>
+      <tbody>{_ses_rows}</tbody>
+    </table>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>"""
+
+
 # Statický report (celkový přehled)
 generate_report(rating_status, mode='static', output_prefix="report_rating_2026")
 
@@ -22316,3 +22791,22 @@ generate_report(rating_status, mode='comparison', output_prefix="report")
 
 # Pobočkové reporty (jeden soubor per pobočka)
 generate_branch_reports(rating_status, output_dir="report_pobocky", hotovostni_trn=hotovostni_trn, hotovostni_trn_detail=hotovostni_trn_detail, export_atm=export_atm, kapacita_atm=kapacita_atm, visits=visits, parties_full=parties_full, spadovky=spadovky, oteviraci_doba_detail=oteviraci_doba_detail)
+
+# Jednočlenný provoz poboček — samostatný report
+_jp_csv_path = '../vypocet_ir_2026/zdroje/Jednočlenný provoz poboček.csv'
+try:
+    import os as _os
+    if _os.path.exists(_jp_csv_path):
+        print("  👤 Generuji report jednočlenného provozu poboček...")
+        _jp_html = generate_jednoclenny_provoz_report(
+            _jp_csv_path,
+            oteviraci_df=oteviraci_doba_df if not oteviraci_doba_df.empty else None
+        )
+        _jp_out = 'report_jednoclenny_provoz.html'
+        with open(_jp_out, 'w', encoding='utf-8') as _fjp:
+            _fjp.write(_jp_html)
+        print(f"✅ Jednočlenný provoz report: {_jp_out}")
+    else:
+        print(f"  ⚠ CSV nenalezen: {_jp_csv_path}")
+except Exception as _ejp:
+    print(f"  ⚠ Jednočlenný provoz report: {_ejp}")
