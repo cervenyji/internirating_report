@@ -7490,8 +7490,10 @@ def generate_bns_close_table(df):
     """Tabulka keep/close dle Strategie BNS, BNS dle IR 25 a Simulace 250 po regionech 2027-2030."""
     _strat  = 'FOOTPRINT_STRATEGIE_(2030)'
     _yr_col = 'PLAN_CLOSE_(ROK)'
-    _ir_col = 'BNS_IR_FLAG'
-    _sm_col = 'SIM_250_FLAG'
+    _ir_col    = 'BNS_IR_FLAG'
+    _sm_col    = 'SIM_250_FLAG'
+    _sm280_col = 'SIM_280_FLAG'
+    _sm300_col = 'SIM_300_FLAG'
 
     if _strat not in df.columns or 'REGION_NAME' not in df.columns:
         return "<p style='color:#aaa;font-style:italic;'>Data BNS strategie nejsou k dispozici.</p>"
@@ -7515,23 +7517,29 @@ def generate_bns_close_table(df):
         close_n  = int(sub['_is_close'].sum())
         keep_yr  = {yr: int(((~sub['_is_close']) | (sub['_close_yr'].fillna(9999) > yr)).sum())
                     for yr in YEARS}
-        ir_k, ir_c   = _flag_counts(sub, _ir_col)
-        sim_k, sim_c = _flag_counts(sub, _sm_col)
-        return n, close_n, keep_yr, ir_k, ir_c, sim_k, sim_c
+        ir_k, ir_c         = _flag_counts(sub, _ir_col)
+        sim_k, sim_c       = _flag_counts(sub, _sm_col)
+        sim280_k, sim280_c = _flag_counts(sub, _sm280_col)
+        sim300_k, sim300_c = _flag_counts(sub, _sm300_col)
+        return n, close_n, keep_yr, ir_k, ir_c, sim_k, sim_c, sim280_k, sim280_c, sim300_k, sim300_c
 
     all_rows = []
     for reg in regions:
         all_rows.append((reg, _stats(d[d['REGION_NAME'] == reg]), False))
     all_rows.append(('CELKEM', _stats(d[d['REGION_NAME'].isin(regions)]), True))
 
-    has_ir  = _ir_col in d.columns and d[_ir_col].astype(str).str.lower().isin(['keep','close']).any()
-    has_sim = _sm_col in d.columns and d[_sm_col].astype(str).str.lower().isin(['keep','close']).any()
+    has_ir     = _ir_col    in d.columns and d[_ir_col].astype(str).str.lower().isin(['keep','close']).any()
+    has_sim    = _sm_col    in d.columns and d[_sm_col].astype(str).str.lower().isin(['keep','close']).any()
+    has_sim280 = _sm280_col in d.columns and d[_sm280_col].astype(str).str.lower().isin(['keep','close']).any()
+    has_sim300 = _sm300_col in d.columns and d[_sm300_col].astype(str).str.lower().isin(['keep','close']).any()
 
     # ── Barvy skupin ──
-    _C_FP  = '#dc2626'   # Strategie BNS (footprint) — červená
-    _C_IR  = '#1d4ed8'   # Strategie BNS dle IR 25 — modrá
-    _C_SIM = '#7c3aed'   # Simulace 250 — fialová
-    _C_HDR = '#1e293b'   # záhlaví Region/Celkem
+    _C_FP   = '#dc2626'   # Strategie BNS (footprint) — červená
+    _C_IR   = '#1d4ed8'   # Strategie BNS dle IR 25 — modrá
+    _C_SIM  = '#2770f0'   # Simulace 250 — modrá
+    _C_S280 = '#16a34a'   # Simulace 280 — zelená
+    _C_S300 = '#7c3aed'   # Simulace 300 — fialová
+    _C_HDR  = '#1e293b'   # záhlaví Region/Celkem
 
     def _th(txt, rs=1, cs=1, bg='#2770f0', align='center'):
         return (f'<th rowspan="{rs}" colspan="{cs}" style="background:{bg};color:#fff;'
@@ -7539,9 +7547,11 @@ def generate_bns_close_table(df):
                 f'text-align:{align};font-size:0.77rem;font-weight:700;white-space:nowrap;">{txt}</th>')
 
     # Počet skupin pro colspan výpočet
-    _fp_cs  = 1 + len(YEARS)   # Close + Keep 2027-2030
-    _ir_cs  = 2 if has_ir  else 0
-    _sim_cs = 2 if has_sim else 0
+    _fp_cs   = 1 + len(YEARS)    # Close + Keep 2027-2030
+    _ir_cs   = 2 if has_ir    else 0
+    _sim_cs  = 2 if has_sim   else 0
+    _s280_cs = 2 if has_sim280 else 0
+    _s300_cs = 2 if has_sim300 else 0
 
     hdr1 = '<tr>'
     hdr1 += _th('Region', rs=2, align='left', bg=_C_HDR)
@@ -7550,7 +7560,11 @@ def generate_bns_close_table(df):
     if has_ir:
         hdr1 += _th('🎯 Strategie BNS dle IR 25', cs=_ir_cs, bg=_C_IR)
     if has_sim:
-        hdr1 += _th('🏦 Simulace 250 poboček', cs=_sim_cs, bg=_C_SIM)
+        hdr1 += _th('🏦 Simulace 250', cs=_sim_cs, bg=_C_SIM)
+    if has_sim280:
+        hdr1 += _th('🏦 Simulace 280', cs=_s280_cs, bg=_C_S280)
+    if has_sim300:
+        hdr1 += _th('🏦 Simulace 300', cs=_s300_cs, bg=_C_S300)
     hdr1 += '</tr>'
 
     hdr2 = '<tr>'
@@ -7563,6 +7577,12 @@ def generate_bns_close_table(df):
     if has_sim:
         hdr2 += _th('✅ Keep', bg=f'{_C_SIM}cc')
         hdr2 += _th('❌ Close', bg=f'{_C_SIM}99')
+    if has_sim280:
+        hdr2 += _th('✅ Keep', bg=f'{_C_S280}cc')
+        hdr2 += _th('❌ Close', bg=f'{_C_S280}99')
+    if has_sim300:
+        hdr2 += _th('✅ Keep', bg=f'{_C_S300}cc')
+        hdr2 += _th('❌ Close', bg=f'{_C_S300}99')
     hdr2 += '</tr>'
 
     # ── Řádky ──
@@ -7587,7 +7607,7 @@ def generate_bns_close_table(df):
 
     rows_html = ''
     for i, (reg, stats, is_total) in enumerate(all_rows):
-        n, close_n, keep_yr, ir_k, ir_c, sim_k, sim_c = stats
+        n, close_n, keep_yr, ir_k, ir_c, sim_k, sim_c, sim280_k, sim280_c, sim300_k, sim300_c = stats
         bg  = '#eff6ff' if is_total else ('#ffffff' if i % 2 == 0 else '#f8fafc')
         fw  = 'font-weight:700;' if is_total else ''
         sep = 'border-top:2px solid #1d4ed8;' if is_total else ''
@@ -7608,8 +7628,16 @@ def generate_bns_close_table(df):
             row += _td_close(ir_c, bold=is_total).replace('border:1px solid', f'{sep}border:1px solid')
         # Simulace 250
         if has_sim:
-            row += _td_num(sim_k, n, color_pos='#7c3aed', bold=is_total).replace('border:1px solid', f'{sep}border:1px solid')
+            row += _td_num(sim_k, n, color_pos='#2770f0', bold=is_total).replace('border:1px solid', f'{sep}border:1px solid')
             row += _td_close(sim_c, bold=is_total).replace('border:1px solid', f'{sep}border:1px solid')
+        # Simulace 280
+        if has_sim280:
+            row += _td_num(sim280_k, n, color_pos='#16a34a', bold=is_total).replace('border:1px solid', f'{sep}border:1px solid')
+            row += _td_close(sim280_c, bold=is_total).replace('border:1px solid', f'{sep}border:1px solid')
+        # Simulace 300
+        if has_sim300:
+            row += _td_num(sim300_k, n, color_pos='#7c3aed', bold=is_total).replace('border:1px solid', f'{sep}border:1px solid')
+            row += _td_close(sim300_c, bold=is_total).replace('border:1px solid', f'{sep}border:1px solid')
         row += '</tr>'
         rows_html += row
 
@@ -7617,7 +7645,9 @@ def generate_bns_close_table(df):
         f"<div style='font-size:0.75rem;color:#64748b;margin-top:8px;display:flex;gap:16px;flex-wrap:wrap;'>"
         f"<span><b style='color:{_C_FP};'>📋 Strategie BNS</b>: Keep = pobočky ještě neuzavřené ke konci daného roku</span>"
         + (f"<span><b style='color:{_C_IR};'>🎯 IR 25</b>: top {BNS_IR_TOP_N} poboček dle IR = keep</span>" if has_ir else "")
-        + (f"<span><b style='color:{_C_SIM};'>🏦 Sim 250</b>: pobočky vybrané simulací 250 = keep</span>" if has_sim else "")
+        + (f"<span><b style='color:{_C_SIM};'>🏦 Sim 250</b>: top 250 poboček dle sim. IR 2030 = keep</span>" if has_sim else "")
+        + (f"<span><b style='color:{_C_S280};'>🏦 Sim 280</b>: top 280 poboček = keep</span>" if has_sim280 else "")
+        + (f"<span><b style='color:{_C_S300};'>🏦 Sim 300</b>: top 300 poboček = keep</span>" if has_sim300 else "")
         + "</div>"
     )
 
@@ -16570,6 +16600,245 @@ function obSet_{_fn_slug}(btn, ob){{
             else:
                 _sec_fte = ''
 
+            # ── FTE dopad po letech uzavírání (BNS strategie) ────────────────
+            _sec_fte_yr = ''
+            _yr_col_bns = 'PLAN_CLOSE_(ROK)'
+            if not _df_close_fte.empty and _fte_cols_av and _yr_col_bns in _df_bns.columns:
+                _dfc_yr = _df_bns[_df_bns['_BNS_CAT'] == 'close'].copy()
+                _dfc_yr[_yr_col_bns] = pd.to_numeric(_dfc_yr[_yr_col_bns], errors='coerce')
+                _have_fte_yr  = 'FTE' in _fte_cols_av
+                _have_obch_yr = 'OBCHODNI_FTE' in _fte_cols_av
+                for _fc in _fte_cols_av:
+                    _dfc_yr[_fc] = pd.to_numeric(_dfc_yr[_fc], errors='coerce').fillna(0)
+                _close_yrs = sorted([int(y) for y in _dfc_yr[_yr_col_bns].dropna().unique() if y > 2000])
+
+                _yc_map = {2027: '#dc2626', 2028: '#e07a2a', 2029: '#ca8a04', 2030: '#1d4ed8'}
+
+                def _fy_th_grp(cs, txt, bg):
+                    return (f'<th colspan="{cs}" style="padding:5px 8px;background:{bg};color:white;'
+                            f'font-size:0.73rem;text-align:center;border:1px solid rgba(255,255,255,.2);'
+                            f'white-space:nowrap;">{txt}</th>')
+
+                _ncols_yr = 1 + (1 if _have_fte_yr else 0) + (1 if _have_obch_yr else 0)
+                _fy_h1 = (
+                    f'<tr>'
+                    f'<th rowspan="2" style="padding:5px 10px;background:#1e293b;color:white;'
+                    f'font-size:0.73rem;text-align:left;border:1px solid rgba(255,255,255,.2);">Region</th>'
+                    f'<th rowspan="2" style="padding:5px 8px;background:#1e293b;color:white;'
+                    f'font-size:0.73rem;text-align:center;border:1px solid rgba(255,255,255,.2);">Celkem</th>'
+                )
+                for _cy in _close_yrs:
+                    _fy_h1 += _fy_th_grp(_ncols_yr, str(_cy), _yc_map.get(_cy, '#475569'))
+                _fy_h1 += _fy_th_grp(_ncols_yr, 'CELKEM', '#334155') + '</tr>'
+
+                def _fy_subcols(bg):
+                    _sc = (f'<th style="padding:4px 8px;background:{bg};color:white;font-size:0.7rem;'
+                           f'text-align:center;border:1px solid rgba(255,255,255,.2);">Poboček</th>')
+                    if _have_fte_yr:
+                        _sc += (f'<th style="padding:4px 8px;background:{bg};color:white;font-size:0.7rem;'
+                                f'text-align:right;border:1px solid rgba(255,255,255,.2);">FTE</th>')
+                    if _have_obch_yr:
+                        _sc += (f'<th style="padding:4px 8px;background:{bg};color:white;font-size:0.7rem;'
+                                f'text-align:right;border:1px solid rgba(255,255,255,.2);">Obch. FTE</th>')
+                    return _sc
+
+                _fy_h2 = '<tr>'
+                for _cy in _close_yrs:
+                    _yc = _yc_map.get(_cy, '#475569') + 'cc'
+                    _fy_h2 += _fy_subcols(_yc)
+                _fy_h2 += _fy_subcols('#334155cc') + '</tr>'
+
+                # Aggregation per region
+                _fy_grp = {}
+                for _brn in _bns_regions:
+                    _dreg = _dfc_yr[_dfc_yr['REGION_NAME'] == _brn] if 'REGION_NAME' in _dfc_yr.columns else pd.DataFrame()
+                    _fy_grp[_brn] = {
+                        '_total': {
+                            'n': len(_dreg),
+                            'fte': float(_dreg['FTE'].sum()) if _have_fte_yr and not _dreg.empty else 0.0,
+                            'obch': float(_dreg['OBCHODNI_FTE'].sum()) if _have_obch_yr and not _dreg.empty else 0.0,
+                        }
+                    }
+                    for _cy in _close_yrs:
+                        _dy = _dreg[_dreg[_yr_col_bns] == _cy]
+                        _fy_grp[_brn][_cy] = {
+                            'n': len(_dy),
+                            'fte': float(_dy['FTE'].sum()) if _have_fte_yr and not _dy.empty else 0.0,
+                            'obch': float(_dy['OBCHODNI_FTE'].sum()) if _have_obch_yr and not _dy.empty else 0.0,
+                        }
+
+                _fy_tot = {
+                    _cy: {
+                        'n': sum(_fy_grp.get(_b, {}).get(_cy, {'n': 0})['n'] for _b in _bns_regions),
+                        'fte': sum(_fy_grp.get(_b, {}).get(_cy, {'fte': 0.0})['fte'] for _b in _bns_regions),
+                        'obch': sum(_fy_grp.get(_b, {}).get(_cy, {'obch': 0.0})['obch'] for _b in _bns_regions),
+                    } for _cy in _close_yrs
+                }
+                _fy_tot['_total'] = {
+                    'n': sum(_fy_grp.get(_b, {}).get('_total', {'n': 0})['n'] for _b in _bns_regions),
+                    'fte': sum(_fy_grp.get(_b, {}).get('_total', {'fte': 0.0})['fte'] for _b in _bns_regions),
+                    'obch': sum(_fy_grp.get(_b, {}).get('_total', {'obch': 0.0})['obch'] for _b in _bns_regions),
+                }
+
+                def _fy_cell(d):
+                    _n_v  = d['n'];  _fte_v  = d['fte'];  _obch_v = d['obch']
+                    _nc   = str(_n_v) if _n_v else '—'
+                    _ftec = f'{_fte_v:.1f}' if _n_v else '—'
+                    _obc  = f'{_obch_v:.1f}' if _n_v else '—'
+                    _r = (f'<td style="padding:5px 8px;text-align:center;font-size:0.78rem;'
+                          f'border:1px solid #e2e8f0;color:#d62728;font-weight:600;">{_nc}</td>')
+                    if _have_fte_yr:
+                        _r += (f'<td style="padding:5px 8px;text-align:right;font-size:0.78rem;'
+                               f'border:1px solid #e2e8f0;">{_ftec}</td>')
+                    if _have_obch_yr:
+                        _r += (f'<td style="padding:5px 8px;text-align:right;font-size:0.78rem;'
+                               f'border:1px solid #e2e8f0;color:#d62728;font-weight:600;">{_obc}</td>')
+                    return _r
+
+                _fy_rows = ''
+                for _i_fy, _brn in enumerate(_bns_regions):
+                    if _brn not in _fy_grp or _fy_grp[_brn]['_total']['n'] == 0:
+                        continue
+                    _bg_fy = '#ffffff' if _i_fy % 2 == 0 else '#f8fafc'
+                    _fy_rows += f'<tr style="background:{_bg_fy};">'
+                    _fy_rows += (f'<td style="padding:5px 10px;font-size:0.8rem;font-weight:600;'
+                                 f'border:1px solid #e2e8f0;">{_brn}</td>')
+                    _fy_rows += (f'<td style="padding:5px 8px;text-align:center;font-size:0.78rem;'
+                                 f'border:1px solid #e2e8f0;color:#475569;">{_fy_grp[_brn]["_total"]["n"]}</td>')
+                    for _cy in _close_yrs:
+                        _fy_rows += _fy_cell(_fy_grp[_brn][_cy])
+                    _fy_rows += _fy_cell(_fy_grp[_brn]['_total'])
+                    _fy_rows += '</tr>'
+
+                _fy_rows += (
+                    f'<tr style="background:#fff8f8;font-weight:700;border-top:2px solid #fecaca;">'
+                    f'<td style="padding:5px 10px;font-size:0.8rem;border:1px solid #e2e8f0;">CELKEM</td>'
+                    f'<td style="padding:5px 8px;text-align:center;font-size:0.78rem;'
+                    f'border:1px solid #e2e8f0;color:#d62728;">{_fy_tot["_total"]["n"]}</td>'
+                )
+                for _cy in _close_yrs:
+                    _fy_rows += _fy_cell(_fy_tot[_cy])
+                _fy_rows += _fy_cell(_fy_tot['_total']) + '</tr>'
+
+                _sec_fte_yr = make_collapsible(
+                    'bns-fte-yr',
+                    f'📅 Dopad do FTE po letech uzavírání — BNS strategie',
+                    (f'<div style="overflow-x:auto;">'
+                     f'<table style="width:100%;border-collapse:collapse;">'
+                     f'<thead>{_fy_h1}{_fy_h2}</thead>'
+                     f'<tbody>{_fy_rows}</tbody></table></div>'),
+                    default_open=False,
+                )
+
+            # ── FTE dopad dle modelů Simulace 250 / 280 / 300 ────────────────
+            _sec_fte_models = ''
+            _sim_flag_defs = [
+                ('SIM_250_FLAG', 250, '#2770f0'),
+                ('SIM_280_FLAG', 280, '#16a34a'),
+                ('SIM_300_FLAG', 300, '#7c3aed'),
+            ]
+            _sim_avail = [
+                (col, n, c) for col, n, c in _sim_flag_defs
+                if col in _df_bns.columns and _df_bns[col].astype(str).str.lower().isin(['keep','close']).any()
+            ]
+            if _sim_avail and _fte_cols_av:
+                _have_fte_sm  = 'FTE' in _fte_cols_av
+                _have_obch_sm = 'OBCHODNI_FTE' in _fte_cols_av
+                _ncols_sm     = 1 + (1 if _have_fte_sm else 0) + (1 if _have_obch_sm else 0)
+
+                def _sm_th_grp(cs, txt, bg):
+                    return (f'<th colspan="{cs}" style="padding:5px 8px;background:{bg};color:white;'
+                            f'font-size:0.73rem;text-align:center;border:1px solid rgba(255,255,255,.2);'
+                            f'white-space:nowrap;">{txt}</th>')
+
+                _sm_h1 = (
+                    f'<tr>'
+                    f'<th rowspan="2" style="padding:5px 10px;background:#1e293b;color:white;'
+                    f'font-size:0.73rem;text-align:left;border:1px solid rgba(255,255,255,.2);">Region</th>'
+                )
+                for _scol, _sn, _sc in _sim_avail:
+                    _sm_h1 += _sm_th_grp(_ncols_sm, f'🏦 Simulace {_sn}', _sc)
+                _sm_h1 += '</tr>'
+
+                def _sm_subcols(bg):
+                    _sc = (f'<th style="padding:4px 8px;background:{bg};color:white;font-size:0.7rem;'
+                           f'text-align:center;border:1px solid rgba(255,255,255,.2);">Close</th>')
+                    if _have_fte_sm:
+                        _sc += (f'<th style="padding:4px 8px;background:{bg};color:white;font-size:0.7rem;'
+                                f'text-align:right;border:1px solid rgba(255,255,255,.2);">FTE</th>')
+                    if _have_obch_sm:
+                        _sc += (f'<th style="padding:4px 8px;background:{bg};color:white;font-size:0.7rem;'
+                                f'text-align:right;border:1px solid rgba(255,255,255,.2);">Obch. FTE</th>')
+                    return _sc
+
+                _sm_h2 = '<tr>'
+                for _scol, _sn, _sc in _sim_avail:
+                    _sm_h2 += _sm_subcols(_sc + 'cc')
+                _sm_h2 += '</tr>'
+
+                # Pre-compute close DFs for each model
+                _sim_close_dfs = {}
+                for _scol, _sn, _sc in _sim_avail:
+                    _sdf = _df_bns[_df_bns[_scol].astype(str).str.lower() == 'close'].copy()
+                    for _fc in _fte_cols_av:
+                        _sdf[_fc] = pd.to_numeric(_sdf[_fc], errors='coerce').fillna(0)
+                    _sim_close_dfs[_sn] = _sdf
+
+                def _sm_cell(d, clr):
+                    _n_v  = d['n'];  _fte_v  = d['fte'];  _obch_v = d['obch']
+                    _nc   = str(_n_v) if _n_v else '—'
+                    _ftec = f'{_fte_v:.1f}' if _n_v else '—'
+                    _obc  = f'{_obch_v:.1f}' if _n_v else '—'
+                    _r = (f'<td style="padding:5px 8px;text-align:center;font-size:0.78rem;'
+                          f'border:1px solid #e2e8f0;color:{clr};font-weight:600;">{_nc}</td>')
+                    if _have_fte_sm:
+                        _r += (f'<td style="padding:5px 8px;text-align:right;font-size:0.78rem;'
+                               f'border:1px solid #e2e8f0;">{_ftec}</td>')
+                    if _have_obch_sm:
+                        _r += (f'<td style="padding:5px 8px;text-align:right;font-size:0.78rem;'
+                               f'border:1px solid #e2e8f0;font-weight:600;color:{clr};">{_obc}</td>')
+                    return _r
+
+                _sm_rows = ''
+                for _i_sm, _brn in enumerate(_bns_regions):
+                    _bg_sm = '#ffffff' if _i_sm % 2 == 0 else '#f8fafc'
+                    _sm_rows += f'<tr style="background:{_bg_sm};">'
+                    _sm_rows += (f'<td style="padding:5px 10px;font-size:0.8rem;font-weight:600;'
+                                 f'border:1px solid #e2e8f0;">{_brn}</td>')
+                    for _scol, _sn, _sc in _sim_avail:
+                        _sdf_r = _sim_close_dfs[_sn]
+                        _dreg_s = _sdf_r[_sdf_r['REGION_NAME'] == _brn] if 'REGION_NAME' in _sdf_r.columns else pd.DataFrame()
+                        _d_sm = {
+                            'n': len(_dreg_s),
+                            'fte': float(_dreg_s['FTE'].sum()) if _have_fte_sm and not _dreg_s.empty else 0.0,
+                            'obch': float(_dreg_s['OBCHODNI_FTE'].sum()) if _have_obch_sm and not _dreg_s.empty else 0.0,
+                        }
+                        _sm_rows += _sm_cell(_d_sm, _sc)
+                    _sm_rows += '</tr>'
+
+                # Total row
+                _sm_rows += '<tr style="background:#f0f6ff;font-weight:700;border-top:2px solid #bfdbfe;">'
+                _sm_rows += f'<td style="padding:5px 10px;font-size:0.8rem;border:1px solid #e2e8f0;">CELKEM</td>'
+                for _scol, _sn, _sc in _sim_avail:
+                    _sdf_t = _sim_close_dfs[_sn]
+                    _d_tot = {
+                        'n': len(_sdf_t),
+                        'fte': float(_sdf_t['FTE'].sum()) if _have_fte_sm and not _sdf_t.empty else 0.0,
+                        'obch': float(_sdf_t['OBCHODNI_FTE'].sum()) if _have_obch_sm and not _sdf_t.empty else 0.0,
+                    }
+                    _sm_rows += _sm_cell(_d_tot, _sc)
+                _sm_rows += '</tr>'
+
+                _sec_fte_models = make_collapsible(
+                    'bns-fte-models',
+                    f'🏦 Dopad do FTE — modely Simulace 250 / 280 / 300',
+                    (f'<div style="overflow-x:auto;">'
+                     f'<table style="width:100%;border-collapse:collapse;">'
+                     f'<thead>{_sm_h1}{_sm_h2}</thead>'
+                     f'<tbody>{_sm_rows}</tbody></table></div>'),
+                    default_open=False,
+                )
+
             # ── BNS Keep/Close přehled (reuse existing function) ─────────────
             _bns_kc_html = generate_bns_close_table(_df_bns)
             _sec_bns_keep_close = make_collapsible(
@@ -16954,6 +17223,10 @@ function obSet_{_fn_slug}(btn, ob){{
   {_sec_invest_cost}
 
   {_sec_fte}
+
+  {_sec_fte_yr}
+
+  {_sec_fte_models}
 
   {_sec_bns_keep_close}
 
@@ -22791,6 +23064,58 @@ generate_report(rating_status, mode='comparison', output_prefix="report")
 
 # Pobočkové reporty (jeden soubor per pobočka)
 generate_branch_reports(rating_status, output_dir="report_pobocky", hotovostni_trn=hotovostni_trn, hotovostni_trn_detail=hotovostni_trn_detail, export_atm=export_atm, kapacita_atm=kapacita_atm, visits=visits, parties_full=parties_full, spadovky=spadovky, oteviraci_doba_detail=oteviraci_doba_detail)
+
+# Export návštěvnostních dat jako .pkl pro další analýzy
+try:
+    if visits is not None and not visits.empty:
+        print("  📊 Ukládám návštěvnostní data do pkl...")
+        _vexp = visits.copy()
+        _vexp.columns = [c.upper() for c in _vexp.columns]
+        _vid_col = next((c for c in ['BRANCH_CODE', 'BRANCH_ID', 'POBOCKA'] if c in _vexp.columns), None)
+        if _vid_col and _vid_col != 'BRANCH_CODE':
+            _vexp = _vexp.rename(columns={_vid_col: 'BRANCH_CODE'})
+        if 'BRANCH_CODE' in _vexp.columns:
+            _vexp['BRANCH_CODE'] = pd.to_numeric(_vexp['BRANCH_CODE'], errors='coerce')
+        if 'VISIT_DATE' in _vexp.columns:
+            _vexp['_dt']      = pd.to_datetime(_vexp['VISIT_DATE'], errors='coerce')
+            _vexp['_month']   = _vexp['_dt'].dt.month
+            _vexp['_weekday'] = _vexp['_dt'].dt.weekday
+        if 'VISIT_TIME' in _vexp.columns:
+            _vexp['_hour'] = pd.to_numeric(
+                _vexp['VISIT_TIME'].astype(str).str.split(':').str[0], errors='coerce')
+
+        _v_base = _vexp.groupby('BRANCH_CODE').size().rename('total_visits').reset_index()
+        if '_month' in _vexp.columns:
+            _v_month = (
+                _vexp.groupby(['BRANCH_CODE', '_month']).size()
+                .unstack(fill_value=0).reindex(columns=range(1, 13), fill_value=0)
+                .rename(columns={m: f'visits_m{m:02d}' for m in range(1, 13)})
+                .reset_index()
+            )
+            _v_base = _v_base.merge(_v_month, on='BRANCH_CODE', how='left')
+        if '_weekday' in _vexp.columns:
+            _wd_names_exp = {0: 'Po', 1: 'Ut', 2: 'St', 3: 'Ct', 4: 'Pa', 5: 'So', 6: 'Ne'}
+            _v_wd = (
+                _vexp.groupby(['BRANCH_CODE', '_weekday']).size()
+                .unstack(fill_value=0).reindex(columns=range(7), fill_value=0)
+                .rename(columns={d: f'visits_wd_{_wd_names_exp[d]}' for d in range(7)})
+                .reset_index()
+            )
+            _v_base = _v_base.merge(_v_wd, on='BRANCH_CODE', how='left')
+        if '_hour' in _vexp.columns:
+            _v_hr = (
+                _vexp.groupby(['BRANCH_CODE', '_hour']).size()
+                .unstack(fill_value=0).reindex(columns=range(6, 20), fill_value=0)
+                .rename(columns={h: f'visits_h{h:02d}' for h in range(6, 20)})
+                .reset_index()
+            )
+            _v_base = _v_base.merge(_v_hr, on='BRANCH_CODE', how='left')
+
+        _v_pkl = 'report_navstevnost_data.pkl'
+        _v_base.to_pickle(_v_pkl)
+        print(f"✅ Návštěvnostní data (per pobočka): {_v_pkl} ({len(_v_base)} poboček)")
+except Exception as _vpkl_e:
+    print(f"  ⚠ Export návštěvnostních dat: {_vpkl_e}")
 
 # Jednočlenný provoz poboček — samostatný report
 _jp_csv_path = '../vypocet_ir_2026/zdroje/Jednočlenný provoz poboček.csv'
