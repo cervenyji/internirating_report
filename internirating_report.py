@@ -22827,13 +22827,14 @@ except Exception as _dbs_open_err:
     if 'BRANCH_CLOSED' not in rating_status.columns:
         rating_status['BRANCH_CLOSED'] = False
 
-def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path=None, hist_df=None):
+def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path=None, hist_df=None, region_lookup=None):
     """
     Standalone HTML report — analýza jednočlenného provozu poboček.
 
     Vstupy:
         jp_csv_path: cesta k 'Jednočlenný provoz poboček.csv'
         oteviraci_df: volitelný DataFrame s OD_PH_TYDEN per BRANCH_CODE
+        region_lookup: dict {branch_id (int): region_name (str)} pro doplnění chybějících regionů
     Returns: HTML string (kompletní stránka)
     """
     import plotly.graph_objects as go
@@ -22958,6 +22959,12 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
                 })
         except Exception:
             pass
+
+    # Doplnění chybějících regionů z region_lookup
+    if region_lookup:
+        for _rl_r in records:
+            if str(_rl_r['region']).strip() in ('—', '', 'nan', 'None'):
+                _rl_r['region'] = region_lookup.get(int(_rl_r['branch_id']), '—')
 
     df_jp  = pd.DataFrame(records)
     # Zahrnujeme všechny záznamy — žádosti i zrušení; zrušení počítáme zvlášť pro info
@@ -23102,6 +23109,25 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
     _czmf_js      = _json.dumps(_cz_mf,        ensure_ascii=False)
     _month_wks_js = _json.dumps(_month_wks,     ensure_ascii=False)
 
+    # Kumulativní % průběžného provozu v JČP oproti celkové otevírací době
+    _cum_jcp_h    = 0.0
+    _cum_open_h   = 0.0
+    _cum_labels   = []
+    _cum_monthly_pct = []
+    _cum_running_pct = []
+    for _cx_m in _months_sorted:
+        _wks_cx  = _month_wks.get(_cx_m, 4.33)
+        _open_cx = sum(_br_ot.values()) * _wks_cx
+        _jcp_cx  = _monthly.get(_cx_m, {}).get('hours', 0.0)
+        _pct_m_cx = (_jcp_cx / _open_cx * 100) if _open_cx > 0 else 0.0
+        _cum_jcp_h  += _jcp_cx
+        _cum_open_h += _open_cx
+        _cum_pct_r   = (_cum_jcp_h / _cum_open_h * 100) if _cum_open_h > 0 else 0.0
+        _cx_mm = _cx_m.split('-')[1]; _cx_yy = _cx_m.split('-')[0][2:]
+        _cum_labels.append(_cz_ms.get(_cx_mm, _cx_mm) + ' ' + _cx_yy)
+        _cum_monthly_pct.append(round(_pct_m_cx, 3))
+        _cum_running_pct.append(round(_cum_pct_r, 3))
+
     # Calendar boxes (Python-rendered)
     _cal_boxes = ''
     for _cm in _months_sorted:
@@ -23198,6 +23224,45 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
             f'<td class="c">{int(_rr["n_sessions"])}</td>'
             f'<td class="r" style="color:#2770f0;font-weight:700;">'
             f'{float(_rr["total_hours"]):.1f} h</td></tr>\n'
+        )
+
+    # Top 5 nejhorších poboček (nejvyšší % ot. doby)
+    _top5_medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣']
+    _top5_html   = ''
+    for _ti, (_, _tr) in enumerate(br_agg.sort_values('pct_single', ascending=False).head(5).iterrows()):
+        _tpct = float(_tr['pct_single'])
+        _tpc  = '#dc2626' if _tpct >= 20 else ('#f59e0b' if _tpct >= 10 else '#16a34a')
+        _tbn  = str(_tr['branch_name']).replace('"', '&quot;')
+        _top5_html += (
+            f'<div style="background:white;border:1px solid #e2e8f0;border-left:4px solid {_tpc};'
+            f'border-radius:10px;padding:12px 16px;flex:1;min-width:160px;max-width:220px;">'
+            f'<div style="font-size:1.4rem;line-height:1;">{_top5_medals[_ti]}</div>'
+            f'<div style="font-size:0.82rem;font-weight:700;color:#1e2a38;margin:4px 0 2px;'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{_tbn}">{_tbn}</div>'
+            f'<div style="font-size:0.7rem;color:#64748b;margin-bottom:8px;">{_tr["region"]}</div>'
+            f'<div style="font-size:1.8rem;font-weight:800;color:{_tpc};line-height:1;">'
+            f'{_tpct:.1f}%</div>'
+            f'<div style="font-size:0.65rem;color:#94a3b8;margin-top:2px;">'
+            f'{float(_tr["total_hours"]):.1f} h JČP · {int(_tr["n_sessions"])} žád.</div>'
+            f'</div>'
+        )
+
+    # Top 3 autoři žádostí
+    _autor_medals = ['🥇', '🥈', '🥉']
+    _top3_autori_html = ''
+    _autor_cnt = (df_jp[df_jp['autor'].str.strip().ne('') & df_jp['autor'].notna()]
+                  .groupby('autor').size()
+                  .sort_values(ascending=False).head(3))
+    for _ai, (_an, _ac) in enumerate(_autor_cnt.items()):
+        _abg = '#fef9c3' if _ai == 0 else ('#f1f5f9' if _ai == 1 else '#f8fafc')
+        _top3_autori_html += (
+            f'<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;'
+            f'background:{_abg};border-radius:8px;margin-bottom:6px;">'
+            f'<span style="font-size:1.5rem;">{_autor_medals[_ai]}</span>'
+            f'<div style="flex:1;">'
+            f'<div style="font-size:0.85rem;font-weight:700;color:#1e2a38;">{_an}</div>'
+            f'<div style="font-size:0.7rem;color:#64748b;">{_ac} žádostí</div>'
+            f'</div></div>'
         )
 
     # ── Plotly ────────────────────────────────────────────────────
@@ -23304,8 +23369,33 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
         yaxis=dict(showgrid=True, gridcolor='#f0f0f0', ticksuffix='%'),
     )
 
+    # Graf 6: kumulativní % provozu v JČP
+    fig_cum = go.Figure()
+    if _cum_labels:
+        fig_cum.add_trace(go.Bar(
+            x=_cum_labels, y=_cum_monthly_pct,
+            name='Měsíční %', marker_color='#93c5fd',
+            hovertemplate='%{x}<br>Měsíční: <b>%{y:.3f}%</b><extra></extra>',
+        ))
+        fig_cum.add_trace(go.Scatter(
+            x=_cum_labels, y=_cum_running_pct,
+            name='Kumulativní %', mode='lines+markers',
+            line=dict(color='#2770f0', width=2.5),
+            marker=dict(size=7, color='#2770f0'),
+            hovertemplate='%{x}<br>Kumulativní: <b>%{y:.3f}%</b><extra></extra>',
+        ))
+    fig_cum.update_layout(
+        height=280, margin=dict(l=0, r=10, t=30, b=40),
+        yaxis_title='% otevírací doby',
+        plot_bgcolor='white', paper_bgcolor='white', font=dict(size=11),
+        yaxis=dict(showgrid=True, gridcolor='#f0f0f0', ticksuffix='%'),
+        xaxis=dict(showgrid=False),
+        legend=dict(orientation='h', x=0, y=1.12),
+    )
+
     # Konvertuj do HTML
-    _gd = fig_daily.to_html(full_html=False, include_plotlyjs='cdn', config=_cfg)
+    _gd   = fig_daily.to_html(full_html=False, include_plotlyjs='cdn', config=_cfg)
+    _gcum = fig_cum.to_html(full_html=False, include_plotlyjs=False,   config=_cfg)
 
     # ── HTML tabulky ──────────────────────────────────────────────
     def _td(v, cls=''):
@@ -23338,9 +23428,9 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
             f'</tr>\n'
         )
 
-    # Session log table
+    # Session log table — seřazeno dle data od nejnovějšího
     _ses_rows = ''
-    for _, row in df_jp.sort_values(['branch_name', 'datum_od']).iterrows():
+    for _, row in df_jp.sort_values('datum_od', ascending=False).iterrows():
         is_z = row['pozadavek'] == 'zruseni'
         _typ_b = (_badge('Zrušení', '#fee2e2', '#dc2626', '#fca5a5') if is_z
                   else _badge('Žádost', '#eff6ff', '#2770f0', '#bfdbfe'))
@@ -23506,10 +23596,28 @@ td.clik:hover{{color:#1e40af!important;}}
     <b>% ot. doby</b> = JČP hodiny / (OD_PH_TYDEN × {_n_weeks:.1f} týdnů)
   </div>
 
+  <!-- Top 5 nejhorších poboček + Top 3 autoři -->
+  <div style="display:grid;grid-template-columns:1fr auto;gap:18px;margin-bottom:18px;align-items:start;">
+    <div class="card" style="margin-bottom:0;">
+      <div class="ct">🚨 Top 5 poboček s nejvyšším podílem JČP</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">{_top5_html}</div>
+    </div>
+    <div class="card" style="margin-bottom:0;min-width:220px;">
+      <div class="ct">✍️ Top 3 autoři žádostí</div>
+      {_top3_autori_html}
+    </div>
+  </div>
+
   <!-- Kalendář měsíců -->
   <div class="card">
     <div class="ct">📆 Přehled aktivit dle měsíce — klikněte pro detail</div>
     <div class="cal-wrap">{_cal_boxes}</div>
+  </div>
+
+  <!-- Kumulativní % JČP -->
+  <div class="card">
+    <div class="ct">📈 Průběžné roční % provozu v JČP oproti celkové otevírací době</div>
+    {_gcum}
   </div>
 
   <!-- Interaktivní tabulka poboček -->
@@ -23561,20 +23669,27 @@ td.clik:hover{{color:#1e40af!important;}}
     </table>
   </div>
 
-  <!-- Session log -->
-  <div class="card">
-    <div class="ct">📋 Přehled všech žádostí ({len(df_jp)} záznamů)</div>
-    <div style="overflow-x:auto;">
-    <table>
-      <thead>
-        <tr>
-          <th>Pobočka</th><th>Region</th><th>Datum a čas</th>
-          <th class="r">Délka</th><th>Typ</th><th>Zdroj dat</th><th>Autor žádosti</th>
-        </tr>
-      </thead>
-      <tbody>{_ses_rows}</tbody>
-    </table>
-    </div>
+  <!-- Session log (skrytý, rozbalovací) -->
+  <div class="card" style="padding:0;">
+    <details>
+      <summary style="padding:14px 20px;cursor:pointer;font-size:0.72rem;font-weight:700;
+                      color:#2770f0;text-transform:uppercase;letter-spacing:.5px;
+                      list-style:none;display:flex;align-items:center;gap:8px;">
+        <span id="ses-ico">▶</span>
+        📋 Přehled všech žádostí ({len(df_jp)} záznamů) — klikněte pro zobrazení
+      </summary>
+      <div style="padding:0 20px 16px;overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Pobočka</th><th>Region</th><th>Datum a čas</th>
+            <th class="r">Délka</th><th>Typ</th><th>Zdroj dat</th><th>Autor žádosti</th>
+          </tr>
+        </thead>
+        <tbody>{_ses_rows}</tbody>
+      </table>
+      </div>
+    </details>
   </div>
 
 </div>
@@ -23658,9 +23773,8 @@ function srtTbl(th) {{
   const col = parseInt(th.dataset.col);
   if (_sCol===col) _sDir=-_sDir; else {{ _sCol=col; _sDir=-1; }}
   const tbody = document.getElementById('brtbody');
-  const pairs = [];
-  const all = tbody.querySelectorAll('tr');
-  for (let i=0; i<all.length; i+=2) pairs.push([all[i], all[i+1]]);
+  const brRows = Array.from(tbody.querySelectorAll('tr.br-row'));
+  const pairs = brRows.map(br => [br, br.nextElementSibling]);
   pairs.sort((a,b)=>{{
     if (col===0) {{
       const an=a[0].dataset.name||'', bn=b[0].dataset.name||'';
@@ -23678,23 +23792,26 @@ function srtTbl(th) {{
   }});
   th.querySelector('.sico').textContent=_sDir>0?'↑':'↓';
   th.classList.add(_sDir>0?'asc':'desc');
+  // Re-aplikuj aktivní filtr po seřazení
+  const fil = document.getElementById('fil');
+  if (fil && fil.value) filBr(fil.value);
 }}
 
 // ── Filtrování ─────────────────────────────────────────────────
 function filBr(val) {{
   const v = val.toLowerCase();
   const tbody = document.getElementById('brtbody');
-  const all = tbody.querySelectorAll('tr');
+  const brRows = tbody.querySelectorAll('tr.br-row');
   let vis = 0;
-  for (let i=0; i<all.length; i+=2) {{
-    const br=all[i], det=all[i+1];
-    const name=(br.dataset.name||'').toLowerCase();
+  brRows.forEach(br => {{
+    const det = br.nextElementSibling;
+    const name = (br.dataset.name||'').toLowerCase();
     const show = !v || name.includes(v);
-    br.style.display=show?'':'none';
-    if (!show) det.style.display='none';
+    br.style.display = show ? '' : 'none';
+    if (det && !show) det.style.display = 'none';
     if (show) vis++;
-  }}
-  document.getElementById('filcnt').textContent=vis+' poboček';
+  }});
+  document.getElementById('filcnt').textContent = vis + ' poboček';
 }}
 
 // ── Detail pobočky (expand/collapse) ──────────────────────────
@@ -23749,6 +23866,16 @@ function tgDet(bn, bid) {{
   detRow.style.display=''; icon.textContent='▼';
   detRow.scrollIntoView({{behavior:'smooth',block:'nearest'}});
 }}
+
+// ── Session log — ikona šipky ─────────────────────────────────
+(function() {{
+  const det = document.querySelector('details');
+  if (!det) return;
+  const ico = document.getElementById('ses-ico');
+  det.addEventListener('toggle', () => {{
+    if (ico) ico.textContent = det.open ? '▼' : '▶';
+  }});
+}})();
 </script>
 </body>
 </html>"""
@@ -24071,10 +24198,21 @@ try:
     import os as _os
     if _os.path.exists(_jp_csv_path):
         print("  👤 Generuji report jednočlenného provozu poboček...")
+        _jp_region_lkp = None
+        if 'REGION' in rating_status.columns and 'BRANCH_CODE' in rating_status.columns:
+            try:
+                _jp_region_lkp = {
+                    int(r['BRANCH_CODE']): str(r['REGION'])
+                    for _, r in rating_status[['BRANCH_CODE', 'REGION']].dropna().iterrows()
+                    if str(r['REGION']).strip() not in ('', 'nan', 'None')
+                }
+            except Exception:
+                _jp_region_lkp = None
         _jp_html = generate_jednoclenny_provoz_report(
             _jp_csv_path,
             oteviraci_df=oteviraci_doba_df if not oteviraci_doba_df.empty else None,
             hist_df=_jp_hist_df,
+            region_lookup=_jp_region_lkp,
         )
         _jp_out = 'report_jednoclenny_provoz.html'
         with open(_jp_out, 'w', encoding='utf-8') as _fjp:
