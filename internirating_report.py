@@ -22827,7 +22827,7 @@ except Exception as _dbs_open_err:
     if 'BRANCH_CLOSED' not in rating_status.columns:
         rating_status['BRANCH_CLOSED'] = False
 
-def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path=None):
+def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path=None, hist_df=None):
     """
     Standalone HTML report — analýza jednočlenného provozu poboček.
 
@@ -22924,32 +22924,40 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
         })
 
     # ── Historická data (volitelně) ──────────────────────────────────
-    if hist_path is not None:
+    # hist_df (DataFrame) má přednost před hist_path (cesta k CSV)
+    _hist_raw = None
+    if hist_df is not None and not hist_df.empty:
+        _hist_raw = hist_df
+    elif hist_path is not None:
         import os as _hist_os
         if _hist_os.path.exists(hist_path):
             try:
                 _hist_raw = pd.read_csv(hist_path, encoding='utf-8')
-                for _, hrow in _hist_raw.iterrows():
-                    hd_from = _pdate(hrow.get('Datum od'))
-                    hd_to   = _pdate(hrow.get('Datum do'))
-                    records.append({
-                        'branch_id':   int(hrow.get('ID pobočky', 0) or 0),
-                        'branch_name': str(hrow.get('Název pobočky', '—')),
-                        'region':      str(hrow.get('Region', '—')),
-                        'typ':         str(hrow.get('Typ požadavku', '')),
-                        'pozadavek':   ('zruseni' if 'zrušení' in str(hrow.get('Typ požadavku', '')).lower()
-                                        else 'zadost'),
-                        'datum_od':    hd_from,
-                        'datum_do':    hd_to,
-                        'cas_od':      str(hrow.get('Čas od', '')),
-                        'cas_do':      str(hrow.get('Čas do', '')),
-                        'hours':       _session_hours(hrow),
-                        'month':       hd_from.strftime('%Y-%m') if hd_from else None,
-                        'autor':       str(hrow.get('Autor', '')),
-                        'zdroj':       str(hrow.get('Zdroj', 'historicka_data')),
-                    })
             except Exception:
                 pass
+    if _hist_raw is not None:
+        try:
+            for _, hrow in _hist_raw.iterrows():
+                hd_from = _pdate(hrow.get('Datum od'))
+                hd_to   = _pdate(hrow.get('Datum do'))
+                records.append({
+                    'branch_id':   int(hrow.get('ID pobočky', 0) or 0),
+                    'branch_name': str(hrow.get('Název pobočky', '—')),
+                    'region':      str(hrow.get('Region', '—')),
+                    'typ':         str(hrow.get('Typ požadavku', '')),
+                    'pozadavek':   ('zruseni' if 'zrušení' in str(hrow.get('Typ požadavku', '')).lower()
+                                    else 'zadost'),
+                    'datum_od':    hd_from,
+                    'datum_do':    hd_to,
+                    'cas_od':      str(hrow.get('Čas od', '')),
+                    'cas_do':      str(hrow.get('Čas do', '')),
+                    'hours':       _session_hours(hrow),
+                    'month':       hd_from.strftime('%Y-%m') if hd_from else None,
+                    'autor':       str(hrow.get('Autor', '')),
+                    'zdroj':       str(hrow.get('Zdroj', 'historicka_data_2026')),
+                })
+        except Exception:
+            pass
 
     df_jp  = pd.DataFrame(records)
     # Zahrnujeme všechny záznamy — žádosti i zrušení; zrušení počítáme zvlášť pro info
@@ -23413,16 +23421,259 @@ except Exception as _vpkl_e:
     print(f"  ⚠ Export návštěvnostních dat: {_vpkl_e}")
 
 # Jednočlenný provoz poboček — samostatný report
+# Historická data únor–červen 2026 (před spuštěním nového procesu, hardcoded)
+# Formát: (datum_od, název_pobočky, id_pobočky, čas_od, čas_do)
+_JCP_HIST_RAW = [
+    ('2026-02-09', 'Králíky', 330, '13:30', '17:15'),
+    ('2026-02-09', 'Uhlířské Janovice', 237, '15:00', '17:15'),
+    ('2026-02-09', 'Nýřany', 555, '16:00', '17:15'),
+    ('2026-02-10', 'Uhlířské Janovice', 237, '09:00', '16:15'),
+    ('2026-02-10', 'Jablonec nad Nisou - OC Rýnovka', 187, '09:00', '12:30'),
+    ('2026-02-10', 'Nýřany', 555, '08:45', '12:30'),
+    ('2026-02-10', 'Králíky', 330, '13:30', '16:15'),
+    ('2026-02-10', 'OC Haná Olomouc', 398, '14:30', '18:30'),
+    ('2026-02-11', 'Králíky', 330, '09:00', '17:15'),
+    ('2026-02-11', 'Uhlířské Janovice', 237, '13:30', '17:15'),
+    ('2026-02-11', 'Jablonec nad Nisou - OC Rýnovka', 187, '13:30', '18:00'),
+    ('2026-02-11', 'OC Haná Olomouc', 398, '13:30', '18:30'),
+    ('2026-02-12', 'Jablonec nad Nisou - OC Rýnovka', 187, '13:30', '18:00'),
+    ('2026-02-13', 'Králíky', 330, '09:00', '16:15'),
+    ('2026-02-13', 'Nýřany', 555, '12:30', '16:15'),
+    ('2026-02-15', 'OC Haná Olomouc', 398, '08:30', '18:30'),
+    ('2026-02-16', 'Rosice', 19, '09:00', '17:00'),
+    ('2026-02-16', 'Jablonec nad Nisou - OC Rýnovka', 187, '13:30', '18:00'),
+    ('2026-02-17', 'Choceň', 326, '09:00', '16:15'),
+    ('2026-02-17', 'Milevsko', 613, '13:30', '14:45'),
+    ('2026-02-17', 'OC Haná Olomouc', 398, '14:30', '18:30'),
+    ('2026-02-17', 'Králíky', 330, '09:00', '16:15'),
+    ('2026-02-17', 'Jablonec nad Nisou - OC Rýnovka', 187, '13:30', '18:00'),
+    ('2026-02-18', 'Králíky', 330, '09:00', '17:15'),
+    ('2026-02-18', 'Jablonec nad Nisou - OC Rýnovka', 187, '09:00', '18:00'),
+    ('2026-02-20', 'Uhlířské Janovice', 237, '09:00', '16:15'),
+    ('2026-02-20', 'Letohrad', 327, '13:30', '16:15'),
+    ('2026-02-20', 'Jablonec nad Nisou - OC Rýnovka', 187, '09:00', '18:00'),
+    ('2026-02-20', 'Plzeň - Skvrňany', 556, '15:45', '16:15'),
+    ('2026-02-24', 'Králíky', 330, '09:00', '12:45'),
+    ('2026-02-25', 'Kralovice', 554, '08:45', '10:30'),
+    ('2026-02-25', 'Plzeň - Skvrňany', 556, '08:45', '09:45'),
+    ('2026-02-25', 'Králíky', 330, '09:00', '17:15'),
+    ('2026-02-25', 'Letohrad', 327, '09:00', '12:45'),
+    ('2026-02-26', 'Letohrad', 327, '09:00', '16:15'),
+    ('2026-02-28', 'OC Haná Olomouc', 398, '08:30', '18:30'),
+    ('2026-03-01', 'Olomouc - OC Šantovka', 672, '08:30', '18:30'),
+    ('2026-03-01', 'OC Haná Olomouc', 398, '08:30', '18:30'),
+    ('2026-03-02', 'Letohrad', 327, '09:00', '17:15'),
+    ('2026-03-02', 'Králíky', 330, '09:00', '17:15'),
+    ('2026-03-03', 'Letohrad', 327, '09:00', '16:15'),
+    ('2026-03-03', 'Králíky', 330, '09:00', '16:15'),
+    ('2026-03-03', 'Plzeň - Skvrňany', 556, '15:45', '16:15'),
+    ('2026-03-04', 'Letohrad', 327, '09:00', '17:15'),
+    ('2026-03-04', 'Jablonec nad Nisou - OC Rýnovka', 187, '11:30', '18:00'),
+    ('2026-03-04', 'Březnice', 573, '13:30', '17:15'),
+    ('2026-03-05', 'Letohrad', 327, '09:00', '17:15'),
+    ('2026-03-05', 'Uhlířské Janovice', 237, '09:00', '12:45'),
+    ('2026-03-05', 'Kralovice', 554, '08:45', '16:15'),
+    ('2026-03-05', 'OC Haná Olomouc', 398, '16:30', '18:30'),
+    ('2026-03-06', 'Králíky', 330, '09:00', '16:15'),
+    ('2026-03-06', 'Uhlířské Janovice', 237, '09:00', '12:45'),
+    ('2026-03-06', 'Letohrad', 327, '09:00', '16:15'),
+    ('2026-03-06', 'Kralovice', 554, '08:45', '16:15'),
+    ('2026-03-06', 'OC Haná Olomouc', 398, '16:30', '18:30'),
+    ('2026-03-08', 'Olomouc - OC Šantovka', 672, '15:30', '18:30'),
+    ('2026-03-09', 'Králíky', 330, '09:00', '17:30'),
+    ('2026-03-10', 'Králíky', 330, '09:00', '16:15'),
+    ('2026-03-11', 'Jablonec nad Nisou - OC Rýnovka', 187, '09:00', '18:00'),
+    ('2026-03-11', 'Holýšov', 637, '08:55', '10:00'),
+    ('2026-03-11', 'Vimperk', 619, '13:00', '17:15'),
+    ('2026-03-12', 'Březnice', 573, '08:45', '16:15'),
+    ('2026-03-12', 'Uhlířské Janovice', 237, '09:00', '16:15'),
+    ('2026-03-12', 'Horažďovice', 548, '15:00', '16:15'),
+    ('2026-03-13', 'Olomouc - OC Šantovka', 672, '08:30', '18:30'),
+    ('2026-03-13', 'Králíky', 330, '09:00', '12:30'),
+    ('2026-03-13', 'Uhlířské Janovice', 237, '09:00', '16:15'),
+    ('2026-03-13', 'Úpice', 317, '09:00', '16:15'),
+    ('2026-03-13', 'Letohrad', 327, '09:00', '12:45'),
+    ('2026-03-13', 'OC Haná Olomouc', 398, '16:30', '18:30'),
+    ('2026-03-15', 'OC Haná Olomouc', 398, '08:30', '18:30'),
+    ('2026-03-16', 'Králíky', 330, '13:30', '17:15'),
+    ('2026-03-16', 'OC Haná Olomouc', 398, '16:30', '18:30'),
+    ('2026-03-17', 'Králíky', 330, '13:30', '16:15'),
+    ('2026-03-18', 'Králíky', 330, '09:00', '17:15'),
+    ('2026-03-18', 'Plzeň - Skvrňany', 556, '16:00', '17:15'),
+    ('2026-03-19', 'OC Haná Olomouc', 398, '14:30', '18:30'),
+    ('2026-03-20', 'Březnice', 573, '08:45', '16:15'),
+    ('2026-03-20', 'Olomouc - OC Bělidla', 401, '13:00', '17:30'),
+    ('2026-03-23', 'Letohrad', 327, '09:00', '12:30'),
+    ('2026-03-23', 'Králíky', 330, '13:30', '17:15'),
+    ('2026-03-23', 'Chodov', 662, '15:30', '17:00'),
+    ('2026-03-24', 'Letohrad', 327, '09:00', '12:45'),
+    ('2026-03-24', 'Králíky', 330, '13:30', '16:15'),
+    ('2026-03-24', 'Litovel', 399, '14:30', '16:30'),
+    ('2026-03-25', 'Kralovice', 554, '08:45', '17:15'),
+    ('2026-03-25', 'Králíky', 330, '09:00', '17:15'),
+    ('2026-03-26', 'Litovel', 399, '07:30', '10:30'),
+    ('2026-03-31', 'Nýřany', 555, '08:45', '16:15'),
+    ('2026-03-31', 'Rosice', 19, '09:00', '16:00'),
+    ('2026-04-01', 'Rosice', 19, '09:00', '17:00'),
+    ('2026-04-01', 'Heřmanův Městec', 254, '09:00', '17:15'),
+    ('2026-04-01', 'Vimperk', 619, '16:30', '17:15'),
+    ('2026-04-02', 'Olomouc - OC Bělidla', 401, '08:30', '17:30'),
+    ('2026-04-02', 'Vimperk', 619, '12:00', '16:15'),
+    ('2026-04-02', 'Nýřany', 555, '08:45', '16:15'),
+    ('2026-04-02', 'Horažďovice', 548, '13:30', '16:15'),
+    ('2026-04-05', 'OC Haná Olomouc', 398, '08:30', '18:30'),
+    ('2026-04-05', 'Vaňkovka', 29, '11:30', '13:30'),
+    ('2026-04-07', 'OC Haná Olomouc', 398, '14:30', '18:30'),
+    ('2026-04-09', 'OC Haná Olomouc', 398, '14:30', '18:30'),
+    ('2026-04-10', 'Uhlířské Janovice', 237, '09:00', '16:15'),
+    ('2026-04-15', 'Vimperk', 619, '08:15', '17:15'),
+    ('2026-04-16', 'Kralovice', 554, '08:45', '16:15'),
+    ('2026-04-16', 'Zruč nad Sázavou', 239, '09:00', '12:45'),
+    ('2026-04-16', 'Blatná', 625, '10:15', '11:15'),
+    ('2026-04-16', 'Planá', 669, '13:00', '16:15'),
+    ('2026-04-17', 'Uhlířské Janovice', 237, '09:00', '16:15'),
+    ('2026-04-17', 'Zruč nad Sázavou', 239, '09:00', '16:45'),
+    ('2026-04-17', 'Kravaře', 423, '09:00', '16:15'),
+    ('2026-04-17', 'Planá', 669, '13:00', '16:15'),
+    ('2026-04-19', 'OC Haná Olomouc', 398, '08:30', '18:30'),
+    ('2026-04-20', 'Holýšov', 637, '08:45', '11:30'),
+    ('2026-04-20', 'OC Haná Olomouc', 398, '16:00', '18:00'),
+    ('2026-04-20', 'Zruč nad Sázavou', 239, '11:00', '17:15'),
+    ('2026-04-21', 'Uhlířské Janovice', 237, '09:00', '16:15'),
+    ('2026-04-21', 'Zruč nad Sázavou', 239, '09:00', '16:15'),
+    ('2026-04-23', 'Vimperk', 619, '08:15', '16:15'),
+    ('2026-04-23', 'Uhlířské Janovice', 237, '09:00', '16:15'),
+    ('2026-04-23', 'Králíky', 330, '09:00', '16:15'),
+    ('2026-04-23', 'Letohrad', 327, '09:00', '16:15'),
+    ('2026-04-23', 'Březnice', 573, '13:30', '16:15'),
+    ('2026-04-24', 'Zruč nad Sázavou', 239, '09:00', '16:15'),
+    ('2026-04-27', 'Letohrad', 327, '09:00', '17:15'),
+    ('2026-04-28', 'Nýřany', 555, '08:45', '12:30'),
+    ('2026-04-28', 'Uhlířské Janovice', 237, '10:00', '16:15'),
+    ('2026-04-28', 'Zruč nad Sázavou', 239, '13:30', '16:15'),
+    ('2026-04-29', 'Letohrad', 327, '09:00', '17:15'),
+    ('2026-04-30', 'Zruč nad Sázavou', 239, '09:00', '16:15'),
+    ('2026-04-30', 'Králíky', 330, '09:00', '16:15'),
+    ('2026-04-30', 'Rosice', 19, '11:15', '16:00'),
+    ('2026-05-03', 'OC Haná Olomouc', 398, '08:30', '18:30'),
+    ('2026-05-04', 'Olomouc - OC Bělidla', 401, '08:30', '17:30'),
+    ('2026-05-04', 'Rosice', 19, '09:30', '17:00'),
+    ('2026-05-05', 'Vimperk', 619, '08:15', '12:45'),
+    ('2026-05-05', 'Planá', 669, '13:30', '16:15'),
+    ('2026-05-05', 'Zruč nad Sázavou', 239, '09:00', '16:15'),
+    ('2026-05-06', 'Králíky', 330, '09:00', '17:15'),
+    ('2026-05-06', 'OC Haná Olomouc', 398, '15:30', '18:30'),
+    ('2026-05-07', 'Vimperk', 619, '08:15', '12:45'),
+    ('2026-05-07', 'Vimperk', 619, '13:30', '16:15'),
+    ('2026-05-07', 'Toužim', 651, '08:15', '16:15'),
+    ('2026-05-07', 'Zruč nad Sázavou', 239, '09:00', '16:15'),
+    ('2026-05-07', 'OC Haná Olomouc', 398, '13:30', '18:30'),
+    ('2026-05-07', 'Jablonec nad Nisou - OC Rýnovka', 187, '15:30', '18:00'),
+    ('2026-05-07', 'Olomouc - OC Šantovka', 672, '16:00', '18:30'),
+    ('2026-05-10', 'OC Haná Olomouc', 398, '08:30', '18:30'),
+    ('2026-05-12', 'Úpice', 317, '09:00', '16:15'),
+    ('2026-05-13', 'Březnice', 573, '08:45', '17:15'),
+    ('2026-05-13', 'Králíky', 330, '09:00', '17:15'),
+    ('2026-05-14', 'Nýřany', 555, '13:30', '16:15'),
+    ('2026-05-15', 'Králíky', 330, '09:00', '16:15'),
+    ('2026-05-15', 'Pečky', 234, '09:00', '16:15'),
+    ('2026-05-15', 'Uhlířské Janovice', 237, '09:00', '17:15'),
+    ('2026-05-15', 'Zruč nad Sázavou', 239, '09:00', '16:15'),
+    ('2026-05-15', 'Choceň', 326, '13:30', '16:15'),
+    ('2026-05-15', 'Březnice', 573, '14:30', '16:15'),
+    ('2026-05-15', 'Litovel', 399, '14:30', '16:30'),
+    ('2026-05-15', 'Letohrad', 327, '09:00', '16:15'),
+    ('2026-05-15', 'Planá', 669, '13:30', '16:15'),
+    ('2026-05-15', 'Vimperk', 619, '13:30', '18:15'),
+    ('2026-05-16', 'Vaňkovka', 29, '11:30', '13:30'),
+    ('2026-05-17', 'OC Haná Olomouc', 398, '08:30', '18:30'),
+    ('2026-05-17', 'Vaňkovka', 29, '11:30', '13:30'),
+    ('2026-05-18', 'Uhlířské Janovice', 237, '09:00', '17:15'),
+    ('2026-05-19', 'OC Haná Olomouc', 398, '14:30', '18:30'),
+    ('2026-05-19', 'Heřmanův Městec', 254, '09:00', '16:15'),
+    ('2026-05-20', 'Blovice', 550, '14:30', '17:15'),
+    ('2026-05-21', 'Olomouc - OC Bělidla', 401, '08:30', '17:30'),
+    ('2026-05-21', 'Březnice', 573, '13:30', '16:15'),
+    ('2026-05-22', 'Olomouc - OC Bělidla', 401, '08:30', '17:30'),
+    ('2026-05-22', 'Choceň', 326, '09:00', '11:00'),
+    ('2026-05-22', 'Vimperk', 619, '13:30', '16:15'),
+    ('2026-05-22', 'Uhlířské Janovice', 237, '12:15', '16:15'),
+    ('2026-05-23', 'Vaňkovka', 29, '11:30', '13:30'),
+    ('2026-05-24', 'OC Haná Olomouc', 398, '08:30', '18:30'),
+    ('2026-05-25', 'Heřmanův Městec', 254, '09:00', '17:15'),
+    ('2026-05-26', 'Letohrad', 327, '09:00', '16:15'),
+    ('2026-05-26', 'Plzeň - Skvrňany', 556, '15:45', '16:15'),
+    ('2026-05-28', 'Králíky', 330, '09:00', '11:30'),
+    ('2026-05-28', 'Zruč nad Sázavou', 239, '09:00', '16:15'),
+    ('2026-05-28', 'Semily', 215, '14:30', '16:00'),
+    ('2026-05-28', 'Č. Budějovice - OC Globus', 590, '17:00', '19:00'),
+    ('2026-05-29', 'Litovel', 399, '14:30', '16:30'),
+    ('2026-05-29', 'Č. Budějovice - OC Globus', 590, '16:00', '19:00'),
+    ('2026-05-29', 'Pečky', 234, '13:30', '16:15'),
+    ('2026-05-29', 'Králíky', 330, '09:00', '16:15'),
+    ('2026-05-29', 'OC Haná Olomouc', 398, '14:30', '18:30'),
+    ('2026-05-29', 'Zruč nad Sázavou', 239, '09:00', '16:15'),
+    ('2026-05-30', 'Vaňkovka', 29, '11:30', '13:30'),
+    ('2026-05-31', 'OC Haná Olomouc', 398, '08:30', '18:30'),
+    ('2026-05-31', 'Vaňkovka', 29, '11:30', '13:30'),
+    ('2026-06-01', 'Vimperk', 619, '08:15', '17:15'),
+    ('2026-06-01', 'OC Haná Olomouc', 398, '08:30', '18:30'),
+    ('2026-06-01', 'Olomouc - OC Bělidla', 401, '08:30', '17:30'),
+    ('2026-06-01', 'Zruč nad Sázavou', 239, '09:00', '17:15'),
+    ('2026-06-02', 'Holýšov', 637, '08:45', '10:30'),
+    ('2026-06-02', 'Kralovice', 554, '08:45', '12:30'),
+    ('2026-06-02', 'Kralovice', 554, '13:30', '16:15'),
+    ('2026-06-02', 'Vimperk', 619, '08:30', '10:00'),
+    ('2026-06-02', 'Letohrad', 327, '09:00', '16:15'),
+    ('2026-06-03', 'Letohrad', 327, '09:00', '17:15'),
+    ('2026-06-03', 'Zruč nad Sázavou', 239, '09:00', '17:15'),
+    ('2026-06-04', 'OC Haná Olomouc', 398, '08:30', '18:30'),
+    ('2026-06-04', 'Olomouc - OC Šantovka', 672, '08:30', '18:30'),
+    ('2026-06-04', 'Letohrad', 327, '09:00', '16:15'),
+    ('2026-06-04', 'Zruč nad Sázavou', 239, '09:00', '12:30'),
+    ('2026-06-04', 'Úpice', 317, '09:00', '16:15'),
+    ('2026-06-04', 'Vimperk', 619, '08:15', '12:45'),
+    ('2026-06-05', 'Vimperk', 619, '08:15', '16:15'),
+    ('2026-06-05', 'Zruč nad Sázavou', 239, '09:00', '12:30'),
+    ('2026-06-05', 'Letohrad', 327, '09:00', '16:15'),
+    ('2026-06-05', 'OC Haná Olomouc', 398, '13:30', '18:30'),
+    ('2026-06-06', 'OC Haná Olomouc', 398, '08:30', '18:30'),
+    ('2026-06-07', 'OC Haná Olomouc', 398, '08:30', '18:30'),
+    ('2026-06-08', 'Olomouc - OC Bělidla', 401, '08:30', '18:30'),
+    ('2026-06-08', 'OC Haná Olomouc', 398, '15:30', '18:30'),
+    ('2026-06-08', 'Zruč nad Sázavou', 239, '12:00', '17:15'),
+    ('2026-06-09', 'Holýšov', 637, '08:45', '11:30'),
+    ('2026-06-09', 'Kralovice', 554, '08:45', '12:30'),
+    ('2026-06-09', 'Kralovice', 554, '13:30', '16:15'),
+    ('2026-06-09', 'Úpice', 317, '09:00', '16:15'),
+    ('2026-06-09', 'Letohrad', 327, '09:00', '16:15'),
+    ('2026-06-10', 'Zruč nad Sázavou', 239, '09:00', '17:15'),
+    ('2026-06-10', 'Letohrad', 327, '09:00', '17:15'),
+    ('2026-06-10', 'Ostrov', 648, '15:00', '17:15'),
+    ('2026-06-10', 'OC Haná Olomouc', 398, '15:30', '18:30'),
+    ('2026-06-10', 'Heřmanův Městec', 254, '09:40', '12:30'),
+    ('2026-06-11', 'OC Haná Olomouc', 398, '15:30', '18:30'),
+    ('2026-06-11', 'Letohrad', 327, '09:00', '16:15'),
+    ('2026-06-11', 'Zruč nad Sázavou', 239, '09:00', '16:15'),
+    ('2026-06-11', 'Vimperk', 619, '08:15', '16:15'),
+    ('2026-06-11', 'Kostelec nad Černými lesy', 534, '09:00', '12:45'),
+]
+_jp_hist_df = pd.DataFrame(
+    [(d, d, bn, bid, co, cd, '', 'Žádost o jednočlenný provoz pobočky', 'historicka_data_2026')
+     for d, bn, bid, co, cd in _JCP_HIST_RAW],
+    columns=['Datum od', 'Datum do', 'Název pobočky', 'ID pobočky',
+             'Čas od', 'Čas do', 'Region', 'Typ požadavku', 'Zdroj']
+)
+
 _jp_csv_path = '../vypocet_ir_2026/zdroje/Jednočlenný provoz poboček.csv'
 try:
     import os as _os
     if _os.path.exists(_jp_csv_path):
         print("  👤 Generuji report jednočlenného provozu poboček...")
-        _jp_hist_path = 'jcp_historicka_data_2026.csv'
         _jp_html = generate_jednoclenny_provoz_report(
             _jp_csv_path,
             oteviraci_df=oteviraci_doba_df if not oteviraci_doba_df.empty else None,
-            hist_path=_jp_hist_path if _os.path.exists(_jp_hist_path) else None,
+            hist_df=_jp_hist_df,
         )
         _jp_out = 'report_jednoclenny_provoz.html'
         with open(_jp_out, 'w', encoding='utf-8') as _fjp:
