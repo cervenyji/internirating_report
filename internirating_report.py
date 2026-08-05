@@ -23042,6 +23042,19 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
                '06':'Červen','07':'Červenec','08':'Srpen','09':'Září',
                '10':'Říjen','11':'Listopad','12':'Prosinec'}
 
+    # OD_PH_TYDEN per branch (pro výpočet % v každém měsíci)
+    _br_ot = {str(r['branch_name']): float(r.get('OD_PH_TYDEN', 40.0))
+              for _, r in br_agg.iterrows()}
+
+    # Počet pracovních týdnů v každém měsíci (pro výpočet ot. doby v měsíci)
+    import calendar as _cal_mod
+    _month_wks = {}
+    for _cmx in _months_sorted:
+        _yrx, _mmx = int(_cmx.split('-')[0]), int(_cmx.split('-')[1])
+        _wdx = sum(1 for _dx in range(1, _cal_mod.monthrange(_yrx, _mmx)[1] + 1)
+                   if datetime.date(_yrx, _mmx, _dx).weekday() < 5)
+        _month_wks[_cmx] = round(_wdx / 5, 2)
+
     _monthly = {}
     _bdetail = {}
     for _, _ir in df_req.sort_values(['branch_name', 'datum_od']).iterrows():
@@ -23061,7 +23074,9 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
             _brs[_bn]['sessions'] += 1
             _brs[_bn]['hours'] = round(_brs[_bn]['hours'] + _h, 2)
         if _bn not in _bdetail:
-            _bdetail[_bn] = {'id': _bid2, 'region': _rg2, 'records': [], 'monthly': {}}
+            _bdetail[_bn] = {'id': _bid2, 'region': _rg2,
+                             'od': _br_ot.get(_bn, 40.0),
+                             'records': [], 'monthly': {}}
         _d1r = _ir['datum_od'].strftime('%d.%m.%Y') if _ir['datum_od'] else '—'
         _d2r = _ir['datum_do'].strftime('%d.%m.%Y') if _ir['datum_do'] else '—'
         _sr  = (_ir['datum_od'] == _ir['datum_do']) if (_ir['datum_od'] and _ir['datum_do']) else True
@@ -23080,11 +23095,12 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
             _bdetail[_bn]['monthly'][_m]['hours'] = round(
                 _bdetail[_bn]['monthly'][_m]['hours'] + _h, 2)
 
-    _max_ms    = max((_monthly[m]['sessions'] for m in _monthly), default=1)
-    _mjs       = _json.dumps(_monthly,       ensure_ascii=False)
-    _bdjs      = _json.dumps(_bdetail,       ensure_ascii=False)
-    _months_js = _json.dumps(_months_sorted, ensure_ascii=False)
-    _czmf_js   = _json.dumps(_cz_mf,        ensure_ascii=False)
+    _max_ms       = max((_monthly[m]['sessions'] for m in _monthly), default=1)
+    _mjs          = _json.dumps(_monthly,       ensure_ascii=False)
+    _bdjs         = _json.dumps(_bdetail,       ensure_ascii=False)
+    _months_js    = _json.dumps(_months_sorted, ensure_ascii=False)
+    _czmf_js      = _json.dumps(_cz_mf,        ensure_ascii=False)
+    _month_wks_js = _json.dumps(_month_wks,     ensure_ascii=False)
 
     # Calendar boxes (Python-rendered)
     _cal_boxes = ''
@@ -23128,22 +23144,32 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
         _ins  = int(_irow['n_sessions'])
         _ireg = str(_irow['region'])
         _ipc  = '#dc2626' if _ipct >= 20 else ('#f59e0b' if _ipct >= 10 else '#16a34a')
+        _iot    = _br_ot.get(_ibn, 40.0)
         _mcells = ''
         _ibd = _bdetail.get(_ibn, {})
         for _mi2, _cm2 in enumerate(_months_sorted):
-            _imd = _ibd.get('monthly', {}).get(_cm2, {})
-            _ims = _imd.get('sessions', 0)
-            _imh = _imd.get('hours', 0.0)
+            _imd  = _ibd.get('monthly', {}).get(_cm2, {})
+            _ims  = _imd.get('sessions', 0)
+            _imh  = _imd.get('hours', 0.0)
             if _ims > 0:
-                _ibg2 = '#dbeafe' if _ims < 3 else ('#bfdbfe' if _ims < 6 else '#93c5fd')
+                _wks_m   = _month_wks.get(_cm2, 4.33)
+                _open_hm = _iot * _wks_m
+                _pct_m   = min(100.0, _imh / _open_hm * 100) if _open_hm > 0 else 0.0
+                _pc_m    = '#dc2626' if _pct_m >= 20 else ('#f59e0b' if _pct_m >= 10 else '#16a34a')
+                _bar_w   = f'{_pct_m:.0f}%'
                 _mcells += (
-                    f'<td data-val="{_ims}" data-col="{5+_mi2}" '
-                    f'style="text-align:center;background:{_ibg2};color:#1e40af;font-weight:700;font-size:0.82rem;">'
-                    f'{_ims}<br><span style="font-size:0.63rem;font-weight:400;color:#64748b;">{_imh:.0f}h</span></td>'
+                    f'<td data-val="{_pct_m:.1f}" data-col="{5+_mi2}" '
+                    f'style="text-align:center;padding:5px 7px;min-width:72px;">'
+                    f'<div style="font-size:0.78rem;font-weight:700;color:#1e40af;">{_ims}×</div>'
+                    f'<div style="font-size:0.7rem;color:#64748b;">{_imh:.1f} h</div>'
+                    f'<div style="background:#e5e7eb;border-radius:3px;height:5px;margin:3px 2px 1px;">'
+                    f'<div style="width:{_bar_w};background:{_pc_m};height:100%;border-radius:3px;"></div></div>'
+                    f'<div style="font-size:0.65rem;font-weight:700;color:{_pc_m};">{_pct_m:.1f}%</div>'
+                    f'</td>'
                 )
             else:
                 _mcells += (f'<td data-val="0" data-col="{5+_mi2}" '
-                            f'style="text-align:center;color:#cbd5e1;">—</td>')
+                            f'style="text-align:center;color:#cbd5e1;min-width:72px;">—</td>')
         _ibn_e = _ibn.replace("'", "\\'")
         _ibr_rows += (
             f'<tr class="br-row" data-name="{_ibn}">'
@@ -23414,9 +23440,22 @@ td.clik:hover{{color:#1e40af!important;}}
 .cb-yr{{font-size:0.62rem;margin-bottom:5px;}}
 .cb-cnt{{font-size:1.7rem;font-weight:800;line-height:1;}}
 .cb-sub{{font-size:0.62rem;margin-top:3px;}}
-#mdp{{background:white;border:2px solid #bfdbfe;border-radius:12px;padding:16px 18px;
-      margin-bottom:18px;animation:fadein .2s;}}
-@keyframes fadein{{from{{opacity:0;transform:translateY(-6px)}}to{{opacity:1;transform:none}}}}
+/* Modal */
+.modal-ov{{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:2000;
+           display:flex;align-items:center;justify-content:center;
+           animation:ov-in .18s ease;}}
+@keyframes ov-in{{from{{opacity:0}}to{{opacity:1}}}}
+.modal-box{{background:white;border-radius:16px;padding:22px 26px;
+            max-width:600px;width:92%;max-height:82vh;overflow-y:auto;
+            box-shadow:0 24px 64px rgba(0,0,0,.35);animation:mb-in .18s ease;}}
+@keyframes mb-in{{from{{opacity:0;transform:translateY(-14px)}}to{{opacity:1;transform:none}}}}
+.modal-hdr{{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}}
+.modal-title{{font-size:1rem;font-weight:700;color:#1e40af;}}
+.modal-close{{background:#e8f0fe;border:none;border-radius:8px;padding:5px 13px;
+              cursor:pointer;color:#2770f0;font-weight:700;font-size:0.9rem;}}
+.modal-close:hover{{background:#dbeafe;}}
+.modal-bar-wrap{{background:#e5e7eb;border-radius:3px;height:6px;margin:3px 0 1px;width:80px;display:inline-block;vertical-align:middle;}}
+.modal-bar{{height:100%;border-radius:3px;}}
 
 /* Sortable / filterable table */
 .srt{{cursor:pointer;user-select:none;}}
@@ -23472,9 +23511,6 @@ td.clik:hover{{color:#1e40af!important;}}
     <div class="ct">📆 Přehled aktivit dle měsíce — klikněte pro detail</div>
     <div class="cal-wrap">{_cal_boxes}</div>
   </div>
-
-  <!-- Měsíční detail panel (skrytý dokud nekliknete) -->
-  <div id="mdp" style="display:none;"></div>
 
   <!-- Interaktivní tabulka poboček -->
   <div class="card">
@@ -23544,42 +23580,77 @@ td.clik:hover{{color:#1e40af!important;}}
 </div>
 
 <script>
-const MONTHLY = {_mjs};
-const BDETAIL = {_bdjs};
-const MONTHS  = {_months_js};
-const MNAMES  = {_czmf_js};
+const MONTHLY     = {_mjs};
+const BDETAIL     = {_bdjs};
+const MONTHS      = {_months_js};
+const MNAMES      = {_czmf_js};
+const MONTH_WEEKS = {_month_wks_js};
 
-// ── Kalendář ──────────────────────────────────────────────────
+// ── Kalendář — modal popup ────────────────────────────────────
 function showMD(month) {{
   const d = MONTHLY[month];
   if (!d) return;
   const mm = month.split('-')[1], yr = month.split('-')[0];
   const mn = (MNAMES[mm] || month) + ' ' + yr;
   const brs = Object.entries(d.branches).sort((a,b)=>b[1].sessions-a[1].sessions);
-  const rows = brs.map(([name,v])=>
-    '<tr><td class="bn">'+name+'</td>' +
-    '<td class="c">'+v.sessions+'</td>' +
-    '<td class="r" style="color:#2770f0;font-weight:700;">'+v.hours.toFixed(1)+' h</td></tr>'
-  ).join('');
-  document.getElementById('mdp').innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
-      '<div style="font-size:1rem;font-weight:700;color:#1e40af;">📅 '+mn+
-        ' &nbsp;—&nbsp; '+d.sessions+' žádostí, '+d.hours.toFixed(1)+' h</div>' +
-      '<button onclick="closeMD()" style="background:#e8f0fe;border:none;border-radius:6px;' +
-        'padding:4px 12px;cursor:pointer;color:#2770f0;font-weight:700;">✕ Zavřít</button>' +
-    '</div>' +
-    '<div style="overflow-x:auto;">' +
-    '<table><thead><tr><th>Pobočka</th><th class="c">Žádostí</th>' +
-    '<th class="r">Hodin</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
-  document.getElementById('mdp').style.display = 'block';
+  const wks = MONTH_WEEKS[month] || 4.33;
+  const rows = brs.map(([name, v]) => {{
+    const bd = BDETAIL[name] || {{}};
+    const od = bd.od || 40.0;
+    const openH = od * wks;
+    const pct = openH > 0 ? Math.min(100, v.hours / openH * 100) : 0;
+    const pc = pct >= 20 ? '#dc2626' : (pct >= 10 ? '#f59e0b' : '#16a34a');
+    return '<tr>' +
+      '<td class="bn">'+name+'</td>' +
+      '<td class="c">'+v.sessions+'</td>' +
+      '<td class="r" style="color:#2770f0;font-weight:700;">'+v.hours.toFixed(1)+' h</td>' +
+      '<td style="min-width:130px;padding:4px 8px;">' +
+        '<div style="display:flex;align-items:center;gap:6px;">' +
+          '<div class="modal-bar-wrap"><div class="modal-bar" style="width:'+pct.toFixed(0)+'%;background:'+pc+';"></div></div>' +
+          '<span style="font-size:0.75rem;font-weight:700;color:'+pc+';">'+pct.toFixed(1)+'%</span>' +
+        '</div>' +
+        '<div style="font-size:0.65rem;color:#94a3b8;">z '+openH.toFixed(0)+' h ot. doby</div>' +
+      '</td>' +
+    '</tr>';
+  }}).join('');
+
+  // remove stale modal if any
+  const old = document.getElementById('cal-modal');
+  if (old) old.remove();
+
+  const ov = document.createElement('div');
+  ov.className = 'modal-ov';
+  ov.id = 'cal-modal';
+  ov.addEventListener('click', e => {{ if (e.target===ov) closeMD(); }});
+
+  ov.innerHTML =
+    '<div class="modal-box">' +
+      '<div class="modal-hdr">' +
+        '<div class="modal-title">📅 '+mn+' &nbsp;—&nbsp; '+d.sessions+' žádostí, '+d.hours.toFixed(1)+' h</div>' +
+        '<button class="modal-close" onclick="closeMD()">✕</button>' +
+      '</div>' +
+      '<div style="overflow-x:auto;">' +
+      '<table><thead><tr>' +
+        '<th>Pobočka</th><th class="c">Žádostí</th>' +
+        '<th class="r">Hodin JČP</th>' +
+        '<th style="min-width:130px;">% ot. doby</th>' +
+      '</tr></thead><tbody>'+rows+'</tbody></table>' +
+      '</div>' +
+    '</div>';
+
+  document.body.appendChild(ov);
+  document.addEventListener('keydown', _mdKeyClose);
   document.querySelectorAll('.cal-box').forEach(b=>b.classList.remove('active'));
   const box = document.querySelector('.cal-box[data-month="'+month+'"]');
-  if (box) {{ box.classList.add('active'); box.scrollIntoView({{behavior:'smooth',block:'nearest'}}); }}
+  if (box) box.classList.add('active');
 }}
 function closeMD() {{
-  document.getElementById('mdp').style.display='none';
+  const ov = document.getElementById('cal-modal');
+  if (ov) ov.remove();
+  document.removeEventListener('keydown', _mdKeyClose);
   document.querySelectorAll('.cal-box').forEach(b=>b.classList.remove('active'));
 }}
+function _mdKeyClose(e) {{ if (e.key==='Escape') closeMD(); }}
 
 // ── Řazení tabulky poboček ────────────────────────────────────
 let _sCol=3, _sDir=-1;
