@@ -23024,6 +23024,156 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
     else:
         daily_cnt = pd.DataFrame(columns=['date', 'n'])
 
+    # ── Interaktivní data: měsíční přehled a detail poboček ──────
+    import json as _json
+
+    def _hex_interp(c1, c2, t):
+        return '#{:02x}{:02x}{:02x}'.format(
+            int(c1[0]+(c2[0]-c1[0])*t),
+            int(c1[1]+(c2[1]-c1[1])*t),
+            int(c1[2]+(c2[2]-c1[2])*t))
+
+    _C_LO = (239, 246, 255); _C_HI = (30, 64, 175)
+
+    _months_sorted = sorted({r for r in df_req['month'].dropna() if r})
+    _cz_ms = {'01':'Led','02':'Úno','03':'Bře','04':'Dub','05':'Kvě','06':'Čvn',
+               '07':'Čvc','08':'Srp','09':'Zář','10':'Říj','11':'Lis','12':'Pro'}
+    _cz_mf = {'01':'Leden','02':'Únor','03':'Březen','04':'Duben','05':'Květen',
+               '06':'Červen','07':'Červenec','08':'Srpen','09':'Září',
+               '10':'Říjen','11':'Listopad','12':'Prosinec'}
+
+    _monthly = {}
+    _bdetail = {}
+    for _, _ir in df_req.sort_values(['branch_name', 'datum_od']).iterrows():
+        _m   = _ir.get('month')
+        _h   = round(float(_ir['hours']), 2)
+        _bn  = str(_ir['branch_name'])
+        _bid2= int(_ir['branch_id'])
+        _rg2 = str(_ir['region'])
+        if _m:
+            if _m not in _monthly:
+                _monthly[_m] = {'sessions': 0, 'hours': 0.0, 'branches': {}}
+            _monthly[_m]['sessions'] += 1
+            _monthly[_m]['hours'] = round(_monthly[_m]['hours'] + _h, 2)
+            _brs = _monthly[_m]['branches']
+            if _bn not in _brs:
+                _brs[_bn] = {'sessions': 0, 'hours': 0.0}
+            _brs[_bn]['sessions'] += 1
+            _brs[_bn]['hours'] = round(_brs[_bn]['hours'] + _h, 2)
+        if _bn not in _bdetail:
+            _bdetail[_bn] = {'id': _bid2, 'region': _rg2, 'records': [], 'monthly': {}}
+        _d1r = _ir['datum_od'].strftime('%d.%m.%Y') if _ir['datum_od'] else '—'
+        _d2r = _ir['datum_do'].strftime('%d.%m.%Y') if _ir['datum_do'] else '—'
+        _sr  = (_ir['datum_od'] == _ir['datum_do']) if (_ir['datum_od'] and _ir['datum_do']) else True
+        _cas_od_str = str(_ir['cas_od']); _cas_do_str = str(_ir['cas_do'])
+        _wr  = (f"{_d1r} {_cas_od_str}–{_cas_do_str}" if _sr
+                else f"{_d1r} → {_d2r} {_cas_od_str}–{_cas_do_str}")
+        _bdetail[_bn]['records'].append({
+            'when': _wr, 'hours': _h,
+            'typ': 'Zrušení' if _ir['pozadavek'] == 'zruseni' else 'Žádost',
+            'zdroj': str(_ir.get('zdroj', '')),
+        })
+        if _m:
+            if _m not in _bdetail[_bn]['monthly']:
+                _bdetail[_bn]['monthly'][_m] = {'sessions': 0, 'hours': 0.0}
+            _bdetail[_bn]['monthly'][_m]['sessions'] += 1
+            _bdetail[_bn]['monthly'][_m]['hours'] = round(
+                _bdetail[_bn]['monthly'][_m]['hours'] + _h, 2)
+
+    _max_ms    = max((_monthly[m]['sessions'] for m in _monthly), default=1)
+    _mjs       = _json.dumps(_monthly,       ensure_ascii=False)
+    _bdjs      = _json.dumps(_bdetail,       ensure_ascii=False)
+    _months_js = _json.dumps(_months_sorted, ensure_ascii=False)
+    _czmf_js   = _json.dumps(_cz_mf,        ensure_ascii=False)
+
+    # Calendar boxes (Python-rendered)
+    _cal_boxes = ''
+    for _cm in _months_sorted:
+        _cd  = _monthly.get(_cm, {'sessions': 0, 'hours': 0.0})
+        _cs  = _cd['sessions']
+        _chs = f"{_cd.get('hours', 0):.0f}"
+        _ci  = _cs / _max_ms
+        _bg  = _hex_interp(_C_LO, _C_HI, _ci)
+        _fg  = '#ffffff' if _ci > 0.45 else '#1e40af'
+        _sfg = 'rgba(255,255,255,.7)' if _ci > 0.45 else '#64748b'
+        _cmm = _cm.split('-')[1]; _cyy = _cm.split('-')[0]
+        _cal_boxes += (
+            f'<div class="cal-box" data-month="{_cm}" onclick="showMD(\'{_cm}\')" '
+            f'style="background:{_bg};" title="{_cz_mf.get(_cmm, _cmm)} {_cyy}: {_cs} žádostí, {_chs} h">'
+            f'<div class="cb-name" style="color:{_fg};">{_cz_mf.get(_cmm, _cmm)}</div>'
+            f'<div class="cb-yr" style="color:{_sfg};">{_cyy}</div>'
+            f'<div class="cb-cnt" style="color:{_fg};">{_cs}</div>'
+            f'<div class="cb-sub" style="color:{_sfg};">{_chs} h</div>'
+            f'</div>'
+        )
+
+    # Interactive branch table
+    _n_months = len(_months_sorted)
+    _mth_ths = ''
+    for _mi, _cm in enumerate(_months_sorted):
+        _cmm_t = _cm.split('-')[1]; _cyy_t = _cm.split('-')[0]
+        _mth_ths += (
+            f'<th class="srt" data-col="{5+_mi}" onclick="srtTbl(this)">'
+            f'<span class="sico">⇅</span>'
+            f'{_cz_ms.get(_cmm_t, _cm)}'
+            f'<span class="myr"> {_cyy_t[2:]}</span></th>'
+        )
+
+    _ibr_rows = ''
+    for _, _irow in br_agg.sort_values('total_hours', ascending=False).iterrows():
+        _ibn  = str(_irow['branch_name'])
+        _ibid = int(_irow['branch_id'])
+        _ipct = float(_irow['pct_single'])
+        _itot = float(_irow['total_hours'])
+        _ins  = int(_irow['n_sessions'])
+        _ireg = str(_irow['region'])
+        _ipc  = '#dc2626' if _ipct >= 20 else ('#f59e0b' if _ipct >= 10 else '#16a34a')
+        _mcells = ''
+        _ibd = _bdetail.get(_ibn, {})
+        for _mi2, _cm2 in enumerate(_months_sorted):
+            _imd = _ibd.get('monthly', {}).get(_cm2, {})
+            _ims = _imd.get('sessions', 0)
+            _imh = _imd.get('hours', 0.0)
+            if _ims > 0:
+                _ibg2 = '#dbeafe' if _ims < 3 else ('#bfdbfe' if _ims < 6 else '#93c5fd')
+                _mcells += (
+                    f'<td data-val="{_ims}" data-col="{5+_mi2}" '
+                    f'style="text-align:center;background:{_ibg2};color:#1e40af;font-weight:700;font-size:0.82rem;">'
+                    f'{_ims}<br><span style="font-size:0.63rem;font-weight:400;color:#64748b;">{_imh:.0f}h</span></td>'
+                )
+            else:
+                _mcells += (f'<td data-val="0" data-col="{5+_mi2}" '
+                            f'style="text-align:center;color:#cbd5e1;">—</td>')
+        _ibn_e = _ibn.replace("'", "\\'")
+        _ibr_rows += (
+            f'<tr class="br-row" data-name="{_ibn}">'
+            f'<td class="bn clik" onclick="tgDet(\'{_ibn_e}\',{_ibid})">'
+            f'<span class="expico" id="ei-{_ibid}">▶</span> {_ibn}</td>'
+            f'<td class="reg" data-val="0" data-col="1">{_ireg}</td>'
+            f'<td class="c" data-val="{_ins}" data-col="2">{_ins}</td>'
+            f'<td class="r" data-val="{_itot:.1f}" data-col="3" '
+            f'style="color:#2770f0;font-weight:700;">{_itot:.1f} h</td>'
+            f'<td class="r" data-val="{_ipct:.1f}" data-col="4" '
+            f'style="color:{_ipc};font-weight:700;">{_ipct:.1f}%</td>'
+            f'{_mcells}'
+            f'</tr>'
+            f'<tr class="br-det" id="bdet-{_ibid}" style="display:none;">'
+            f'<td colspan="{5 + _n_months}" style="padding:0;">'
+            f'<div id="bdi-{_ibid}" class="bdi"></div>'
+            f'</td></tr>\n'
+        )
+
+    # Region table
+    _reg_rows = ''
+    for _, _rr in reg_agg.sort_values('total_hours', ascending=False).iterrows():
+        _reg_rows += (
+            f'<tr><td class="bn">{_rr["region"]}</td>'
+            f'<td class="c">{int(_rr["n_branches"])}</td>'
+            f'<td class="c">{int(_rr["n_sessions"])}</td>'
+            f'<td class="r" style="color:#2770f0;font-weight:700;">'
+            f'{float(_rr["total_hours"]):.1f} h</td></tr>\n'
+        )
+
     # ── Plotly ────────────────────────────────────────────────────
     _cfg = {'displayModeBar': False, 'responsive': True}
 
@@ -23129,11 +23279,7 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
     )
 
     # Konvertuj do HTML
-    _gh = fig_hours.to_html(full_html=False, include_plotlyjs='cdn', config=_cfg)
-    _gp = fig_pct.to_html(full_html=False, include_plotlyjs=False, config=_cfg)
-    _gd = fig_daily.to_html(full_html=False, include_plotlyjs=False, config=_cfg)
-    _gr = fig_reg.to_html(full_html=False, include_plotlyjs=False, config=_cfg)
-    _gs = fig_scatter.to_html(full_html=False, include_plotlyjs=False, config=_cfg)
+    _gd = fig_daily.to_html(full_html=False, include_plotlyjs='cdn', config=_cfg)
 
     # ── HTML tabulky ──────────────────────────────────────────────
     def _td(v, cls=''):
@@ -23225,6 +23371,7 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
     )
 
     # ── Full HTML page ────────────────────────────────────────────
+    _n_total_cols = 5 + _n_months
     return f"""<!DOCTYPE html>
 <html lang="cs">
 <head>
@@ -23233,24 +23380,17 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
 <title>Jednočlenný provoz poboček — Analýza</title>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0;}}
-body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-     background:#f0f4fb;color:#1e2a38;}}
-.hdr{{background:linear-gradient(135deg,#1a3a6c 0%,#2770f0 100%);
-      color:white;padding:22px 32px 18px;}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f0f4fb;color:#1e2a38;}}
+.hdr{{background:linear-gradient(135deg,#1a3a6c 0%,#2770f0 100%);color:white;padding:22px 32px 18px;}}
 .hdr h1{{font-size:1.45rem;font-weight:800;margin-bottom:3px;}}
 .hdr p{{font-size:0.8rem;opacity:.75;}}
-.wrap{{max-width:1150px;margin:0 auto;padding:22px 18px;}}
-.card{{background:white;border-radius:12px;padding:18px 20px;
-       box-shadow:0 1px 5px rgba(0,0,0,.07);margin-bottom:18px;}}
-.ct{{font-size:0.72rem;font-weight:700;color:#2770f0;text-transform:uppercase;
-     letter-spacing:.5px;margin-bottom:12px;}}
+.wrap{{max-width:1260px;margin:0 auto;padding:22px 18px;}}
+.card{{background:white;border-radius:12px;padding:18px 20px;box-shadow:0 1px 5px rgba(0,0,0,.07);margin-bottom:18px;}}
+.ct{{font-size:0.72rem;font-weight:700;color:#2770f0;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;}}
 .krow{{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;}}
-.g2{{display:grid;grid-template-columns:1fr 1fr;gap:16px;}}
-@media(max-width:680px){{.g2{{grid-template-columns:1fr;}}}}
-.info{{font-size:0.71rem;color:#94a3b8;margin-top:7px;line-height:1.6;}}
+.ovr-note{{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 14px;font-size:0.75rem;color:#92400e;margin-bottom:14px;}}
 table{{width:100%;border-collapse:collapse;font-size:0.8rem;}}
-th{{background:#f8fafc;padding:6px 8px;font-size:0.71rem;font-weight:700;
-    color:#64748b;border-bottom:2px solid #e2e8f0;white-space:nowrap;}}
+th{{background:#f8fafc;padding:6px 8px;font-size:0.71rem;font-weight:700;color:#64748b;border-bottom:2px solid #e2e8f0;white-space:nowrap;}}
 td{{padding:5px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle;}}
 tr:last-child td{{border-bottom:none;}}
 tr:hover td{{background:#f8fafc;}}
@@ -23258,11 +23398,57 @@ td.bn{{font-weight:600;font-size:0.82rem;white-space:nowrap;}}
 td.reg{{font-size:0.72rem;color:#64748b;}}
 td.c{{text-align:center;}}
 td.r{{text-align:right;}}
-td.bold{{font-weight:700;}}
-td.blue{{color:#2770f0;}}
-.hi{{background:#fef9c3;}}
-.ovr-note{{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;
-           padding:8px 14px;font-size:0.75rem;color:#92400e;margin-bottom:14px;}}
+td.clik{{cursor:pointer;}}
+td.clik:hover{{color:#1e40af!important;}}
+.expico{{font-size:0.65rem;margin-right:4px;color:#94a3b8;transition:transform .15s;}}
+.br-row:hover td{{background:#f0f7ff!important;}}
+
+/* Calendar */
+.cal-wrap{{display:flex;gap:10px;flex-wrap:wrap;}}
+.cal-box{{border-radius:10px;padding:10px 16px;min-width:95px;text-align:center;
+          cursor:pointer;transition:transform .15s,box-shadow .15s;
+          box-shadow:0 1px 4px rgba(0,0,0,.15);border:2px solid transparent;}}
+.cal-box:hover{{transform:translateY(-3px);box-shadow:0 5px 14px rgba(0,0,0,.22);}}
+.cal-box.active{{border-color:#fff;outline:3px solid #f59e0b;outline-offset:1px;}}
+.cb-name{{font-size:0.8rem;font-weight:700;}}
+.cb-yr{{font-size:0.62rem;margin-bottom:5px;}}
+.cb-cnt{{font-size:1.7rem;font-weight:800;line-height:1;}}
+.cb-sub{{font-size:0.62rem;margin-top:3px;}}
+#mdp{{background:white;border:2px solid #bfdbfe;border-radius:12px;padding:16px 18px;
+      margin-bottom:18px;animation:fadein .2s;}}
+@keyframes fadein{{from{{opacity:0;transform:translateY(-6px)}}to{{opacity:1;transform:none}}}}
+
+/* Sortable / filterable table */
+.srt{{cursor:pointer;user-select:none;}}
+.srt:hover{{background:#e8f0fe;color:#1e40af;}}
+.sico{{margin-right:3px;color:#94a3b8;font-size:0.8em;}}
+.srt.asc .sico,.srt.desc .sico{{color:#2770f0;}}
+.myr{{font-size:0.62rem;color:#94a3b8;font-weight:400;}}
+.fil-wrap{{display:flex;align-items:center;gap:10px;margin-bottom:10px;}}
+.fil-inp{{flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:7px 13px;
+          font-size:0.82rem;outline:none;}}
+.fil-inp:focus{{border-color:#2770f0;box-shadow:0 0 0 3px #dbeafe;}}
+.fil-cnt{{font-size:0.75rem;color:#64748b;white-space:nowrap;}}
+
+/* Branch detail */
+.bdi{{font-size:0.8rem;border-top:2px solid #e0e7ff;}}
+.bdi-grid{{display:grid;grid-template-columns:1fr 1fr;gap:0;}}
+@media(max-width:700px){{.bdi-grid{{grid-template-columns:1fr;}}}}
+.bdi-panel{{padding:14px 16px;}}
+.bdi-panel + .bdi-panel{{border-left:1px solid #e2e8f0;}}
+.bdi-title{{font-size:0.7rem;font-weight:700;color:#2770f0;text-transform:uppercase;
+            letter-spacing:.5px;margin-bottom:8px;}}
+.bdi-scroll{{max-height:260px;overflow-y:auto;}}
+.inner-tbl{{width:100%;border-collapse:collapse;font-size:0.78rem;}}
+.inner-tbl th{{background:#f1f5f9;padding:5px 8px;font-size:0.7rem;font-weight:700;
+               color:#64748b;border-bottom:1px solid #e2e8f0;}}
+.inner-tbl td{{padding:4px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle;}}
+.inner-tbl tr:last-child td{{border-bottom:none;}}
+.badge{{border-radius:6px;padding:1px 7px;font-size:0.7rem;font-weight:700;}}
+.b-zad{{background:#eff6ff;color:#2770f0;border:1px solid #bfdbfe;}}
+.b-zru{{background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;}}
+.b-new{{background:#eff6ff;color:#2770f0;border:1px solid #bfdbfe;}}
+.b-his{{background:#fffbeb;color:#b45309;border:1px solid #fcd34d;}}
 </style>
 </head>
 <body>
@@ -23278,7 +23464,48 @@ td.blue{{color:#2770f0;}}
   <div class="ovr-note">
     ℹ️ <b>Nejvíce hodin:</b> {top_br} — {top_h:.1f} h &nbsp;·&nbsp;
     <b>Nejvyšší podíl ot. doby:</b> {top_pct_br} — {top_pct:.1f}% &nbsp;·&nbsp;
-    <b>% ot. doby</b> = JČP hodiny / (týdenní ot. hodiny × {_n_weeks:.1f} týdnů)
+    <b>% ot. doby</b> = JČP hodiny / (OD_PH_TYDEN × {_n_weeks:.1f} týdnů)
+  </div>
+
+  <!-- Kalendář měsíců -->
+  <div class="card">
+    <div class="ct">📆 Přehled aktivit dle měsíce — klikněte pro detail</div>
+    <div class="cal-wrap">{_cal_boxes}</div>
+  </div>
+
+  <!-- Měsíční detail panel (skrytý dokud nekliknete) -->
+  <div id="mdp" style="display:none;"></div>
+
+  <!-- Interaktivní tabulka poboček -->
+  <div class="card">
+    <div class="ct">🏦 Analýza poboček — klikněte na pobočku pro detail záznamů</div>
+    <div class="fil-wrap">
+      <input class="fil-inp" type="text" id="fil" placeholder="🔍 Filtrovat pobočky..."
+             oninput="filBr(this.value)">
+      <span class="fil-cnt" id="filcnt">{n_branches} poboček</span>
+    </div>
+    <div style="overflow-x:auto;">
+    <table id="brtbl">
+      <thead>
+        <tr>
+          <th class="srt" data-col="0" onclick="srtTbl(this)" style="min-width:160px;">
+            <span class="sico">⇅</span>Pobočka</th>
+          <th style="min-width:70px;">Region</th>
+          <th class="srt" data-col="2" onclick="srtTbl(this)">
+            <span class="sico">⇅</span>Žádostí</th>
+          <th class="srt" data-col="3" onclick="srtTbl(this)">
+            <span class="sico">⇅</span>Hodin</th>
+          <th class="srt" data-col="4" onclick="srtTbl(this)">
+            <span class="sico">⇅</span>% ot. doby</th>
+          {_mth_ths}
+        </tr>
+      </thead>
+      <tbody id="brtbody">{_ibr_rows}</tbody>
+    </table>
+    </div>
+    <div style="font-size:0.7rem;color:#94a3b8;margin-top:8px;">
+      🟦 počet žádostí v měsíci · ℹ️ Klikněte na název pobočky pro rozpad po záznamech
+    </div>
   </div>
 
   <!-- Denní timeline -->
@@ -23287,49 +23514,15 @@ td.blue{{color:#2770f0;}}
     {_gd}
   </div>
 
-  <!-- 2-col: hodiny + % -->
-  <div class="g2">
-    <div class="card">
-      <div class="ct">⏱ Celkové hodiny JČP dle pobočky</div>
-      {_gh}
-    </div>
-    <div class="card">
-      <div class="ct">📊 Podíl na otevírací době dle pobočky</div>
-      {_gp}
-      <div class="info">🟢 &lt;10 % · 🟡 10–20 % · 🔴 ≥20 % celkové ot. doby v období<br>
-      Výpočet: JČP hodiny / (OD_PH_TYDEN × {_n_weeks:.1f} týdnů)</div>
-    </div>
-  </div>
-
-  <!-- Scatter -->
-  <div class="card">
-    <div class="ct">🔵 Scatter — hodiny JČP vs. podíl ot. doby (velikost = počet žádostí)</div>
-    {_gs}
-  </div>
-
   <!-- Region -->
   <div class="card">
     <div class="ct">🗺️ Přehled dle regionu</div>
-    {_gr}
-  </div>
-
-  <!-- Branch summary -->
-  <div class="card">
-    <div class="ct">🏦 Souhrnná tabulka dle pobočky</div>
-    <div style="overflow-x:auto;">
     <table>
       <thead>
-        <tr>
-          <th>Pobočka</th><th>Region</th>
-          <th class="c">Žádostí</th>
-          <th class="r">Hodiny JČP</th>
-          <th class="r">Ot. doba</th>
-          <th style="min-width:140px;">% ot. doby</th>
-        </tr>
+        <tr><th>Region</th><th class="c">Poboček</th><th class="c">Žádostí</th><th class="r">Hodin JČP</th></tr>
       </thead>
-      <tbody>{_br_rows}</tbody>
+      <tbody>{_reg_rows}</tbody>
     </table>
-    </div>
   </div>
 
   <!-- Session log -->
@@ -23349,6 +23542,143 @@ td.blue{{color:#2770f0;}}
   </div>
 
 </div>
+
+<script>
+const MONTHLY = {_mjs};
+const BDETAIL = {_bdjs};
+const MONTHS  = {_months_js};
+const MNAMES  = {_czmf_js};
+
+// ── Kalendář ──────────────────────────────────────────────────
+function showMD(month) {{
+  const d = MONTHLY[month];
+  if (!d) return;
+  const mm = month.split('-')[1], yr = month.split('-')[0];
+  const mn = (MNAMES[mm] || month) + ' ' + yr;
+  const brs = Object.entries(d.branches).sort((a,b)=>b[1].sessions-a[1].sessions);
+  const rows = brs.map(([name,v])=>
+    '<tr><td class="bn">'+name+'</td>' +
+    '<td class="c">'+v.sessions+'</td>' +
+    '<td class="r" style="color:#2770f0;font-weight:700;">'+v.hours.toFixed(1)+' h</td></tr>'
+  ).join('');
+  document.getElementById('mdp').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+      '<div style="font-size:1rem;font-weight:700;color:#1e40af;">📅 '+mn+
+        ' &nbsp;—&nbsp; '+d.sessions+' žádostí, '+d.hours.toFixed(1)+' h</div>' +
+      '<button onclick="closeMD()" style="background:#e8f0fe;border:none;border-radius:6px;' +
+        'padding:4px 12px;cursor:pointer;color:#2770f0;font-weight:700;">✕ Zavřít</button>' +
+    '</div>' +
+    '<div style="overflow-x:auto;">' +
+    '<table><thead><tr><th>Pobočka</th><th class="c">Žádostí</th>' +
+    '<th class="r">Hodin</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  document.getElementById('mdp').style.display = 'block';
+  document.querySelectorAll('.cal-box').forEach(b=>b.classList.remove('active'));
+  const box = document.querySelector('.cal-box[data-month="'+month+'"]');
+  if (box) {{ box.classList.add('active'); box.scrollIntoView({{behavior:'smooth',block:'nearest'}}); }}
+}}
+function closeMD() {{
+  document.getElementById('mdp').style.display='none';
+  document.querySelectorAll('.cal-box').forEach(b=>b.classList.remove('active'));
+}}
+
+// ── Řazení tabulky poboček ────────────────────────────────────
+let _sCol=3, _sDir=-1;
+function srtTbl(th) {{
+  const col = parseInt(th.dataset.col);
+  if (_sCol===col) _sDir=-_sDir; else {{ _sCol=col; _sDir=-1; }}
+  const tbody = document.getElementById('brtbody');
+  const pairs = [];
+  const all = tbody.querySelectorAll('tr');
+  for (let i=0; i<all.length; i+=2) pairs.push([all[i], all[i+1]]);
+  pairs.sort((a,b)=>{{
+    if (col===0) {{
+      const an=a[0].dataset.name||'', bn=b[0].dataset.name||'';
+      return _sDir*an.localeCompare(bn,'cs');
+    }}
+    const ac=a[0].querySelector('td[data-col="'+col+'"]');
+    const bc=b[0].querySelector('td[data-col="'+col+'"]');
+    if (!ac||!bc) return 0;
+    return _sDir*(parseFloat(ac.dataset.val||0)-parseFloat(bc.dataset.val||0));
+  }});
+  pairs.forEach(([br,det])=>{{ tbody.appendChild(br); tbody.appendChild(det); }});
+  document.querySelectorAll('.srt').forEach(h=>{{
+    h.querySelector('.sico').textContent='⇅';
+    h.classList.remove('asc','desc');
+  }});
+  th.querySelector('.sico').textContent=_sDir>0?'↑':'↓';
+  th.classList.add(_sDir>0?'asc':'desc');
+}}
+
+// ── Filtrování ─────────────────────────────────────────────────
+function filBr(val) {{
+  const v = val.toLowerCase();
+  const tbody = document.getElementById('brtbody');
+  const all = tbody.querySelectorAll('tr');
+  let vis = 0;
+  for (let i=0; i<all.length; i+=2) {{
+    const br=all[i], det=all[i+1];
+    const name=(br.dataset.name||'').toLowerCase();
+    const show = !v || name.includes(v);
+    br.style.display=show?'':'none';
+    if (!show) det.style.display='none';
+    if (show) vis++;
+  }}
+  document.getElementById('filcnt').textContent=vis+' poboček';
+}}
+
+// ── Detail pobočky (expand/collapse) ──────────────────────────
+function tgDet(bn, bid) {{
+  const detRow   = document.getElementById('bdet-'+bid);
+  const detInner = document.getElementById('bdi-'+bid);
+  const icon     = document.getElementById('ei-'+bid);
+  if (detRow.style.display!=='none') {{
+    detRow.style.display='none'; icon.textContent='▶'; return;
+  }}
+  if (!detInner._done) {{
+    const d = BDETAIL[bn];
+    if (!d) return;
+    // monthly mini-table
+    const mrows = MONTHS.filter(m=>d.monthly[m]).map(m=>{{
+      const md=d.monthly[m];
+      const mn=(MNAMES[m.split('-')[1]]||m)+' '+m.split('-')[0];
+      return '<tr><td class="bn">'+mn+'</td><td class="c">'+md.sessions+'</td>'+
+             '<td class="r" style="color:#2770f0;font-weight:700;">'+md.hours.toFixed(1)+' h</td></tr>';
+    }}).join('');
+    // records mini-table
+    const rrows = d.records.map(r=>{{
+      const tb = r.typ==='Zrušení'
+        ? '<span class="badge b-zru">Zrušení</span>'
+        : '<span class="badge b-zad">Žádost</span>';
+      const sb = r.zdroj.startsWith('historicka')
+        ? '<span class="badge b-his">Hist. 2026</span>'
+        : '<span class="badge b-new">Nový proces</span>';
+      const dh = r.hours>0 ? r.hours.toFixed(1)+' h' : '—';
+      return '<tr><td style="white-space:nowrap;font-size:0.78rem;">'+r.when+'</td>'+
+             '<td class="r" style="color:#2770f0;font-weight:700;">'+dh+'</td>'+
+             '<td>'+tb+'</td><td>'+sb+'</td></tr>';
+    }}).join('');
+    detInner.innerHTML =
+      '<div class="bdi-grid">' +
+        '<div class="bdi-panel">' +
+          '<div class="bdi-title">📅 Rozpad po měsících</div>' +
+          '<table class="inner-tbl"><thead><tr><th>Měsíc</th>' +
+          '<th class="c">Žádostí</th><th class="r">Hodin</th></tr></thead>' +
+          '<tbody>'+(mrows||'<tr><td colspan=3 style="color:#94a3b8;text-align:center;">—</td></tr>')+'</tbody></table>' +
+        '</div>' +
+        '<div class="bdi-panel">' +
+          '<div class="bdi-title">📋 Všechny záznamy ('+d.records.length+')</div>' +
+          '<div class="bdi-scroll">' +
+          '<table class="inner-tbl"><thead><tr><th>Datum a čas</th>' +
+          '<th class="r">Délka</th><th>Typ</th><th>Zdroj</th></tr></thead>' +
+          '<tbody>'+rrows+'</tbody></table></div>' +
+        '</div>' +
+      '</div>';
+    detInner._done = true;
+  }}
+  detRow.style.display=''; icon.textContent='▼';
+  detRow.scrollIntoView({{behavior:'smooth',block:'nearest'}});
+}}
+</script>
 </body>
 </html>"""
 
