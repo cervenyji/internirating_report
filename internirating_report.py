@@ -22827,7 +22827,7 @@ except Exception as _dbs_open_err:
     if 'BRANCH_CLOSED' not in rating_status.columns:
         rating_status['BRANCH_CLOSED'] = False
 
-def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None):
+def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path=None):
     """
     Standalone HTML report — analýza jednočlenného provozu poboček.
 
@@ -22920,7 +22920,36 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None):
             'hours':       _session_hours(row),
             'month':       d_from.strftime('%Y-%m') if d_from else None,
             'autor':       str(row.get('Autor', '')),
+            'zdroj':       'novy_proces',
         })
+
+    # ── Historická data (volitelně) ──────────────────────────────────
+    if hist_path is not None:
+        import os as _hist_os
+        if _hist_os.path.exists(hist_path):
+            try:
+                _hist_raw = pd.read_csv(hist_path, encoding='utf-8')
+                for _, hrow in _hist_raw.iterrows():
+                    hd_from = _pdate(hrow.get('Datum od'))
+                    hd_to   = _pdate(hrow.get('Datum do'))
+                    records.append({
+                        'branch_id':   int(hrow.get('ID pobočky', 0) or 0),
+                        'branch_name': str(hrow.get('Název pobočky', '—')),
+                        'region':      str(hrow.get('Region', '—')),
+                        'typ':         str(hrow.get('Typ požadavku', '')),
+                        'pozadavek':   ('zruseni' if 'zrušení' in str(hrow.get('Typ požadavku', '')).lower()
+                                        else 'zadost'),
+                        'datum_od':    hd_from,
+                        'datum_do':    hd_to,
+                        'cas_od':      str(hrow.get('Čas od', '')),
+                        'cas_do':      str(hrow.get('Čas do', '')),
+                        'hours':       _session_hours(hrow),
+                        'month':       hd_from.strftime('%Y-%m') if hd_from else None,
+                        'autor':       str(hrow.get('Autor', '')),
+                        'zdroj':       str(hrow.get('Zdroj', 'historicka_data')),
+                    })
+            except Exception:
+                pass
 
     df_jp  = pd.DataFrame(records)
     # Zahrnujeme všechny záznamy — žádosti i zrušení; zrušení počítáme zvlášť pro info
@@ -23141,6 +23170,11 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None):
         same = (row['datum_od'] == row['datum_do']) if (row['datum_od'] and row['datum_do']) else True
         _when = (f'{d1}&nbsp;{row["cas_od"]}–{row["cas_do"]}' if same
                  else f'{d1}&nbsp;{row["cas_od"]} → {d2}&nbsp;{row["cas_do"]}')
+        _zdroj_val = str(row.get('zdroj', 'novy_proces'))
+        if _zdroj_val.startswith('historicka'):
+            _src_b = _badge('Hist. 2026', '#fffbeb', '#b45309', '#fcd34d')
+        else:
+            _src_b = _badge('Nový proces', '#eff6ff', '#2770f0', '#bfdbfe')
         _ses_rows += (
             f'<tr>'
             f'<td class="bn">{row["branch_name"]}</td>'
@@ -23148,6 +23182,7 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None):
             f'<td style="padding:5px 8px;font-size:0.78rem;white-space:nowrap;">{_when}</td>'
             f'<td class="r bold blue">{_dur}</td>'
             f'<td style="padding:5px 8px;">{_typ_b}</td>'
+            f'<td style="padding:5px 8px;">{_src_b}</td>'
             f'<td class="reg">{row["autor"]}</td>'
             f'</tr>\n'
         )
@@ -23297,7 +23332,7 @@ td.blue{{color:#2770f0;}}
       <thead>
         <tr>
           <th>Pobočka</th><th>Region</th><th>Datum a čas</th>
-          <th class="r">Délka</th><th>Typ</th><th>Autor žádosti</th>
+          <th class="r">Délka</th><th>Typ</th><th>Zdroj dat</th><th>Autor žádosti</th>
         </tr>
       </thead>
       <tbody>{_ses_rows}</tbody>
@@ -23383,9 +23418,11 @@ try:
     import os as _os
     if _os.path.exists(_jp_csv_path):
         print("  👤 Generuji report jednočlenného provozu poboček...")
+        _jp_hist_path = 'jcp_historicka_data_2026.csv'
         _jp_html = generate_jednoclenny_provoz_report(
             _jp_csv_path,
-            oteviraci_df=oteviraci_doba_df if not oteviraci_doba_df.empty else None
+            oteviraci_df=oteviraci_doba_df if not oteviraci_doba_df.empty else None,
+            hist_path=_jp_hist_path if _os.path.exists(_jp_hist_path) else None,
         )
         _jp_out = 'report_jednoclenny_provoz.html'
         with open(_jp_out, 'w', encoding='utf-8') as _fjp:
