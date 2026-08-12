@@ -23881,6 +23881,14 @@ function tgDet(bn, bid) {{
 </html>"""
 
 
+# Analýza optimalizace sítě poboček (samostatný soubor)
+try:
+    from generate_network_analysis import generate_network_analysis_report as _gen_net
+    print("  🏦 Generuji analýzu sítě poboček...")
+    _gen_net(rating_status, output_path='report_network_analysis.html')
+except Exception as _enet:
+    print(f"  ⚠ Síťová analýza: {_enet}")
+
 # Statický report (celkový přehled)
 generate_report(rating_status, mode='static', output_prefix="report_rating_2026")
 
