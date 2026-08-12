@@ -1001,10 +1001,19 @@ if __name__ == '__main__':
     import sys
     import pickle
 
-    # 1. DataFrame already loaded at top of file (df = pd.read_pickle(...))
-    _rs = globals().get('rating_status') or globals().get('df')
+    # 1. Použij df nebo rating_status pokud jsou již načteny v tomto souboru
+    _rs = None
+    for _vname in ('df', 'rating_status'):
+        try:
+            _cand = eval(_vname)                          # noqa: S307
+            if hasattr(_cand, 'empty') and not _cand.empty:
+                _rs = _cand
+                print(f'Používám `{_vname}` načtený v souboru ({len(_rs)} řádků).')
+                break
+        except NameError:
+            pass
 
-    # 2. Fallback: known pickle paths
+    # 2. Fallback: hledej pkl soubory
     if _rs is None:
         _pkl_candidates = [
             'rating_status.pkl',
@@ -1015,10 +1024,12 @@ if __name__ == '__main__':
                 print(f'Načítám {_p}...')
                 with open(_p, 'rb') as _f:
                     _rs = pickle.load(_f)
+                print(f'  → {len(_rs)} řádků načteno.')
                 break
 
     if _rs is None:
-        print('DataFrame nenalezen. Přidej na začátek souboru:')
+        print('DataFrame nenalezen.')
+        print('Přidej na začátek souboru:')
         print('  df = pd.read_pickle("../vypocet_ir_2026/report_rating_2026_staticky.pkl")')
         sys.exit(1)
 
