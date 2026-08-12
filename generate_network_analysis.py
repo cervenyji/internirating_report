@@ -296,13 +296,15 @@ def _sym_row(label, before, after, fmt, good='neutral', bold_after=False):
 
 
 def _calc_row(label, value, note='', col='#1e2a38'):
+    note_html = (f'<div style="font-size:0.72rem;color:#94a3b8;">{note}</div>'
+                 if note else '')
     return (
         f'<div style="display:flex;align-items:baseline;gap:10px;padding:8px 0;'
         f'border-bottom:1px solid #f1f5f9;">'
         f'<div style="flex:1;font-size:0.82rem;color:#374151;">{label}</div>'
         f'<div style="font-size:1.05rem;font-weight:800;color:{col};white-space:nowrap;">'
         f'{value}</div>'
-        f'{f"<div style=\\"font-size:0.72rem;color:#94a3b8;\\">{note}</div>" if note else ""}'
+        f'{note_html}'
         f'</div>'
     )
 
