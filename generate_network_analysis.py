@@ -1,16 +1,15 @@
 """
 generate_network_analysis.py
-Analýza optimalizace sítě poboček — tabulky, scénář 1, mapa
+Analýza optimalizace sítě poboček — tabulky, scénář 1, interaktivní model
 
 Spuštění:
   Standalone: df = pd.read_pickle("...pkl") na začátku souboru
   Z hlavního skriptu: from generate_network_analysis import generate_network_analysis_report
 """
 
-import math, warnings
+import json, math, warnings
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 
 # ── Konstanty ─────────────────────────────────────────────────────────────────
 BANKER_CAPACITY    = 1_500
@@ -23,8 +22,6 @@ MAPBOX_TOKEN = (
     'pk.eyJ1IjoiY2VydmVueWppIiwiYSI6ImNqM2tsbTl6ajA'
     'wazMyd3FzeGZxa2VxZzcifQ.z-Ruzxhj76p-f84Ti4r3Gw'
 )
-
-_CFG = {'displayModeBar': False, 'responsive': True}
 
 
 # ── Pomocné funkce ────────────────────────────────────────────────────────────
@@ -50,7 +47,6 @@ def _haversine(lat1, lon1, lat2, lon2):
 
 
 def _geo_circle(lat, lon, radius_m=10_000, n_pts=28):
-    """GeoJSON polygon circle (pro Mapbox layers)."""
     R = 6_371_000
     pts = []
     for i in range(n_pts + 1):
@@ -67,14 +63,12 @@ def _geo_circle(lat, lon, radius_m=10_000, n_pts=28):
 
 def _prep_df(rating_status):
     df = rating_status.copy()
-
     if 'IR_FLAG' in df.columns:
         df = df[df['IR_FLAG'].eq('Y')].copy()
     if 'BRANCH_CLOSED' in df.columns:
         df = df[~df['BRANCH_CLOSED'].eq(True)].copy()
     df = df.reset_index(drop=True)
 
-    # GPS orientace
     for xc, yc in [('GPS_X', 'GPS_Y'), ('GPS_Y', 'GPS_X')]:
         if xc in df.columns and yc in df.columns:
             mx = pd.to_numeric(df[xc], errors='coerce').median()
@@ -119,7 +113,6 @@ def _prep_df(rating_status):
 # ── Výpočty metrik ────────────────────────────────────────────────────────────
 
 def compute_network_availability(df):
-    """Průměrná vzdálenost (m) k AVAIL_N_NEAREST nejbližším pobočkám v df."""
     valid  = df.dropna(subset=['_lat', '_lon'])
     result = pd.Series(np.nan, index=df.index)
     lats, lons, idxs = valid['_lat'].values, valid['_lon'].values, valid.index.values
@@ -138,113 +131,33 @@ def compute_capacity_utilization(df):
     return (df['PRIMARNI_KLIENTI'] / (bc * BANKER_CAPACITY)).clip(upper=5.0)
 
 
-# ── Scénář 1 (nejpřísnější) ───────────────────────────────────────────────────
+# ── Scénář 1 ─────────────────────────────────────────────────────────────────
 
 def apply_scenario_1(df):
-    """
-    Scénář 1 — nejpřísnější:
-      • Mimo Praha/Brno: přesně 1 pobočka na město
-        (přednost flagship, pak nejlepší IR kvintil)
-      • Praha/Brno: max MAX_METRO_FLAGSHIP flagship poboček
-        (ne-flagship odstraněny)
-    """
     df = df.copy()
     df['sc1_keep'] = False
-
     _fmt  = {'flagship': 0, 'medium': 1, 'medium economy': 2, 'small': 3}
     df['_fmt_rank'] = df['BRANCH_FORMAT'].map(_fmt).fillna(9).astype(int)
     df['_iq']       = df['IR_Q'].fillna(3.0)
-
     for city, grp in df.groupby('_city'):
         if grp.empty:
             continue
         if city in METRO_CITIES:
-            flg = grp[grp['BRANCH_FORMAT'] == 'flagship'].sort_values('_iq')
+            flg      = grp[grp['BRANCH_FORMAT'] == 'flagship'].sort_values('_iq')
             keep_idx = flg.index[:MAX_METRO_FLAGSHIP]
             df.loc[keep_idx, 'sc1_keep'] = True
         else:
             best = grp.sort_values(['_fmt_rank', '_iq']).index[0]
             df.loc[best, 'sc1_keep'] = True
-
     return df
-
-
-# ── Mapbox mapa se scénářem ───────────────────────────────────────────────────
-
-def _make_sc1_map(df_sc1):
-    kdf = df_sc1[df_sc1['sc1_keep']].dropna(subset=['_lat', '_lon'])
-    cdf = df_sc1[~df_sc1['sc1_keep']].dropna(subset=['_lat', '_lon'])
-
-    def _fc(rows):
-        return {'type': 'FeatureCollection',
-                'features': [_geo_circle(r['_lat'], r['_lon'])
-                             for _, r in rows.iterrows()]}
-
-    fc_keep  = _fc(kdf)
-    fc_close = _fc(cdf)
-
-    def _trace(sub, name, color, symbol, size):
-        if sub.empty:
-            return None
-        iq_vals = sub['IR_Q'].fillna(-1).astype(int).astype(str).replace('-1', '—')
-        return go.Scattermapbox(
-            lat=sub['_lat'], lon=sub['_lon'],
-            mode='markers', name=name,
-            marker=dict(size=size, color=color),
-            text=sub['BRANCH_NAME'],
-            customdata=list(zip(
-                sub['_city'],
-                sub['BRANCH_FORMAT'],
-                iq_vals,
-                sub['PRIMARNI_KLIENTI'].astype(int),
-            )),
-            hovertemplate=(
-                '<b>%{text}</b><br>Město: %{customdata[0]}<br>'
-                'Formát: %{customdata[1]}<br>IR kvintil: %{customdata[2]}<br>'
-                'Primárních klientů: %{customdata[3]:,}<extra></extra>'
-            ),
-        )
-
-    traces = [t for t in [
-        _trace(kdf, 'Zachovat', '#16a34a', 'circle', 12),
-        _trace(cdf, 'Zavřít',   '#dc2626', 'circle', 9),
-    ] if t is not None]
-
-    lat_c = float(df_sc1['_lat'].dropna().mean()) if df_sc1['_lat'].notna().any() else 49.8
-    lon_c = float(df_sc1['_lon'].dropna().mean()) if df_sc1['_lon'].notna().any() else 15.5
-
-    fig = go.Figure(traces)
-    fig.update_layout(
-        mapbox=dict(
-            accesstoken=MAPBOX_TOKEN,
-            style='mapbox://styles/mapbox/light-v11',
-            center=dict(lat=lat_c, lon=lon_c),
-            zoom=6.4,
-            layers=[
-                dict(sourcetype='geojson', source=fc_keep,  type='fill',
-                     color='#16a34a', opacity=0.09),
-                dict(sourcetype='geojson', source=fc_keep,  type='line',
-                     color='#16a34a', opacity=0.40),
-                dict(sourcetype='geojson', source=fc_close, type='fill',
-                     color='#dc2626', opacity=0.07),
-                dict(sourcetype='geojson', source=fc_close, type='line',
-                     color='#dc2626', opacity=0.28),
-            ],
-        ),
-        height=560, margin=dict(l=0, r=0, t=0, b=0),
-        legend=dict(x=0.01, y=0.98, bgcolor='rgba(255,255,255,.88)',
-                    bordercolor='#e2e8f0', borderwidth=1, font=dict(size=11)),
-    )
-    return fig
 
 
 # ── HTML pomocníci ────────────────────────────────────────────────────────────
 
 def _fv(v, fmt):
-    """Formátuj číslo dle formátu."""
     if v is None or (isinstance(v, float) and math.isnan(v)):
         return '—'
-    if fmt == 'int':   return f'{int(round(v)):,}'.replace(',', ' ')
+    if fmt == 'int':   return f'{int(round(v)):,}'.replace(',', ' ')
     if fmt == 'f1':    return f'{v:.1f}'
     if fmt == 'f2':    return f'{v:.2f}'
     if fmt == 'pct':   return f'{v:.1f} %'
@@ -255,17 +168,12 @@ def _fv(v, fmt):
     return str(v)
 
 
-def _sym_row(label, before, after, fmt, good='neutral', bold_after=False):
-    """Řádek tabulky dopadů se symbolem ▲▼→ a barevným označením."""
+def _sym_row(label, before, after, fmt, good='neutral'):
     try:
         b, a = float(before), float(after)
-        if b == 0:
-            pct, pct_s = 0.0, '—'
-        else:
-            pct   = (a - b) / abs(b) * 100
-            pct_s = f'{abs(pct):.1f} %'
+        pct   = (a - b) / abs(b) * 100 if b != 0 else 0.0
+        pct_s = f'{abs(pct):.1f} %'
         delta = a - b
-
         if abs(pct) < 0.3:
             sym, col = '→', '#64748b'
         elif delta > 0:
@@ -274,36 +182,28 @@ def _sym_row(label, before, after, fmt, good='neutral', bold_after=False):
         else:
             sym = '▼'
             col = '#16a34a' if good == 'down' else ('#dc2626' if good == 'up' else '#64748b')
-
-        bv = _fv(b, fmt)
-        av = _fv(a, fmt)
-        dv = _fv(delta, fmt) if delta != 0 else '0'
+        bv = _fv(b, fmt); av = _fv(a, fmt); dv = _fv(delta, fmt) if delta != 0 else '0'
     except Exception:
-        sym, col, pct_s = '—', '#64748b', '—'
-        bv = av = dv = '—'
-
-    aw = 'font-weight:700;' if bold_after else ''
+        sym, col, pct_s, bv, av, dv = '—', '#64748b', '—', '—', '—', '—'
     return (
         f'<tr>'
-        f'<td style="padding:6px 10px;font-size:0.82rem;font-weight:600;">{label}</td>'
-        f'<td style="padding:6px 10px;text-align:right;font-size:0.82rem;color:#475569;">{bv}</td>'
-        f'<td style="padding:6px 10px;text-align:right;font-size:0.82rem;{aw}color:{col};">{av}</td>'
-        f'<td style="padding:6px 10px;text-align:right;font-size:0.82rem;color:{col};">{dv}</td>'
-        f'<td style="padding:6px 10px;text-align:center;font-size:0.95rem;font-weight:800;'
-        f'color:{col};">{sym} {pct_s}</td>'
+        f'<td style="padding:5px 10px;font-size:0.81rem;font-weight:600;">{label}</td>'
+        f'<td style="padding:5px 10px;text-align:right;font-size:0.81rem;color:#64748b;">{bv}</td>'
+        f'<td style="padding:5px 10px;text-align:right;font-size:0.81rem;font-weight:700;color:{col};">{av}</td>'
+        f'<td style="padding:5px 10px;text-align:right;font-size:0.81rem;color:{col};">{dv}</td>'
+        f'<td style="padding:5px 10px;text-align:center;font-size:0.9rem;font-weight:800;color:{col};">{sym} {pct_s}</td>'
         f'</tr>'
     )
 
 
 def _calc_row(label, value, note='', col='#1e2a38'):
-    note_html = (f'<div style="font-size:0.72rem;color:#94a3b8;">{note}</div>'
+    note_html = (f'<div style="font-size:0.71rem;color:#94a3b8;">{note}</div>'
                  if note else '')
     return (
-        f'<div style="display:flex;align-items:baseline;gap:10px;padding:8px 0;'
+        f'<div style="display:flex;align-items:baseline;gap:10px;padding:7px 0;'
         f'border-bottom:1px solid #f1f5f9;">'
-        f'<div style="flex:1;font-size:0.82rem;color:#374151;">{label}</div>'
-        f'<div style="font-size:1.05rem;font-weight:800;color:{col};white-space:nowrap;">'
-        f'{value}</div>'
+        f'<div style="flex:1;font-size:0.81rem;color:#374151;">{label}</div>'
+        f'<div style="font-size:1.0rem;font-weight:800;color:{col};white-space:nowrap;">{value}</div>'
         f'{note_html}'
         f'</div>'
     )
@@ -334,9 +234,8 @@ def generate_network_analysis_report(
     n_keep  = len(kdf)
     n_close = len(cdf)
 
-    # Dostupnost po scénáři (jen zachované pobočky)
     print('  📍 Dostupnost po Scénáři 1...')
-    kdf_avail = compute_network_availability(kdf)
+    kdf_avail          = compute_network_availability(kdf)
     avg_avail_after_km = float(kdf_avail.dropna().mean() / 1000) if kdf_avail.notna().any() else np.nan
 
     # ── Souhrné statistiky ─────────────────────────────────────────────────────
@@ -363,22 +262,21 @@ def generate_network_analysis_report(
     c_ban    = float(cdf['BANKERS_COUNT'].sum())
     c_rent   = float(cdf['ROCNI_SPLATKY_S_DPH_CZK'].sum())
 
-    rev_per_cli  = total_rev / total_cli if total_cli > 0 else 0.0
-    churn_cli    = c_cli * CLIENT_CHURN_RATE
-    churn_rev    = churn_cli * rev_per_cli
+    rev_per_cli     = total_rev / total_cli if total_cli > 0 else 0.0
+    churn_cli       = c_cli * CLIENT_CHURN_RATE
+    churn_rev       = churn_cli * rev_per_cli
+    cli_per_ban_now = total_cli / total_ban if total_ban > 0 else 0.0
+    cli_per_ban_all = total_cli / k_ban     if k_ban     > 0 else 0.0
+    cli_per_ban_own = k_cli     / k_ban     if k_ban     > 0 else 0.0
 
-    cli_per_ban_now  = total_cli / total_ban  if total_ban  > 0 else 0.0
-    cli_per_ban_all  = total_cli / k_ban       if k_ban       > 0 else 0.0
-    cli_per_ban_own  = k_cli     / k_ban       if k_ban       > 0 else 0.0
-
-    # ── Korelace ──────────────────────────────────────────────────────────────
+    # ── Korelace (compact items) ───────────────────────────────────────────────
     _corr_map = {
         'Primární klienti': 'PRIMARNI_KLIENTI',  'Aktivní klienti': 'AKTIVNI_KLIENTI',
         'Fyzické schůzky':  'POCET_SCHUZEK_FYZICKY', 'Plocha (m²)': 'CELK_PLOCHA_POBOCKY_2026',
-        'Bankéři':          'BANKERS_COUNT',      'Nové výnosy':  'OBJEM_VYNOSU_CZK',
-        'Výnosy celkem':    'VYNOSY',             'C/I ratio':    'PRIME_NAKLADY/VYNOSY',
+        'Bankéři':          'BANKERS_COUNT',      'Nové výnosy':   'OBJEM_VYNOSU_CZK',
+        'Výnosy celkem':    'VYNOSY',             'C/I ratio':     'PRIME_NAKLADY/VYNOSY',
         'Nájemné':          'ROCNI_SPLATKY_S_DPH_CZK', 'IR kvintil': 'IR_Q',
-        'Dostupnost (km)':  'avail_km',           'Kapacita (%)': 'capacity_utilization',
+        'Dostupnost (km)':  'avail_km',           'Kapacita (%)':  'capacity_utilization',
     }
     avail_cm = {k: v for k, v in _corr_map.items() if v in df.columns}
     corr_sub = df[[v for v in avail_cm.values()]].rename(columns={v: k for k, v in avail_cm.items()})
@@ -394,94 +292,103 @@ def generate_network_analysis_report(
                 pairs.append((abs(v), v, names[i], names[j]))
     pairs.sort(key=lambda x: -x[0])
 
-    corr_html = ''
-    for _, v, a, b in pairs[:12]:
+    def _corr_item(absv, v, a, b):
         col   = '#dc2626' if v > 0 else '#2563eb'
         sign  = '+' if v > 0 else ''
-        strng = ('silná' if abs(v) > 0.65 else ('střední' if abs(v) > 0.4 else 'slabá'))
-        bar_w = f'{abs(v)*100:.0f}%'
-        bar_c = col
-        corr_html += (
-            f'<div style="display:flex;align-items:center;gap:12px;padding:7px 0;'
-            f'border-bottom:1px solid #f1f5f9;">'
-            f'<span style="font-size:1.05rem;font-weight:800;color:{col};'
-            f'min-width:52px;text-align:right;">{sign}{v:.2f}</span>'
-            f'<div style="flex:1;">'
-            f'<div style="font-size:0.81rem;color:#1e2a38;font-weight:500;">'
-            f'{a} <span style="color:#94a3b8;">↔</span> {b}</div>'
-            f'<div style="background:#f1f5f9;border-radius:2px;height:4px;margin-top:3px;">'
-            f'<div style="width:{bar_w};background:{bar_c};height:100%;border-radius:2px;opacity:.6;"></div></div>'
+        strng = 'silná' if absv > 0.65 else ('střední' if absv > 0.4 else 'slabá')
+        bw    = f'{absv*100:.0f}%'
+        bg    = col + '18'
+        return (
+            f'<div style="display:flex;align-items:center;gap:9px;padding:4px 0;'
+            f'border-bottom:1px solid #f8fafc;">'
+            f'<div style="min-width:46px;text-align:center;padding:2px 5px;'
+            f'background:{bg};border-radius:5px;font-size:0.8rem;'
+            f'font-weight:800;color:{col};font-variant-numeric:tabular-nums;">'
+            f'{sign}{v:.2f}</div>'
+            f'<div style="flex:1;min-width:0;">'
+            f'<div style="font-size:0.77rem;color:#1e2a38;font-weight:500;'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+            f'{a}<span style="color:#cbd5e1;margin:0 4px;">↔</span>{b}</div>'
+            f'<div style="background:#f1f5f9;border-radius:2px;height:3px;margin-top:3px;">'
+            f'<div style="width:{bw};background:{col};height:100%;'
+            f'border-radius:2px;opacity:.45;"></div></div>'
             f'</div>'
-            f'<span style="font-size:0.68rem;color:#94a3b8;white-space:nowrap;">{strng}</span>'
+            f'<span style="font-size:0.62rem;color:#94a3b8;white-space:nowrap;'
+            f'padding:1px 5px;background:#f8fafc;border-radius:3px;">{strng}</span>'
             f'</div>'
         )
 
-    # ── Tabulka poboček (top) ──────────────────────────────────────────────────
+    top_pairs  = pairs[:12]
+    mid        = (len(top_pairs) + 1) // 2
+    corr_left  = ''.join(_corr_item(*p) for p in top_pairs[:mid])
+    corr_right = ''.join(_corr_item(*p) for p in top_pairs[mid:])
+
+    # ── Tabulka poboček ────────────────────────────────────────────────────────
     _tbl_cols = [
-        ('Pobočka',             'BRANCH_NAME',              'text',   'left'),
-        ('Region',              '_region',                  'text',   'left'),
-        ('Formát',              'BRANCH_FORMAT',            'text',   'left'),
-        ('IR Q',                'IR_Q',                     'int',    'center'),
-        ('Prim. klienti',       'PRIMARNI_KLIENTI',         'int',    'right'),
-        ('Akt. klienti',        'AKTIVNI_KLIENTI',          'int',    'right'),
-        ('Schůzky',             'POCET_SCHUZEK_FYZICKY',    'int',    'right'),
-        ('Bankéři',             'BANKERS_COUNT',             'f1',    'right'),
-        ('Výnosy (M Kč)',       'VYNOSY',                   'mczk',   'right'),
-        ('Nové výn. (M Kč)',    'OBJEM_VYNOSU_CZK',         'mczk',   'right'),
-        ('C/I (%)',             'PRIME_NAKLADY/VYNOSY',     'pct',    'right'),
-        ('Plocha (m²)',         'CELK_PLOCHA_POBOCKY_2026', 'm2',     'right'),
-        ('Nájemné (M Kč/rok)', 'ROCNI_SPLATKY_S_DPH_CZK', 'mczk',   'right'),
-        ('Kapacita (%)',        'capacity_utilization',     'pct',    'right'),
-        ('Dostupnost (km)',     'avail_km',                  'km',    'right'),
+        ('Pobočka',             'BRANCH_NAME',              'text', 'left'),
+        ('Region',              '_region',                  'text', 'left'),
+        ('Formát',              'BRANCH_FORMAT',            'text', 'left'),
+        ('IR Q',                'IR_Q',                     'int',  'center'),
+        ('Prim. klienti',       'PRIMARNI_KLIENTI',         'int',  'right'),
+        ('Akt. klienti',        'AKTIVNI_KLIENTI',          'int',  'right'),
+        ('Schůzky',             'POCET_SCHUZEK_FYZICKY',    'int',  'right'),
+        ('Bankéři',             'BANKERS_COUNT',            'f1',   'right'),
+        ('Výnosy (M Kč)',       'VYNOSY',                   'mczk', 'right'),
+        ('Nové výn. (M Kč)',    'OBJEM_VYNOSU_CZK',         'mczk', 'right'),
+        ('C/I (%)',             'PRIME_NAKLADY/VYNOSY',     'pct',  'right'),
+        ('Plocha (m²)',         'CELK_PLOCHA_POBOCKY_2026', 'm2',   'right'),
+        ('Nájemné (M Kč/rok)', 'ROCNI_SPLATKY_S_DPH_CZK', 'mczk', 'right'),
+        ('Kapacita (%)',        'capacity_utilization',     'cap',  'right'),
+        ('Dostupnost (km)',     'avail_km',                 'km',   'right'),
     ]
 
     df_sorted = df.sort_values('VYNOSY', ascending=False).reset_index(drop=True)
 
-    def _cell(v, fmt, align):
-        a_style = f'text-align:{align};'
-        if fmt == 'text':
-            return f'<td style="padding:5px 9px;{a_style}font-size:0.8rem;">{v}</td>'
-        if fmt == 'int':
-            sv = f'{int(round(float(v))):,}'.replace(',', ' ') if pd.notna(v) and str(v) not in ('—','') else '—'
-            return f'<td style="padding:5px 9px;{a_style}font-size:0.8rem;">{sv}</td>'
-        if fmt == 'mczk':
-            sv = f'{float(v)/1e6:.1f}' if pd.notna(v) and float(v) != 0 else '—'
-            return f'<td style="padding:5px 9px;{a_style}font-size:0.8rem;">{sv}</td>'
-        if fmt == 'pct':
-            sv = f'{float(v):.1f}%' if pd.notna(v) else '—'
-            col = ''
-            if fmt == 'pct' and 'capacity' in str(v):
-                pass
-            return f'<td style="padding:5px 9px;{a_style}font-size:0.8rem;">{sv}</td>'
-        if fmt == 'f1':
-            sv = f'{float(v):.1f}' if pd.notna(v) else '—'
-            return f'<td style="padding:5px 9px;{a_style}font-size:0.8rem;">{sv}</td>'
-        if fmt == 'm2':
-            sv = f'{float(v):.0f}' if pd.notna(v) and float(v) > 0 else '—'
-            return f'<td style="padding:5px 9px;{a_style}font-size:0.8rem;">{sv}</td>'
-        if fmt == 'km':
-            sv = f'{float(v):.1f}' if pd.notna(v) else '—'
-            return f'<td style="padding:5px 9px;{a_style}font-size:0.8rem;">{sv}</td>'
-        return f'<td style="padding:5px 9px;{a_style}font-size:0.8rem;">{v}</td>'
+    def _ir_color(v):
+        try:
+            return {1:'#16a34a',2:'#65a30d',3:'#f59e0b',4:'#ea580c',5:'#dc2626'}.get(int(float(v)),'#64748b')
+        except Exception:
+            return '#64748b'
 
     def _cap_color(v):
         try:
             f = float(v)
-            if f > 1.2: return '#dc2626'
-            if f > 0.9: return '#f59e0b'
-            return '#16a34a'
+            return '#dc2626' if f > 1.2 else ('#f59e0b' if f > 0.9 else '#16a34a')
         except Exception:
             return '#64748b'
 
-    def _ir_color(v):
-        try:
-            iv = int(float(v))
-            return {1: '#16a34a', 2: '#65a30d', 3: '#f59e0b', 4: '#ea580c', 5: '#dc2626'}.get(iv, '#64748b')
-        except Exception:
-            return '#64748b'
+    def _cell(v, fmt, align):
+        s = f'padding:5px 9px;text-align:{align};font-size:0.79rem;'
+        if fmt == 'text':
+            return f'<td style="{s}">{v}</td>'
+        if fmt == 'int':
+            sv = f'{int(round(float(v))):,}'.replace(',', ' ') if pd.notna(v) else '—'
+            return f'<td style="{s}">{sv}</td>'
+        if fmt == 'mczk':
+            sv = f'{float(v)/1e6:.1f}' if pd.notna(v) and float(v) != 0 else '—'
+            return f'<td style="{s}">{sv}</td>'
+        if fmt == 'pct':
+            sv = f'{float(v):.1f}%' if pd.notna(v) else '—'
+            return f'<td style="{s}">{sv}</td>'
+        if fmt == 'f1':
+            sv = f'{float(v):.1f}' if pd.notna(v) else '—'
+            return f'<td style="{s}">{sv}</td>'
+        if fmt == 'm2':
+            sv = f'{float(v):.0f}' if pd.notna(v) and float(v) > 0 else '—'
+            return f'<td style="{s}">{sv}</td>'
+        if fmt == 'km':
+            sv = f'{float(v):.1f}' if pd.notna(v) else '—'
+            return f'<td style="{s}">{sv}</td>'
+        if fmt == 'cap':
+            try:
+                fv = float(v); c = _cap_color(fv)
+                return (f'<td style="{s}font-weight:700;color:{c};">{fv:.0%}</td>')
+            except Exception:
+                return f'<td style="{s}">—</td>'
+        return f'<td style="{s}">{v}</td>'
 
     thead_cells = ''.join(
-        f'<th style="padding:6px 9px;font-size:0.7rem;font-weight:700;color:#64748b;'
+        f'<th style="padding:6px 9px;font-size:0.69rem;font-weight:700;color:#64748b;'
         f'background:#f8fafc;border-bottom:2px solid #e2e8f0;white-space:nowrap;'
         f'text-align:{al};">{lbl}</th>'
         for lbl, _, _, al in _tbl_cols
@@ -493,28 +400,18 @@ def generate_network_analysis_report(
             cells = ''
             for lbl, col_name, fmt, align in _tbl_cols:
                 v = row.get(col_name, '—')
-                if col_name == 'capacity_utilization':
+                if col_name == 'IR_Q':
                     try:
-                        fv = float(v)
-                        color = _cap_color(fv)
-                        sv = f'{fv:.0%}'
-                        cells += (f'<td style="padding:5px 9px;text-align:right;font-size:0.8rem;'
-                                  f'font-weight:700;color:{color};">{sv}</td>')
-                    except Exception:
-                        cells += '<td style="padding:5px 9px;text-align:right;">—</td>'
-                elif col_name == 'IR_Q':
-                    try:
-                        iv = int(float(v))
-                        color = _ir_color(iv)
-                        cells += (f'<td style="padding:5px 9px;text-align:center;font-size:0.8rem;'
-                                  f'font-weight:700;color:{color};">{iv}</td>')
+                        iv = int(float(v)); c = _ir_color(iv)
+                        cells += (f'<td style="padding:5px 9px;text-align:center;'
+                                  f'font-size:0.79rem;font-weight:700;color:{c};">{iv}</td>')
                     except Exception:
                         cells += '<td style="padding:5px 9px;text-align:center;">—</td>'
                 elif col_name == 'BRANCH_FORMAT':
-                    fmt_colors = {'flagship': '#2563eb', 'medium': '#16a34a',
-                                  'medium economy': '#65a30d', 'small': '#64748b'}
+                    fmt_colors = {'flagship':'#2563eb','medium':'#16a34a',
+                                  'medium economy':'#65a30d','small':'#64748b'}
                     c = fmt_colors.get(str(v).lower(), '#94a3b8')
-                    cells += (f'<td style="padding:5px 9px;font-size:0.75rem;'
+                    cells += (f'<td style="padding:5px 9px;font-size:0.74rem;'
                               f'font-weight:600;color:{c};">{str(v).capitalize()}</td>')
                 else:
                     cells += _cell(v, fmt, align)
@@ -525,44 +422,19 @@ def generate_network_analysis_report(
     rest_rows    = _build_rows(df_sorted.iloc[5:])
     n_rest       = len(df_sorted) - 5
 
-    # ── Scénář 1: mapa ─────────────────────────────────────────────────────────
-    print('  🗺️  Generování mapy Scénář 1...')
-    g_map = _make_sc1_map(df_sc1).to_html(
-        full_html=False, include_plotlyjs='cdn', config=_CFG
-    )
-
-    # ── Scénář 1: tabulka zavřených ───────────────────────────────────────────
-    close_rows_html = ''
-    for _, row in cdf.sort_values(['_region', 'PRIMARNI_KLIENTI'], ascending=[True, False]).iterrows():
-        iq = f'{int(float(row["IR_Q"]))}' if pd.notna(row['IR_Q']) else '—'
-        close_rows_html += (
-            f'<tr style="border-bottom:1px solid #fef2f2;">'
-            f'<td style="padding:5px 9px;font-size:0.79rem;font-weight:600;">{row["BRANCH_NAME"]}</td>'
-            f'<td style="padding:5px 9px;font-size:0.74rem;color:#64748b;">{row["_city"]}</td>'
-            f'<td style="padding:5px 9px;font-size:0.74rem;">{row["BRANCH_FORMAT"].capitalize()}</td>'
-            f'<td style="padding:5px 9px;text-align:center;font-size:0.8rem;'
-            f'font-weight:700;color:{_ir_color(row["IR_Q"])};">{iq}</td>'
-            f'<td style="padding:5px 9px;text-align:right;font-size:0.8rem;">'
-            f'{int(row["PRIMARNI_KLIENTI"]):,}</td>'
-            f'<td style="padding:5px 9px;text-align:right;font-size:0.8rem;">'
-            f'{row["ROCNI_SPLATKY_S_DPH_CZK"]/1e6:.1f} M</td>'
-            f'</tr>\n'
-        )
-
-    # ── Scénář 1: impact tabulka ──────────────────────────────────────────────
+    # ── Impact tabulka ─────────────────────────────────────────────────────────
     impact_html = (
-        _sym_row('Poboček',                     n_total,      n_keep,             'int',   'neutral') +
-        _sym_row('Primárních klientů',           total_cli,    k_cli,              'int',   'up') +
-        _sym_row('Aktivních klientů',            total_aktiv,  k_aktiv,            'int',   'up') +
-        _sym_row('Výnosy celkem (M Kč)',         total_rev,    k_rev,              'mczk',  'up') +
-        _sym_row('Bankéřů celkem',               total_ban,    k_ban,              'int',   'neutral') +
-        _sym_row('Průměrná plocha pobočky (m²)', avg_plocha,   k_plocha,           'f1',    'up') +
-        _sym_row('Průměrná dostupnost sítě (km)',avg_avail_km, avg_avail_after_km, 'km',    'down') +
-        _sym_row('Nájemné celkem (M Kč/rok)',    total_rent,   k_rent,             'mczk',  'down') +
-        _sym_row('C/I ratio průměr (%)',         avg_ci,       k_ci,               'pct',   'down')
+        _sym_row('Poboček',                      n_total,      n_keep,             'int',  'neutral') +
+        _sym_row('Primárních klientů',            total_cli,    k_cli,              'int',  'up') +
+        _sym_row('Aktivních klientů',             total_aktiv,  k_aktiv,            'int',  'up') +
+        _sym_row('Výnosy celkem (M Kč)',          total_rev,    k_rev,              'mczk', 'up') +
+        _sym_row('Bankéřů celkem',                total_ban,    k_ban,              'int',  'neutral') +
+        _sym_row('Průměrná plocha pobočky (m²)',  avg_plocha,   k_plocha,           'f1',   'up') +
+        _sym_row('Průměrná dostupnost sítě (km)', avg_avail_km, avg_avail_after_km, 'km',   'down') +
+        _sym_row('Nájemné celkem (M Kč/rok)',     total_rent,   k_rent,             'mczk', 'down') +
+        _sym_row('C/I ratio průměr (%)',          avg_ci,       k_ci,               'pct',  'down')
     )
 
-    # ── Kalkulace dopadů ──────────────────────────────────────────────────────
     calcs_html = (
         _calc_row('Neobsloužených klientů (primárních)',
                   _fv(c_cli, 'int'), 'z uzavřených poboček', '#dc2626') +
@@ -582,173 +454,556 @@ def generate_network_analysis_report(
                   f'změna {k_plocha - avg_plocha:+.0f} m²', '#0891b2')
     )
 
-    # ── HTML ──────────────────────────────────────────────────────────────────
-    html = f"""<!DOCTYPE html>
-<html lang="cs">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Analýza sítě poboček</title>
-<style>
-*{{box-sizing:border-box;margin:0;padding:0;}}
-body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-     background:#f0f4fb;color:#1e2a38;}}
-.hdr{{background:linear-gradient(135deg,#1a3a6c 0%,#2563eb 100%);
-     color:white;padding:22px 32px 18px;}}
-.hdr h1{{font-size:1.45rem;font-weight:800;margin-bottom:3px;}}
-.hdr p{{font-size:0.8rem;opacity:.75;}}
-.wrap{{max-width:1420px;margin:0 auto;padding:22px 18px;}}
-.card{{background:white;border-radius:12px;padding:18px 20px;
-      box-shadow:0 1px 5px rgba(0,0,0,.07);margin-bottom:18px;}}
-.ct{{font-size:0.71rem;font-weight:700;color:#2563eb;text-transform:uppercase;
-    letter-spacing:.5px;margin-bottom:12px;}}
-.two-col{{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px;}}
-@media(max-width:900px){{.two-col{{grid-template-columns:1fr;}}}}
-.impact-tbl{{width:100%;border-collapse:collapse;}}
-.impact-tbl th{{background:#f8fafc;padding:6px 10px;font-size:0.7rem;font-weight:700;
-               color:#64748b;border-bottom:2px solid #e2e8f0;white-space:nowrap;}}
-.impact-tbl tr:hover td{{background:#f8fafc;}}
-.sc1-card{{border-top:3px solid #2563eb;}}
-.sc1-title{{font-size:1rem;font-weight:700;color:#1d4ed8;margin-bottom:4px;}}
-.sc1-desc{{font-size:0.78rem;color:#374151;margin-bottom:16px;}}
-.badge{{display:inline-block;border-radius:5px;padding:2px 7px;font-size:0.7rem;font-weight:700;}}
-.b-keep{{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0;}}
-.b-close{{background:#fef2f2;color:#dc2626;border:1px solid #fecaca;}}
-.scroll-tbl{{max-height:340px;overflow-y:auto;}}
-.show-more-btn{{
-  display:inline-block;margin-top:10px;padding:7px 18px;
-  background:#f0f4fb;border:1px solid #e2e8f0;border-radius:8px;
-  font-size:0.78rem;font-weight:600;color:#2563eb;cursor:pointer;
-  transition:background .15s;
-}}
-.show-more-btn:hover{{background:#dbeafe;}}
-</style>
-</head>
-<body>
-<div class="hdr">
-  <h1>🏦 Analýza sítě poboček — optimalizace</h1>
-  <p>{n_total} poboček v perimetru · Výpočet dostupnosti a kapacity</p>
-</div>
-<div class="wrap">
+    close_rows_html = ''
+    for _, row in cdf.sort_values(['_region', 'PRIMARNI_KLIENTI'], ascending=[True, False]).iterrows():
+        iq = f'{int(float(row["IR_Q"]))}' if pd.notna(row['IR_Q']) else '—'
+        close_rows_html += (
+            f'<tr style="border-bottom:1px solid #fef2f2;">'
+            f'<td style="padding:5px 9px;font-size:0.78rem;font-weight:600;">{row["BRANCH_NAME"]}</td>'
+            f'<td style="padding:5px 9px;font-size:0.73rem;color:#64748b;">{row["_city"]}</td>'
+            f'<td style="padding:5px 9px;font-size:0.73rem;">{str(row["BRANCH_FORMAT"]).capitalize()}</td>'
+            f'<td style="padding:5px 9px;text-align:center;font-size:0.79rem;'
+            f'font-weight:700;color:{_ir_color(row["IR_Q"])};">{iq}</td>'
+            f'<td style="padding:5px 9px;text-align:right;font-size:0.79rem;">'
+            f'{int(row["PRIMARNI_KLIENTI"]):,}</td>'
+            f'<td style="padding:5px 9px;text-align:right;font-size:0.79rem;">'
+            f'{row["ROCNI_SPLATKY_S_DPH_CZK"]/1e6:.1f} M</td>'
+            f'</tr>\n'
+        )
 
-<!-- ══ Tabulka poboček ═════════════════════════════════════════════════════ -->
-<div class="card">
-  <div class="ct">📊 Přehled poboček — {n_total} poboček (seřazeno dle výnosů)</div>
-  <div style="overflow-x:auto;">
-  <table style="width:100%;border-collapse:collapse;min-width:1100px;">
-    <thead><tr>{thead_cells}</tr></thead>
-    <tbody>
-{preview_rows}
-    </tbody>
-  </table>
-  </div>
-  <div id="branch-more" style="display:none;overflow-x:auto;margin-top:2px;">
-  <table style="width:100%;border-collapse:collapse;min-width:1100px;">
-    <thead><tr>{thead_cells}</tr></thead>
-    <tbody>
-{rest_rows}
-    </tbody>
-  </table>
-  </div>
-  <button class="show-more-btn" id="more-btn"
-          onclick="(function(){{
-            var el=document.getElementById('branch-more');
-            var btn=document.getElementById('more-btn');
-            var open=el.style.display!=='none';
-            el.style.display=open?'none':'block';
-            btn.textContent=open?'Zobrazit všech {n_rest} dalších poboček ▼':'Skrýt ▲';
-          }})()">
-    Zobrazit všech {n_rest} dalších poboček ▼
-  </button>
-</div>
+    # ── JSON dat pro mapu ──────────────────────────────────────────────────────
+    print('  🗂️  Serializace dat pro JS...')
+    lat_c = float(df_sc1['_lat'].dropna().mean()) if df_sc1['_lat'].notna().any() else 49.8
+    lon_c = float(df_sc1['_lon'].dropna().mean()) if df_sc1['_lon'].notna().any() else 15.5
 
-<!-- ══ Korelace ═══════════════════════════════════════════════════════════ -->
-<div class="card">
-  <div class="ct">🔗 Nejvýznamnější korelace mezi metrikami</div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 30px;">
-    <div>{corr_html[:len(corr_html)//2]}</div>
-    <div>{corr_html[len(corr_html)//2:]}</div>
-  </div>
-  <p style="margin-top:10px;font-size:0.71rem;color:#94a3b8;">
-    Pearsonův r &nbsp;·&nbsp; zobrazeny páry s |r| &gt; 0.2 &nbsp;·&nbsp; ±1 = perfektní lineární vztah
-  </p>
-</div>
+    branches_js = []
+    for idx, row in df_sc1.iterrows():
+        lat = row.get('_lat')
+        lon = row.get('_lon')
+        has_gps = pd.notna(lat) and pd.notna(lon)
+        circ_coords = []
+        if has_gps:
+            circ_coords = _geo_circle(float(lat), float(lon))['geometry']['coordinates']
+        branches_js.append({
+            'id':          int(idx),
+            'name':        str(row.get('BRANCH_NAME', '—')),
+            'city':        str(row.get('_city', '—')),
+            'format':      str(row.get('BRANCH_FORMAT', '—')),
+            'ir_q':        int(float(row['IR_Q'])) if pd.notna(row.get('IR_Q')) else 0,
+            'clients':     int(row.get('PRIMARNI_KLIENTI', 0)),
+            'revenue':     float(row.get('VYNOSY', 0)),
+            'rent':        float(row.get('ROCNI_SPLATKY_S_DPH_CZK', 0)),
+            'avail_km':    round(float(row['avail_km']), 3) if pd.notna(row.get('avail_km')) else 0.0,
+            'cap_pct':     round(float(row['capacity_utilization']), 4) if pd.notna(row.get('capacity_utilization')) else 0.0,
+            'sc1_keep':    bool(row.get('sc1_keep', False)),
+            'lat':         round(float(lat), 6) if has_gps else None,
+            'lon':         round(float(lon), 6) if has_gps else None,
+            'circle_coords': circ_coords,
+        })
 
-<!-- ══ Scénář 1 ════════════════════════════════════════════════════════════ -->
-<div class="card sc1-card">
-  <div class="sc1-title">📋 Scénář 1 — nejpřísnější optimalizace</div>
-  <div class="sc1-desc">
-    <strong>Pravidlo:</strong> Mimo Prahu a Brno zůstane v každém městě <strong>jedna pobočka</strong>
-    — vybrána nejlepší dle interního ratingu s preferencí formátu flagship.
-    V Praze a Brně jsou zachovány flagshipy (max {MAX_METRO_FLAGSHIP} v každém).
-    Ne-flagship pobočky v metropolích jsou uzavřeny.
-    &nbsp;·&nbsp; Kružnice = 10 km dostupnosti.
-  </div>
+    branches_json_str = json.dumps(branches_js, ensure_ascii=False, separators=(',', ':'))
 
-  <!-- Mapa -->
-  {g_map}
-  <div style="display:flex;gap:16px;margin:8px 0 16px;font-size:0.76rem;flex-wrap:wrap;">
-    <span>🟢 <span class="badge b-keep">Zachovat ({n_keep})</span></span>
-    <span>🔴 <span class="badge b-close">Zavřít ({n_close})</span></span>
-    <span style="color:#94a3b8;">Kružnice = 10 km od pobočky</span>
-  </div>
+    # JS data injected at runtime (built as plain Python string, no f-string)
+    js_data = (
+        'const MAPBOX_TOKEN=' + json.dumps(MAPBOX_TOKEN) + ';\n'
+        'const BRANCHES='     + branches_json_str + ';\n'
+        'const LAT_C='  + str(round(lat_c, 4)) + ';\n'
+        'const LON_C='  + str(round(lon_c, 4)) + ';\n'
+        'const MAX_METRO_FLAGSHIP=' + str(MAX_METRO_FLAGSHIP) + ';\n'
+        'const METRO_CITIES_SET=new Set(' + json.dumps(sorted(METRO_CITIES)) + ');\n'
+        'const BANKER_CAPACITY=' + str(BANKER_CAPACITY) + ';\n'
+        'const CLIENT_CHURN_RATE=' + str(CLIENT_CHURN_RATE) + ';\n'
+    )
 
-  <div class="two-col">
+    # All JS logic as a raw string — no f-string escaping needed
+    js_logic = r"""
+// ── Utils ──────────────────────────────────────────────────────────────────
+function fmtInt(v){return v==null?'—':Math.round(v).toLocaleString('cs-CZ');}
+function fmtMczk(v){return v==null?'—':(v/1e6).toFixed(1)+' M';}
+function fmtKm(v){return v==null?'—':v.toFixed(1)+' km';}
+function fmtPct(v){return v==null?'—':(v*100).toFixed(0)+' %';}
 
-    <!-- Dopad na parametry -->
-    <div>
-      <div class="ct">📉 Dopad na parametry sítě</div>
-      <div style="overflow-x:auto;">
-      <table class="impact-tbl">
-        <thead><tr>
-          <th style="text-align:left;">Metrika</th>
-          <th style="text-align:right;">Před</th>
-          <th style="text-align:right;">Scénář 1</th>
-          <th style="text-align:right;">Změna</th>
-          <th style="text-align:center;">Trend</th>
-        </tr></thead>
-        <tbody>{impact_html}</tbody>
-      </table>
-      </div>
-    </div>
+// ── GeoJSON builders ────────────────────────────────────────────────────────
+function buildPoints(stObj){
+  return {type:'FeatureCollection',features:BRANCHES.filter(b=>b.lat&&b.lon).map(b=>({
+    type:'Feature',geometry:{type:'Point',coordinates:[b.lon,b.lat]},
+    properties:{id:b.id,name:b.name,city:b.city,format:b.format,
+                ir_q:b.ir_q,clients:b.clients,revenue:b.revenue,
+                state:stObj[b.id]||'close'}
+  }))};
+}
+function buildCircles(stObj){
+  return {type:'FeatureCollection',features:BRANCHES.filter(b=>b.lat&&b.lon&&b.circle_coords.length).map(b=>({
+    type:'Feature',geometry:{type:'Polygon',coordinates:b.circle_coords},
+    properties:{id:b.id,state:stObj[b.id]||'close'}
+  }))};
+}
 
-    <!-- Kalkulace dopadů -->
-    <div>
-      <div class="ct">🔢 Detailní výpočet dopadů</div>
-      {calcs_html}
-    </div>
+// ── Stats ────────────────────────────────────────────────────────────────────
+function calcStats(stObj){
+  const keep=BRANCHES.filter(b=>stObj[b.id]==='keep');
+  const close=BRANCHES.filter(b=>stObj[b.id]!=='keep');
+  const totCli=BRANCHES.reduce((s,b)=>s+b.clients,0);
+  const totRev=BRANCHES.reduce((s,b)=>s+b.revenue,0);
+  const totRent=BRANCHES.reduce((s,b)=>s+b.rent,0);
+  const kCli=keep.reduce((s,b)=>s+b.clients,0);
+  const kRev=keep.reduce((s,b)=>s+b.revenue,0);
+  const kRent=keep.reduce((s,b)=>s+b.rent,0);
+  const cCli=close.reduce((s,b)=>s+b.clients,0);
+  const cRent=close.reduce((s,b)=>s+b.rent,0);
+  const rpc=totCli>0?totRev/totCli:0;
+  return {nKeep:keep.length,nClose:close.length,
+    kCli,kRev,kRent,cCli,cRent,churnRev:cCli*CLIENT_CHURN_RATE*rpc,
+    totCli,totRev,totRent};
+}
 
-  </div>
+function renderStats(stObj,pfx){
+  const s=calcStats(stObj);
+  const el=id=>document.getElementById(pfx+'-'+id);
+  if(!el('nk'))return;
+  el('nk').textContent=s.nKeep;
+  el('nc').textContent=s.nClose;
+  el('kcli').textContent=fmtInt(s.kCli);
+  el('krev').textContent=fmtMczk(s.kRev);
+  el('crent').textContent=fmtMczk(s.cRent);
+  el('churn').textContent=fmtMczk(s.churnRev);
+}
 
-  <!-- Tabulka zavřených poboček -->
-  <div style="margin-top:16px;">
-    <div class="ct">Pobočky navržené k uzavření ({n_close})</div>
-    <div class="scroll-tbl">
-    <table style="width:100%;border-collapse:collapse;">
-      <thead><tr style="background:#fef2f2;">
-        <th style="padding:5px 9px;font-size:0.7rem;font-weight:700;color:#b91c1c;
-                   border-bottom:1px solid #fecaca;text-align:left;">Pobočka</th>
-        <th style="padding:5px 9px;font-size:0.7rem;font-weight:700;color:#b91c1c;
-                   border-bottom:1px solid #fecaca;text-align:left;">Město</th>
-        <th style="padding:5px 9px;font-size:0.7rem;font-weight:700;color:#b91c1c;
-                   border-bottom:1px solid #fecaca;text-align:left;">Formát</th>
-        <th style="padding:5px 9px;font-size:0.7rem;font-weight:700;color:#b91c1c;
-                   border-bottom:1px solid #fecaca;text-align:center;">IR Q</th>
-        <th style="padding:5px 9px;font-size:0.7rem;font-weight:700;color:#b91c1c;
-                   border-bottom:1px solid #fecaca;text-align:right;">Primárních klientů</th>
-        <th style="padding:5px 9px;font-size:0.7rem;font-weight:700;color:#b91c1c;
-                   border-bottom:1px solid #fecaca;text-align:right;">Nájemné (M Kč/rok)</th>
-      </tr></thead>
-      <tbody>{close_rows_html}</tbody>
-    </table>
-    </div>
-  </div>
+// ── Map factory ──────────────────────────────────────────────────────────────
+function createMap(containerId, stObj, onToggle){
+  mapboxgl.accessToken=MAPBOX_TOKEN;
+  const map=new mapboxgl.Map({
+    container:containerId,
+    style:'mapbox://styles/mapbox/light-v11',
+    center:[LON_C,LAT_C],zoom:6.4,
+    attributionControl:false
+  });
+  map.addControl(new mapboxgl.NavigationControl({showCompass:false}),'top-right');
+  map.addControl(new mapboxgl.AttributionControl({compact:true}));
 
-</div><!-- /sc1-card -->
+  map.on('load',()=>{
+    map.addSource('pts',{type:'geojson',data:buildPoints(stObj)});
+    map.addSource('cir',{type:'geojson',data:buildCircles(stObj)});
 
-</div><!-- /wrap -->
-</body>
-</html>"""
+    // circles
+    map.addLayer({id:'cir-fill-c',type:'fill',source:'cir',
+      filter:['==',['get','state'],'close'],
+      paint:{'fill-color':'#dc2626','fill-opacity':0.07}});
+    map.addLayer({id:'cir-line-c',type:'line',source:'cir',
+      filter:['==',['get','state'],'close'],
+      paint:{'line-color':'#dc2626','line-opacity':0.28,'line-width':1}});
+    map.addLayer({id:'cir-fill-k',type:'fill',source:'cir',
+      filter:['==',['get','state'],'keep'],
+      paint:{'fill-color':'#16a34a','fill-opacity':0.09}});
+    map.addLayer({id:'cir-line-k',type:'line',source:'cir',
+      filter:['==',['get','state'],'keep'],
+      paint:{'line-color':'#16a34a','line-opacity':0.40,'line-width':1.5}});
+    // points (close under keep so keep is on top)
+    map.addLayer({id:'pts-c',type:'circle',source:'pts',
+      filter:['==',['get','state'],'close'],
+      paint:{'circle-radius':7,'circle-color':'#dc2626',
+             'circle-stroke-width':1.5,'circle-stroke-color':'#fff'}});
+    map.addLayer({id:'pts-k',type:'circle',source:'pts',
+      filter:['==',['get','state'],'keep'],
+      paint:{'circle-radius':9,'circle-color':'#16a34a',
+             'circle-stroke-width':1.5,'circle-stroke-color':'#fff'}});
+
+    const popup=new mapboxgl.Popup({closeButton:false,closeOnClick:false,offset:12});
+    ['pts-k','pts-c'].forEach(lyr=>{
+      map.on('mouseenter',lyr,e=>{
+        map.getCanvas().style.cursor='pointer';
+        const p=e.features[0].properties;
+        const cur=stObj[p.id]||'close';
+        const toggleHint=onToggle?('<br><em style="color:#94a3b8;font-size:0.75rem">Klikni: '+(cur==='keep'?'uzavřít':'zachovat')+'</em>'):'';
+        popup.setLngLat(e.lngLat).setHTML(
+          '<div style="font-family:system-ui;font-size:0.82rem;line-height:1.5;max-width:200px;">'+
+          '<strong>'+p.name+'</strong><br>'+
+          p.city+' · '+p.format+'<br>'+
+          'IR Q '+p.ir_q+' · '+fmtInt(p.clients)+' klientů'+toggleHint+
+          '</div>'
+        ).addTo(map);
+      });
+      map.on('mouseleave',lyr,()=>{map.getCanvas().style.cursor='';popup.remove();});
+      if(onToggle){
+        map.on('click',lyr,e=>{
+          const id=e.features[0].properties.id;
+          onToggle(map,stObj,id);
+        });
+      }
+    });
+  });
+  return map;
+}
+
+function updateMap(map,stObj){
+  try{
+    map.getSource('pts').setData(buildPoints(stObj));
+    map.getSource('cir').setData(buildCircles(stObj));
+  }catch(e){}
+}
+
+// ── Scénář 1 ─────────────────────────────────────────────────────────────────
+const sc1State={};
+BRANCHES.forEach(b=>{sc1State[b.id]=b.sc1_keep?'keep':'close';});
+let sc1Map=null;
+
+// ── Interaktivní model ────────────────────────────────────────────────────────
+let modelScored=[];
+let modelState={};
+let modelMap=null;
+
+const maxAvail=Math.max(...BRANCHES.map(b=>b.avail_km||0))||1;
+const maxRev  =Math.max(...BRANCHES.map(b=>b.revenue  ||0))||1;
+const maxCli  =Math.max(...BRANCHES.map(b=>b.clients  ||0))||1;
+
+function scoreAndBuild(wA,wR,wC){
+  const tot=wA+wR+wC||1;
+  const wa=wA/tot,wr=wR/tot,wc=wC/tot;
+  modelScored=BRANCHES.map(b=>({
+    ...b,
+    score:wa*(b.avail_km/maxAvail)+wr*(b.revenue/maxRev)+wc*(b.clients/maxCli)
+  }));
+  const state={};
+  BRANCHES.forEach(b=>{state[b.id]='close';});
+  const byCity={};
+  modelScored.forEach(b=>{if(!byCity[b.city])byCity[b.city]=[];byCity[b.city].push(b);});
+  Object.entries(byCity).forEach(([city,bs])=>{
+    const sorted=[...bs].sort((a,b)=>b.score-a.score);
+    if(METRO_CITIES_SET.has(city)){
+      sorted.slice(0,MAX_METRO_FLAGSHIP).forEach(b=>{state[b.id]='keep';});
+    }else{
+      if(sorted.length>0)state[sorted[0].id]='keep';
+    }
+  });
+  return state;
+}
+
+function renderModelList(stObj){
+  const tbody=document.getElementById('ml-body');
+  if(!tbody)return;
+  const keeps=modelScored.filter(b=>stObj[b.id]==='keep').sort((a,b)=>b.score-a.score);
+  tbody.innerHTML=keeps.map(b=>(
+    '<tr style="border-bottom:1px solid #f1f5f9;">'+
+    '<td style="padding:4px 9px;font-size:0.79rem;font-weight:600;">'+b.name+'</td>'+
+    '<td style="padding:4px 9px;font-size:0.73rem;color:#64748b;">'+b.city+'</td>'+
+    '<td style="padding:4px 9px;font-size:0.73rem;">'+b.format+'</td>'+
+    '<td style="padding:4px 9px;text-align:right;font-size:0.79rem;">'+fmtInt(b.clients)+'</td>'+
+    '<td style="padding:4px 9px;text-align:right;font-size:0.79rem;">'+fmtMczk(b.revenue)+'</td>'+
+    '<td style="padding:4px 9px;text-align:right;font-size:0.79rem;">'+fmtKm(b.avail_km)+'</td>'+
+    '<td style="padding:4px 9px;text-align:right;font-size:0.77rem;color:#2563eb;font-weight:700;">'+
+    (b.score*100).toFixed(1)+'</td>'+
+    '</tr>'
+  )).join('');
+}
+
+function applyModel(){
+  const wA=+document.getElementById('w-avail').value||33;
+  const wR=+document.getElementById('w-rev').value||33;
+  const wC=+document.getElementById('w-cli').value||33;
+  document.getElementById('lbl-avail').textContent=Math.round(wA);
+  document.getElementById('lbl-rev').textContent=Math.round(wR);
+  document.getElementById('lbl-cli').textContent=Math.round(wC);
+  modelState=scoreAndBuild(wA,wR,wC);
+  if(modelMap)updateMap(modelMap,modelState);
+  renderStats(modelState,'model');
+  renderModelList(modelState);
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded',()=>{
+  // Sc1 map
+  sc1Map=createMap('sc1-map',sc1State,(map,state,id)=>{
+    state[id]=state[id]==='keep'?'close':'keep';
+    updateMap(map,state);
+    renderStats(state,'sc1');
+  });
+  renderStats(sc1State,'sc1');
+
+  // Model map
+  modelState=scoreAndBuild(33,33,33);
+  modelMap=createMap('model-map',modelState,null);
+  renderStats(modelState,'model');
+  renderModelList(modelState);
+
+  ['w-avail','w-rev','w-cli'].forEach(id=>{
+    document.getElementById(id).addEventListener('input',applyModel);
+  });
+});
+"""
+
+    js_code = js_data + js_logic
+
+    # ── CSS (plain string, no escaping needed) ─────────────────────────────────
+    CSS = (
+        '*{box-sizing:border-box;margin:0;padding:0;}\n'
+        'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;'
+        'background:#f0f4fb;color:#1e2a38;}\n'
+        '.hdr{background:linear-gradient(135deg,#1a3a6c 0%,#2563eb 100%);'
+        'color:white;padding:22px 32px 18px;}\n'
+        '.hdr h1{font-size:1.4rem;font-weight:800;margin-bottom:3px;}\n'
+        '.hdr p{font-size:0.79rem;opacity:.75;}\n'
+        '.wrap{max-width:1440px;margin:0 auto;padding:22px 18px;}\n'
+        '.card{background:white;border-radius:12px;padding:20px 22px;'
+        'box-shadow:0 1px 5px rgba(0,0,0,.07);margin-bottom:20px;}\n'
+        '.card-full{border-top:3px solid #2563eb;}\n'
+        '.ct{font-size:0.68rem;font-weight:700;color:#2563eb;text-transform:uppercase;'
+        'letter-spacing:.6px;margin-bottom:12px;}\n'
+        '.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;}\n'
+        '@media(max-width:860px){.two-col{grid-template-columns:1fr;}}\n'
+        '.map-box{border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;margin-bottom:14px;}\n'
+        '.impact-tbl{width:100%;border-collapse:collapse;}\n'
+        '.impact-tbl th{background:#f8fafc;padding:5px 10px;font-size:0.68rem;font-weight:700;'
+        'color:#64748b;border-bottom:2px solid #e2e8f0;white-space:nowrap;}\n'
+        '.impact-tbl tr:hover td{background:#f8fafc;}\n'
+        '.stats-row{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 16px;}\n'
+        '.stat-chip{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;'
+        'padding:6px 14px;font-size:0.78rem;}\n'
+        '.stat-chip b{font-size:0.95rem;color:#1e2a38;display:block;margin-bottom:1px;}\n'
+        '.stat-chip.green b{color:#16a34a;}\n'
+        '.stat-chip.red b{color:#dc2626;}\n'
+        '.badge{display:inline-block;border-radius:5px;padding:2px 8px;'
+        'font-size:0.69rem;font-weight:700;}\n'
+        '.b-keep{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0;}\n'
+        '.b-close{background:#fef2f2;color:#dc2626;border:1px solid #fecaca;}\n'
+        '.show-more-btn{display:inline-block;margin-top:10px;padding:6px 16px;'
+        'background:#f0f4fb;border:1px solid #e2e8f0;border-radius:8px;'
+        'font-size:0.77rem;font-weight:600;color:#2563eb;cursor:pointer;'
+        'transition:background .15s;}\n'
+        '.show-more-btn:hover{background:#dbeafe;}\n'
+        '.scroll-tbl{max-height:320px;overflow-y:auto;}\n'
+        '.slider-row{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;'
+        'margin-bottom:18px;}\n'
+        '@media(max-width:700px){.slider-row{grid-template-columns:1fr;}}\n'
+        '.slider-label{font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:6px;'
+        'display:flex;justify-content:space-between;}\n'
+        '.slider-label span{font-size:0.9rem;font-weight:800;color:#2563eb;}\n'
+        'input[type=range]{width:100%;accent-color:#2563eb;height:4px;cursor:pointer;}\n'
+        '.sc1-desc{font-size:0.78rem;color:#374151;margin-bottom:16px;line-height:1.55;}\n'
+        '.corr-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 28px;}\n'
+        '@media(max-width:700px){.corr-grid{grid-template-columns:1fr;}}\n'
+    )
+
+    # ── Assemble HTML ──────────────────────────────────────────────────────────
+    html = (
+        '<!DOCTYPE html>\n'
+        '<html lang="cs">\n'
+        '<head>\n'
+        '<meta charset="UTF-8">\n'
+        '<meta name="viewport" content="width=device-width,initial-scale=1.0">\n'
+        '<title>Analýza sítě poboček</title>\n'
+        "<link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet'/>\n"
+        "<script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>\n"
+        '<style>\n' + CSS + '\n</style>\n'
+        '</head>\n'
+        '<body>\n'
+        '<div class="hdr">\n'
+        f'  <h1>🏦 Analýza sítě poboček — optimalizace</h1>\n'
+        f'  <p>{n_total} poboček v perimetru · Dostupnost, kapacita, scénáře</p>\n'
+        '</div>\n'
+        '<div class="wrap">\n'
+
+        # ── Tabulka poboček ────────────────────────────────────────────────────
+        '\n<!-- Tabulka poboček -->\n'
+        '<div class="card">\n'
+        f'  <div class="ct">📊 Přehled poboček — {n_total} poboček (seřazeno dle výnosů)</div>\n'
+        '  <div style="overflow-x:auto;">\n'
+        '  <table style="width:100%;border-collapse:collapse;min-width:1100px;">\n'
+        f'    <thead><tr>{thead_cells}</tr></thead>\n'
+        f'    <tbody>{preview_rows}</tbody>\n'
+        '  </table>\n'
+        '  </div>\n'
+        '  <div id="branch-more" style="display:none;overflow-x:auto;margin-top:2px;">\n'
+        '  <table style="width:100%;border-collapse:collapse;min-width:1100px;">\n'
+        f'    <thead><tr>{thead_cells}</tr></thead>\n'
+        f'    <tbody>{rest_rows}</tbody>\n'
+        '  </table>\n'
+        '  </div>\n'
+        f'  <button class="show-more-btn" id="more-btn"\n'
+        '          onclick="(function(){'
+        'var el=document.getElementById(\'branch-more\');'
+        'var btn=document.getElementById(\'more-btn\');'
+        'var open=el.style.display!==\'none\';'
+        'el.style.display=open?\'none\':\'block\';'
+        f'btn.textContent=open?\'Zobrazit všech {n_rest} dalších poboček ▼\':\'Skrýt ▲\';'
+        '})()">\n'
+        f'    Zobrazit všech {n_rest} dalších poboček ▼\n'
+        '  </button>\n'
+        '</div>\n'
+
+        # ── Korelace ───────────────────────────────────────────────────────────
+        '\n<!-- Korelace -->\n'
+        '<div class="card">\n'
+        '  <div class="ct">🔗 Nejvýznamnější korelace mezi metrikami</div>\n'
+        '  <div class="corr-grid">\n'
+        f'    <div>{corr_left}</div>\n'
+        f'    <div>{corr_right}</div>\n'
+        '  </div>\n'
+        '  <p style="margin-top:10px;font-size:0.69rem;color:#94a3b8;">'
+        'Pearsonův r · páry s |r| &gt; 0.2 · ±1 = perfektní lineární vztah</p>\n'
+        '</div>\n'
+
+        # ── Scénář 1 ───────────────────────────────────────────────────────────
+        '\n<!-- Scénář 1 -->\n'
+        '<div class="card card-full">\n'
+        '  <div style="font-size:1rem;font-weight:700;color:#1d4ed8;margin-bottom:6px;">'
+        '📋 Scénář 1 — nejpřísnější optimalizace</div>\n'
+        f'  <div class="sc1-desc">'
+        f'<strong>Pravidlo:</strong> Mimo Prahu a Brno zůstane v každém městě <strong>jedna pobočka</strong>'
+        f' — nejlepší dle IR kvintilu s preferencí flagship formátu.'
+        f' V Praze a Brně jsou zachovány flagshipy (max {MAX_METRO_FLAGSHIP}).'
+        f' <span style="color:#94a3b8;">Kliknutím na bod v mapě lze stav přepnout.</span>'
+        f'</div>\n'
+
+        # stats
+        '  <div class="stats-row">\n'
+        f'    <div class="stat-chip green"><b id="sc1-nk">{n_keep}</b>Zachovat</div>\n'
+        f'    <div class="stat-chip red"><b id="sc1-nc">{n_close}</b>Uzavřít</div>\n'
+        '    <div class="stat-chip"><b id="sc1-kcli">—</b>Primárních klientů zachováno</div>\n'
+        '    <div class="stat-chip"><b id="sc1-krev">—</b>Výnosy zachováno</div>\n'
+        '    <div class="stat-chip green"><b id="sc1-crent">—</b>Úspora nájmů</div>\n'
+        '    <div class="stat-chip red"><b id="sc1-churn">—</b>Odhad ztráty výnosů (5% odchod)</div>\n'
+        '  </div>\n'
+
+        # map
+        '  <div class="map-box" style="height:520px;" id="sc1-map"></div>\n'
+        '  <div style="display:flex;gap:14px;margin-bottom:18px;font-size:0.75rem;flex-wrap:wrap;">\n'
+        '    <span>🟢 <span class="badge b-keep">Zachovat</span></span>\n'
+        '    <span>🔴 <span class="badge b-close">Uzavřít</span></span>\n'
+        '    <span style="color:#94a3b8;">Kružnice = 10 km od pobočky · Klik = přepnout</span>\n'
+        '  </div>\n'
+
+        # impact + calcs
+        '  <div class="two-col">\n'
+        '    <div>\n'
+        '      <div class="ct">📉 Dopad na parametry sítě</div>\n'
+        '      <div style="overflow-x:auto;">\n'
+        '      <table class="impact-tbl">\n'
+        '        <thead><tr>\n'
+        '          <th style="text-align:left;">Metrika</th>\n'
+        '          <th style="text-align:right;">Před</th>\n'
+        '          <th style="text-align:right;">Scénář 1</th>\n'
+        '          <th style="text-align:right;">Změna</th>\n'
+        '          <th style="text-align:center;">Trend</th>\n'
+        '        </tr></thead>\n'
+        f'        <tbody>{impact_html}</tbody>\n'
+        '      </table>\n'
+        '      </div>\n'
+        '    </div>\n'
+        '    <div>\n'
+        '      <div class="ct">🔢 Detailní výpočet dopadů</div>\n'
+        f'      {calcs_html}\n'
+        '    </div>\n'
+        '  </div>\n'
+
+        # closed branches
+        '  <div style="margin-top:18px;">\n'
+        f'    <div class="ct">Pobočky navržené k uzavření ({n_close})</div>\n'
+        '    <div class="scroll-tbl">\n'
+        '    <table style="width:100%;border-collapse:collapse;">\n'
+        '      <thead><tr style="background:#fef2f2;">\n'
+        '        <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#b91c1c;'
+        'border-bottom:1px solid #fecaca;text-align:left;">Pobočka</th>\n'
+        '        <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#b91c1c;'
+        'border-bottom:1px solid #fecaca;text-align:left;">Město</th>\n'
+        '        <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#b91c1c;'
+        'border-bottom:1px solid #fecaca;text-align:left;">Formát</th>\n'
+        '        <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#b91c1c;'
+        'border-bottom:1px solid #fecaca;text-align:center;">IR Q</th>\n'
+        '        <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#b91c1c;'
+        'border-bottom:1px solid #fecaca;text-align:right;">Primárních klientů</th>\n'
+        '        <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#b91c1c;'
+        'border-bottom:1px solid #fecaca;text-align:right;">Nájemné (M Kč/rok)</th>\n'
+        '      </tr></thead>\n'
+        f'      <tbody>{close_rows_html}</tbody>\n'
+        '    </table>\n'
+        '    </div>\n'
+        '  </div>\n'
+        '</div>\n'   # /card sc1
+
+        # ── Interaktivní model ─────────────────────────────────────────────────
+        '\n<!-- Interaktivní model -->\n'
+        '<div class="card card-full" style="border-top-color:#7c3aed;">\n'
+        '  <div style="font-size:1rem;font-weight:700;color:#6d28d9;margin-bottom:6px;">'
+        '⚖️ Interaktivní model — vyvažování priorit</div>\n'
+        '  <div class="sc1-desc">'
+        'Posunutím vah zvolíte, co má být při výběru zachované pobočky prioritou.'
+        ' Model vybere v každém městě jednu pobočku (Praha/Brno: '
+        f'max {MAX_METRO_FLAGSHIP} flagship) s nejvyšším váženým skóre.'
+        '</div>\n'
+
+        # sliders
+        '  <div class="slider-row">\n'
+        '    <div>\n'
+        '      <div class="slider-label">🗺️ Zachování dostupnosti<span id="lbl-avail">33</span></div>\n'
+        '      <input type="range" id="w-avail" min="0" max="100" value="33">\n'
+        '      <div style="font-size:0.69rem;color:#94a3b8;margin-top:4px;">'
+        'Preferuje izolované pobočky (vysoká avail km = v oblasti bez konkurence)</div>\n'
+        '    </div>\n'
+        '    <div>\n'
+        '      <div class="slider-label">💰 Zachování výnosů<span id="lbl-rev">33</span></div>\n'
+        '      <input type="range" id="w-rev" min="0" max="100" value="33">\n'
+        '      <div style="font-size:0.69rem;color:#94a3b8;margin-top:4px;">'
+        'Preferuje pobočky s vyššími celkovými výnosy</div>\n'
+        '    </div>\n'
+        '    <div>\n'
+        '      <div class="slider-label">👥 Počet klientů<span id="lbl-cli">33</span></div>\n'
+        '      <input type="range" id="w-cli" min="0" max="100" value="33">\n'
+        '      <div style="font-size:0.69rem;color:#94a3b8;margin-top:4px;">'
+        'Preferuje pobočky s nejvyšším počtem primárních klientů</div>\n'
+        '    </div>\n'
+        '  </div>\n'
+
+        # model stats
+        '  <div class="stats-row">\n'
+        '    <div class="stat-chip green"><b id="model-nk">—</b>Zachovat</div>\n'
+        '    <div class="stat-chip red"><b id="model-nc">—</b>Uzavřít</div>\n'
+        '    <div class="stat-chip"><b id="model-kcli">—</b>Primárních klientů zachováno</div>\n'
+        '    <div class="stat-chip"><b id="model-krev">—</b>Výnosy zachováno</div>\n'
+        '    <div class="stat-chip green"><b id="model-crent">—</b>Úspora nájmů</div>\n'
+        '    <div class="stat-chip red"><b id="model-churn">—</b>Odhad ztráty výnosů (5% odchod)</div>\n'
+        '  </div>\n'
+
+        # model map + list
+        '  <div class="two-col" style="align-items:start;">\n'
+        '    <div>\n'
+        '      <div class="map-box" style="height:440px;" id="model-map"></div>\n'
+        '      <div style="font-size:0.72rem;color:#94a3b8;margin-top:6px;">'
+        '🟢 Zachovat &nbsp; 🔴 Uzavřít &nbsp; Kružnice = 10 km</div>\n'
+        '    </div>\n'
+        '    <div>\n'
+        '      <div class="ct">Zachované pobočky (seřazeno dle skóre)</div>\n'
+        '      <div class="scroll-tbl" style="max-height:440px;">\n'
+        '      <table style="width:100%;border-collapse:collapse;">\n'
+        '        <thead>\n'
+        '          <tr style="background:#f8fafc;">\n'
+        '            <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;'
+        'color:#64748b;border-bottom:2px solid #e2e8f0;text-align:left;">Pobočka</th>\n'
+        '            <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;'
+        'color:#64748b;border-bottom:2px solid #e2e8f0;text-align:left;">Město</th>\n'
+        '            <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;'
+        'color:#64748b;border-bottom:2px solid #e2e8f0;text-align:left;">Formát</th>\n'
+        '            <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;'
+        'color:#64748b;border-bottom:2px solid #e2e8f0;text-align:right;">Klienti</th>\n'
+        '            <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;'
+        'color:#64748b;border-bottom:2px solid #e2e8f0;text-align:right;">Výnosy</th>\n'
+        '            <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;'
+        'color:#64748b;border-bottom:2px solid #e2e8f0;text-align:right;">Avail. km</th>\n'
+        '            <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;'
+        'color:#2563eb;border-bottom:2px solid #e2e8f0;text-align:right;">Skóre</th>\n'
+        '          </tr>\n'
+        '        </thead>\n'
+        '        <tbody id="ml-body"></tbody>\n'
+        '      </table>\n'
+        '      </div>\n'
+        '    </div>\n'
+        '  </div>\n'
+        '</div>\n'   # /card model
+
+        '</div>\n'  # /wrap
+        '<script>\n' + js_code + '\n</script>\n'
+        '</body>\n'
+        '</html>'
+    )
 
     if output_path:
         with open(output_path, 'w', encoding='utf-8') as fh:
