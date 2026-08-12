@@ -1001,14 +1001,25 @@ if __name__ == '__main__':
     import sys
     import pickle
 
-    pkl = 'rating_status.pkl'
-    if not os.path.exists(pkl):
-        print(f'Soubor {pkl} nenalezen.')
-        print('Spusť z internirating_report.py nebo exportuj rating_status:')
-        print('  import pickle; pickle.dump(rating_status, open("rating_status.pkl","wb"))')
+    # 1. DataFrame already loaded at top of file (df = pd.read_pickle(...))
+    _rs = globals().get('rating_status') or globals().get('df')
+
+    # 2. Fallback: known pickle paths
+    if _rs is None:
+        _pkl_candidates = [
+            'rating_status.pkl',
+            '../vypocet_ir_2026/report_rating_2026_staticky.pkl',
+        ]
+        for _p in _pkl_candidates:
+            if os.path.exists(_p):
+                print(f'Načítám {_p}...')
+                with open(_p, 'rb') as _f:
+                    _rs = pickle.load(_f)
+                break
+
+    if _rs is None:
+        print('DataFrame nenalezen. Přidej na začátek souboru:')
+        print('  df = pd.read_pickle("../vypocet_ir_2026/report_rating_2026_staticky.pkl")')
         sys.exit(1)
 
-    print(f'Načítám {pkl}...')
-    with open(pkl, 'rb') as f:
-        rs = pickle.load(f)
-    generate_network_analysis_report(rs, output_path='report_network_analysis.html')
+    generate_network_analysis_report(_rs, output_path='report_network_analysis.html')
