@@ -1,6 +1,6 @@
 """
 generate_network_analysis.py
-Analýza optimalizace sítě poboček — tabulky, scénář 1, interaktivní model
+Analýza optimalizace sítě poboček — tabulky, scénář 1, interaktivní model, dopady
 
 Spuštění:
   Standalone: df = pd.read_pickle("...pkl") na začátku souboru
@@ -157,14 +157,14 @@ def apply_scenario_1(df):
 def _fv(v, fmt):
     if v is None or (isinstance(v, float) and math.isnan(v)):
         return '—'
-    if fmt == 'int':   return f'{int(round(v)):,}'.replace(',', ' ')
+    if fmt == 'int':   return f'{int(round(v)):,}'.replace(',', ' ')
     if fmt == 'f1':    return f'{v:.1f}'
     if fmt == 'f2':    return f'{v:.2f}'
-    if fmt == 'pct':   return f'{v:.1f} %'
-    if fmt == 'mczk':  return f'{v/1e6:.1f} M'
-    if fmt == 'km':    return f'{v:.1f} km'
-    if fmt == 'mkczk': return f'{v/1e6:.0f} M Kč'
-    if fmt == 'm2':    return f'{v:.0f} m²'
+    if fmt == 'pct':   return f'{v:.1f} %'
+    if fmt == 'mczk':  return f'{v/1e6:.1f} M'
+    if fmt == 'km':    return f'{v:.1f} km'
+    if fmt == 'mkczk': return f'{v/1e6:.0f} M Kč'
+    if fmt == 'm2':    return f'{v:.0f} m²'
     return str(v)
 
 
@@ -172,7 +172,7 @@ def _sym_row(label, before, after, fmt, good='neutral'):
     try:
         b, a = float(before), float(after)
         pct   = (a - b) / abs(b) * 100 if b != 0 else 0.0
-        pct_s = f'{abs(pct):.1f} %'
+        pct_s = f'{abs(pct):.1f} %'
         delta = a - b
         if abs(pct) < 0.3:
             sym, col = '→', '#64748b'
@@ -268,8 +268,9 @@ def generate_network_analysis_report(
     cli_per_ban_now = total_cli / total_ban if total_ban > 0 else 0.0
     cli_per_ban_all = total_cli / k_ban     if k_ban     > 0 else 0.0
     cli_per_ban_own = k_cli     / k_ban     if k_ban     > 0 else 0.0
+    rent_rev_pct    = total_rent / total_rev * 100 if total_rev > 0 else 0.0
 
-    # ── Korelace (compact items) ───────────────────────────────────────────────
+    # ── Korelace ───────────────────────────────────────────────────────────────
     _corr_map = {
         'Primární klienti': 'PRIMARNI_KLIENTI',  'Aktivní klienti': 'AKTIVNI_KLIENTI',
         'Fyzické schůzky':  'POCET_SCHUZEK_FYZICKY', 'Plocha (m²)': 'CELK_PLOCHA_POBOCKY_2026',
@@ -362,7 +363,7 @@ def generate_network_analysis_report(
         if fmt == 'text':
             return f'<td style="{s}">{v}</td>'
         if fmt == 'int':
-            sv = f'{int(round(float(v))):,}'.replace(',', ' ') if pd.notna(v) else '—'
+            sv = f'{int(round(float(v))):,}'.replace(',', ' ') if pd.notna(v) else '—'
             return f'<td style="{s}">{sv}</td>'
         if fmt == 'mczk':
             sv = f'{float(v)/1e6:.1f}' if pd.notna(v) and float(v) != 0 else '—'
@@ -467,7 +468,7 @@ def generate_network_analysis_report(
             f'<td style="padding:5px 9px;text-align:right;font-size:0.79rem;">'
             f'{int(row["PRIMARNI_KLIENTI"]):,}</td>'
             f'<td style="padding:5px 9px;text-align:right;font-size:0.79rem;">'
-            f'{row["ROCNI_SPLATKY_S_DPH_CZK"]/1e6:.1f} M</td>'
+            f'{row["ROCNI_SPLATKY_S_DPH_CZK"]/1e6:.1f} M</td>'
             f'</tr>\n'
         )
 
@@ -484,6 +485,7 @@ def generate_network_analysis_report(
         circ_coords = []
         if has_gps:
             circ_coords = _geo_circle(float(lat), float(lon))['geometry']['coordinates']
+        raw_ci = row.get('PRIME_NAKLADY/VYNOSY')
         branches_js.append({
             'id':          int(idx),
             'name':        str(row.get('BRANCH_NAME', '—')),
@@ -493,6 +495,8 @@ def generate_network_analysis_report(
             'clients':     int(row.get('PRIMARNI_KLIENTI', 0)),
             'revenue':     float(row.get('VYNOSY', 0)),
             'rent':        float(row.get('ROCNI_SPLATKY_S_DPH_CZK', 0)),
+            'bankers':     float(row.get('BANKERS_COUNT', 0)),
+            'ci':          round(float(raw_ci), 3) if pd.notna(raw_ci) else None,
             'avail_km':    round(float(row['avail_km']), 3) if pd.notna(row.get('avail_km')) else 0.0,
             'cap_pct':     round(float(row['capacity_utilization']), 4) if pd.notna(row.get('capacity_utilization')) else 0.0,
             'sc1_keep':    bool(row.get('sc1_keep', False)),
@@ -503,25 +507,31 @@ def generate_network_analysis_report(
 
     branches_json_str = json.dumps(branches_js, ensure_ascii=False, separators=(',', ':'))
 
-    # JS data injected at runtime (built as plain Python string, no f-string)
+    # ── JS data (Python values → JS constants, plain string concatenation) ────
     js_data = (
         'const MAPBOX_TOKEN=' + json.dumps(MAPBOX_TOKEN) + ';\n'
         'const BRANCHES='     + branches_json_str + ';\n'
-        'const LAT_C='  + str(round(lat_c, 4)) + ';\n'
-        'const LON_C='  + str(round(lon_c, 4)) + ';\n'
+        'const LAT_C='        + str(round(lat_c, 4)) + ';\n'
+        'const LON_C='        + str(round(lon_c, 4)) + ';\n'
         'const MAX_METRO_FLAGSHIP=' + str(MAX_METRO_FLAGSHIP) + ';\n'
         'const METRO_CITIES_SET=new Set(' + json.dumps(sorted(METRO_CITIES)) + ');\n'
         'const BANKER_CAPACITY=' + str(BANKER_CAPACITY) + ';\n'
         'const CLIENT_CHURN_RATE=' + str(CLIENT_CHURN_RATE) + ';\n'
+        'const AVAIL_N_NEAREST=' + str(AVAIL_N_NEAREST) + ';\n'
+        'const BASE_CLI_PER_BAN=' + str(round(cli_per_ban_now, 2)) + ';\n'
+        'const BASE_RENT_REV_PCT=' + str(round(rent_rev_pct, 2)) + ';\n'
+        'const BASE_AVG_CI=' + str(round(avg_ci, 2)) + ';\n'
+        'const BASE_AVAIL_KM=' + str(round(avg_avail_km, 3)) + ';\n'
     )
 
-    # All JS logic as a raw string — no f-string escaping needed
+    # ── JS logic (raw string — no f-string escaping) ──────────────────────────
     js_logic = r"""
 // ── Utils ──────────────────────────────────────────────────────────────────
 function fmtInt(v){return v==null?'—':Math.round(v).toLocaleString('cs-CZ');}
-function fmtMczk(v){return v==null?'—':(v/1e6).toFixed(1)+' M';}
-function fmtKm(v){return v==null?'—':v.toFixed(1)+' km';}
-function fmtPct(v){return v==null?'—':(v*100).toFixed(0)+' %';}
+function fmtMczk(v){return v==null?'—':(v/1e6).toFixed(1)+' M';}
+function fmtKm(v){return v==null?'—':v.toFixed(1)+' km';}
+function fmtPct(v){return v==null?'—':v.toFixed(1)+' %';}
+function fmtF1(v){return v==null?'—':v.toFixed(1);}
 
 // ── GeoJSON builders ────────────────────────────────────────────────────────
 function buildPoints(stObj){
@@ -539,22 +549,20 @@ function buildCircles(stObj){
   }))};
 }
 
-// ── Stats ────────────────────────────────────────────────────────────────────
+// ── Stats chips ──────────────────────────────────────────────────────────────
 function calcStats(stObj){
   const keep=BRANCHES.filter(b=>stObj[b.id]==='keep');
   const close=BRANCHES.filter(b=>stObj[b.id]!=='keep');
   const totCli=BRANCHES.reduce((s,b)=>s+b.clients,0);
   const totRev=BRANCHES.reduce((s,b)=>s+b.revenue,0);
-  const totRent=BRANCHES.reduce((s,b)=>s+b.rent,0);
   const kCli=keep.reduce((s,b)=>s+b.clients,0);
   const kRev=keep.reduce((s,b)=>s+b.revenue,0);
   const kRent=keep.reduce((s,b)=>s+b.rent,0);
   const cCli=close.reduce((s,b)=>s+b.clients,0);
   const cRent=close.reduce((s,b)=>s+b.rent,0);
   const rpc=totCli>0?totRev/totCli:0;
-  return {nKeep:keep.length,nClose:close.length,
-    kCli,kRev,kRent,cCli,cRent,churnRev:cCli*CLIENT_CHURN_RATE*rpc,
-    totCli,totRev,totRent};
+  return {nKeep:keep.length,nClose:close.length,kCli,kRev,kRent,cCli,cRent,
+    churnRev:cCli*CLIENT_CHURN_RATE*rpc,totCli,totRev};
 }
 
 function renderStats(stObj,pfx){
@@ -569,8 +577,21 @@ function renderStats(stObj,pfx){
   el('churn').textContent=fmtMczk(s.churnRev);
 }
 
+// ── Map ready tracking ────────────────────────────────────────────────────────
+const _mapReady={};
+
+// ── Layer toggle (Sc1 map) ────────────────────────────────────────────────────
+function toggleSc1Layer(layerIds,btn){
+  if(!sc1Map)return;
+  const on=btn.classList.contains('lyr-on');
+  const vis=on?'none':'visible';
+  layerIds.forEach(id=>{try{sc1Map.setLayoutProperty(id,'visibility',vis);}catch(e){}});
+  btn.classList.toggle('lyr-on',!on);
+  btn.classList.toggle('lyr-off',on);
+}
+
 // ── Map factory ──────────────────────────────────────────────────────────────
-function createMap(containerId, stObj, onToggle){
+function createMap(containerId,stObj,onToggle){
   mapboxgl.accessToken=MAPBOX_TOKEN;
   const map=new mapboxgl.Map({
     container:containerId,
@@ -585,7 +606,6 @@ function createMap(containerId, stObj, onToggle){
     map.addSource('pts',{type:'geojson',data:buildPoints(stObj)});
     map.addSource('cir',{type:'geojson',data:buildCircles(stObj)});
 
-    // circles
     map.addLayer({id:'cir-fill-c',type:'fill',source:'cir',
       filter:['==',['get','state'],'close'],
       paint:{'fill-color':'#dc2626','fill-opacity':0.07}});
@@ -598,7 +618,6 @@ function createMap(containerId, stObj, onToggle){
     map.addLayer({id:'cir-line-k',type:'line',source:'cir',
       filter:['==',['get','state'],'keep'],
       paint:{'line-color':'#16a34a','line-opacity':0.40,'line-width':1.5}});
-    // points (close under keep so keep is on top)
     map.addLayer({id:'pts-c',type:'circle',source:'pts',
       filter:['==',['get','state'],'close'],
       paint:{'circle-radius':7,'circle-color':'#dc2626',
@@ -608,19 +627,24 @@ function createMap(containerId, stObj, onToggle){
       paint:{'circle-radius':9,'circle-color':'#16a34a',
              'circle-stroke-width':1.5,'circle-stroke-color':'#fff'}});
 
+    _mapReady[containerId]=true;
+    // Flush any state change that arrived before load finished
+    if(_pendingState[containerId]){
+      updateMap(map,_pendingState[containerId]);
+      delete _pendingState[containerId];
+    }
+
     const popup=new mapboxgl.Popup({closeButton:false,closeOnClick:false,offset:12});
     ['pts-k','pts-c'].forEach(lyr=>{
       map.on('mouseenter',lyr,e=>{
         map.getCanvas().style.cursor='pointer';
         const p=e.features[0].properties;
         const cur=stObj[p.id]||'close';
-        const toggleHint=onToggle?('<br><em style="color:#94a3b8;font-size:0.75rem">Klikni: '+(cur==='keep'?'uzavřít':'zachovat')+'</em>'):'';
+        const hint=onToggle?('<br><em style="color:#94a3b8;font-size:0.75rem">Klikni: '+(cur==='keep'?'uzavřít':'zachovat')+'</em>'):'';
         popup.setLngLat(e.lngLat).setHTML(
-          '<div style="font-family:system-ui;font-size:0.82rem;line-height:1.5;max-width:200px;">'+
-          '<strong>'+p.name+'</strong><br>'+
-          p.city+' · '+p.format+'<br>'+
-          'IR Q '+p.ir_q+' · '+fmtInt(p.clients)+' klientů'+toggleHint+
-          '</div>'
+          '<div style="font-family:system-ui;font-size:0.82rem;line-height:1.5;max-width:210px;">'+
+          '<strong>'+p.name+'</strong><br>'+p.city+' · '+p.format+'<br>'+
+          'IR Q '+p.ir_q+' · '+fmtInt(p.clients)+' klientů'+hint+'</div>'
         ).addTo(map);
       });
       map.on('mouseleave',lyr,()=>{map.getCanvas().style.cursor='';popup.remove();});
@@ -635,11 +659,104 @@ function createMap(containerId, stObj, onToggle){
   return map;
 }
 
+const _pendingState={};
 function updateMap(map,stObj){
+  const cid=map.getContainer().id;
+  if(!_mapReady[cid]){_pendingState[cid]=stObj;return;}
   try{
     map.getSource('pts').setData(buildPoints(stObj));
     map.getSource('cir').setData(buildCircles(stObj));
   }catch(e){}
+}
+
+// ── Haversine (km) ────────────────────────────────────────────────────────────
+function haversineKm(lat1,lon1,lat2,lon2){
+  const R=6371,p=Math.PI/180;
+  const dLat=(lat2-lat1)*p,dLon=(lon2-lon1)*p;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*p)*Math.cos(lat2*p)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(Math.max(0,a))));
+}
+
+function computeAvailKm(bs){
+  const vld=bs.filter(b=>b.lat&&b.lon);
+  if(vld.length<2)return null;
+  const n=Math.min(AVAIL_N_NEAREST,vld.length-1);
+  let tot=0;
+  vld.forEach((b,i)=>{
+    const dists=vld.filter((_,j)=>j!==i)
+      .map(b2=>haversineKm(b.lat,b.lon,b2.lat,b2.lon))
+      .sort((a,b)=>a-b).slice(0,n);
+    tot+=dists.reduce((s,d)=>s+d,0)/(dists.length||1);
+  });
+  return tot/vld.length;
+}
+
+// ── Insight card ──────────────────────────────────────────────────────────────
+function calcInsights(stObj){
+  const all=BRANCHES;
+  const keep=all.filter(b=>stObj[b.id]==='keep');
+  const totCli=all.reduce((s,b)=>s+b.clients,0);
+  const totRev=all.reduce((s,b)=>s+b.revenue,0);
+  const totRent=all.reduce((s,b)=>s+b.rent,0);
+  const kBan=keep.reduce((s,b)=>s+b.bankers,0);
+  const kCli=keep.reduce((s,b)=>s+b.clients,0);
+  const kRev=keep.reduce((s,b)=>s+b.revenue,0);
+  const kRent=keep.reduce((s,b)=>s+b.rent,0);
+  // Banker capacity: all clients divided by remaining bankers
+  const cliPerBan=kBan>0?totCli/kBan:null;
+  // Rent / revenue %
+  const rentRevPct=kRev>0?kRent/kRev*100:null;
+  // C/I: revenue-weighted avg of kept branches
+  let ciN=0,ciD=0;
+  keep.forEach(b=>{if(b.ci!=null&&b.revenue>0){ciN+=b.ci*b.revenue;ciD+=b.revenue;}});
+  const avgCI=ciD>0?ciN/ciD:null;
+  // Availability (JS haversine)
+  const availKm=computeAvailKm(keep);
+  return {cliPerBan,rentRevPct,avgCI,availKm};
+}
+
+function insightRow(label,context,base,s1val,mdlval,fmtFn,goodDir){
+  function cmpCell(val){
+    if(val==null||base==null)return '<td class="ic-val ic-na">—</td>';
+    const diff=val-base;
+    const pct=Math.abs(base)>0.001?Math.abs(diff/base)*100:0;
+    const better=goodDir==='down'?diff<-0.3:diff>0.3;
+    const worse =goodDir==='down'?diff>0.3:diff<-0.3;
+    const col=pct<0.3?'#64748b':(better?'#16a34a':(worse?'#dc2626':'#64748b'));
+    const sym=pct<0.3?'→':(diff>0?'▲':'▼');
+    return '<td class="ic-val" style="color:'+col+';font-weight:700;">'+fmtFn(val)+
+           ' <span class="ic-sym">'+sym+'</span></td>';
+  }
+  return '<tr class="ic-row">'+
+    '<td class="ic-lbl">'+label+'<div class="ic-ctx">'+context+'</div></td>'+
+    '<td class="ic-base">'+fmtFn(base)+'</td>'+
+    cmpCell(s1val)+
+    cmpCell(mdlval)+
+    '</tr>';
+}
+
+let _insightDebounce=null;
+function renderInsightCard(){
+  clearTimeout(_insightDebounce);
+  _insightDebounce=setTimeout(()=>{
+    const tbody=document.getElementById('insight-body');
+    if(!tbody)return;
+    const s1=calcInsights(sc1State);
+    const md=calcInsights(modelState);
+    tbody.innerHTML=
+      insightRow('Klientů na bankéře',
+        'Všichni klienti sítě ÷ zbývající bankéři (cílový limit: '+BANKER_CAPACITY+')',
+        BASE_CLI_PER_BAN,s1.cliPerBan,md.cliPerBan,fmtF1,'down')+
+      insightRow('Nájemné / výnosy',
+        'Podíl ročních nájmů zachovaných poboček na jejich celkových výnosech',
+        BASE_RENT_REV_PCT,s1.rentRevPct,md.rentRevPct,fmtPct,'down')+
+      insightRow('C/I ratio průměr',
+        'Výnosově vážený průměr nákladové efektivity (prime náklady / výnosy)',
+        BASE_AVG_CI,s1.avgCI,md.avgCI,fmtPct,'down')+
+      insightRow('Dostupnost sítě (km)',
+        'Průměrná vzdálenost pobočky k '+AVAIL_N_NEAREST+' nejbližším — výpočet v prohlížeči',
+        BASE_AVAIL_KM,s1.availKm,md.availKm,fmtKm,'down');
+  },120);
 }
 
 // ── Scénář 1 ─────────────────────────────────────────────────────────────────
@@ -707,23 +824,24 @@ function applyModel(){
   if(modelMap)updateMap(modelMap,modelState);
   renderStats(modelState,'model');
   renderModelList(modelState);
+  renderInsightCard();
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded',()=>{
-  // Sc1 map
   sc1Map=createMap('sc1-map',sc1State,(map,state,id)=>{
     state[id]=state[id]==='keep'?'close':'keep';
     updateMap(map,state);
     renderStats(state,'sc1');
+    renderInsightCard();
   });
   renderStats(sc1State,'sc1');
 
-  // Model map
   modelState=scoreAndBuild(33,33,33);
   modelMap=createMap('model-map',modelState,null);
   renderStats(modelState,'model');
   renderModelList(modelState);
+  renderInsightCard();
 
   ['w-avail','w-rev','w-cli'].forEach(id=>{
     document.getElementById(id).addEventListener('input',applyModel);
@@ -733,7 +851,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
     js_code = js_data + js_logic
 
-    # ── CSS (plain string, no escaping needed) ─────────────────────────────────
+    # ── CSS ────────────────────────────────────────────────────────────────────
     CSS = (
         '*{box-sizing:border-box;margin:0;padding:0;}\n'
         'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;'
@@ -742,7 +860,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         'color:white;padding:22px 32px 18px;}\n'
         '.hdr h1{font-size:1.4rem;font-weight:800;margin-bottom:3px;}\n'
         '.hdr p{font-size:0.79rem;opacity:.75;}\n'
-        '.wrap{max-width:1440px;margin:0 auto;padding:22px 18px;}\n'
+        '.wrap{max-width:1440px;margin:0 auto;padding:22px 18px 36px;}\n'
         '.card{background:white;border-radius:12px;padding:20px 22px;'
         'box-shadow:0 1px 5px rgba(0,0,0,.07);margin-bottom:20px;}\n'
         '.card-full{border-top:3px solid #2563eb;}\n'
@@ -750,15 +868,15 @@ document.addEventListener('DOMContentLoaded',()=>{
         'letter-spacing:.6px;margin-bottom:12px;}\n'
         '.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;}\n'
         '@media(max-width:860px){.two-col{grid-template-columns:1fr;}}\n'
-        '.map-box{border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;margin-bottom:14px;}\n'
+        '.map-box{border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;margin-bottom:12px;}\n'
         '.impact-tbl{width:100%;border-collapse:collapse;}\n'
         '.impact-tbl th{background:#f8fafc;padding:5px 10px;font-size:0.68rem;font-weight:700;'
         'color:#64748b;border-bottom:2px solid #e2e8f0;white-space:nowrap;}\n'
         '.impact-tbl tr:hover td{background:#f8fafc;}\n'
-        '.stats-row{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 16px;}\n'
+        '.stats-row{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 14px;}\n'
         '.stat-chip{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;'
-        'padding:6px 14px;font-size:0.78rem;}\n'
-        '.stat-chip b{font-size:0.95rem;color:#1e2a38;display:block;margin-bottom:1px;}\n'
+        'padding:6px 14px;font-size:0.77rem;}\n'
+        '.stat-chip b{font-size:0.93rem;color:#1e2a38;display:block;margin-bottom:1px;}\n'
         '.stat-chip.green b{color:#16a34a;}\n'
         '.stat-chip.red b{color:#dc2626;}\n'
         '.badge{display:inline-block;border-radius:5px;padding:2px 8px;'
@@ -778,9 +896,33 @@ document.addEventListener('DOMContentLoaded',()=>{
         'display:flex;justify-content:space-between;}\n'
         '.slider-label span{font-size:0.9rem;font-weight:800;color:#2563eb;}\n'
         'input[type=range]{width:100%;accent-color:#2563eb;height:4px;cursor:pointer;}\n'
-        '.sc1-desc{font-size:0.78rem;color:#374151;margin-bottom:16px;line-height:1.55;}\n'
+        '.sc1-desc{font-size:0.78rem;color:#374151;margin-bottom:14px;line-height:1.55;}\n'
         '.corr-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 28px;}\n'
         '@media(max-width:700px){.corr-grid{grid-template-columns:1fr;}}\n'
+        # layer toggle buttons
+        '.lyr-toggles{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px;}\n'
+        '.lyr-btn{display:flex;align-items:center;gap:5px;padding:4px 12px;cursor:pointer;'
+        'border-radius:20px;border:1.5px solid #e2e8f0;background:white;font-size:0.74rem;'
+        'font-weight:600;transition:all .15s;user-select:none;}\n'
+        '.lyr-btn.lyr-on{opacity:1;}\n'
+        '.lyr-btn.lyr-off{opacity:.45;text-decoration:line-through;background:#f8fafc;}\n'
+        '.lyr-btn.keep-k.lyr-on{border-color:#16a34a;color:#16a34a;}\n'
+        '.lyr-btn.close-k.lyr-on{border-color:#dc2626;color:#dc2626;}\n'
+        # insight card
+        '.insight-tbl{width:100%;border-collapse:collapse;}\n'
+        '.ic-row{border-bottom:1px solid #f1f5f9;}\n'
+        '.ic-row:hover td{background:#f8fafc;}\n'
+        '.ic-lbl{padding:9px 12px;font-size:0.82rem;font-weight:600;min-width:220px;}\n'
+        '.ic-ctx{font-size:0.69rem;color:#94a3b8;font-weight:400;margin-top:2px;}\n'
+        '.ic-base{padding:9px 12px;text-align:right;font-size:0.85rem;color:#64748b;'
+        'white-space:nowrap;}\n'
+        '.ic-val{padding:9px 12px;text-align:right;font-size:0.88rem;white-space:nowrap;}\n'
+        '.ic-na{color:#94a3b8;}\n'
+        '.ic-sym{font-size:0.72rem;}\n'
+        '.insight-th{padding:7px 12px;font-size:0.69rem;font-weight:700;color:#64748b;'
+        'background:#f8fafc;border-bottom:2px solid #e2e8f0;text-align:right;'
+        'white-space:nowrap;}\n'
+        '.insight-th.left{text-align:left;}\n'
     )
 
     # ── Assemble HTML ──────────────────────────────────────────────────────────
@@ -819,13 +961,13 @@ document.addEventListener('DOMContentLoaded',()=>{
         '  </table>\n'
         '  </div>\n'
         f'  <button class="show-more-btn" id="more-btn"\n'
-        '          onclick="(function(){'
-        'var el=document.getElementById(\'branch-more\');'
-        'var btn=document.getElementById(\'more-btn\');'
-        'var open=el.style.display!==\'none\';'
-        'el.style.display=open?\'none\':\'block\';'
-        f'btn.textContent=open?\'Zobrazit všech {n_rest} dalších poboček ▼\':\'Skrýt ▲\';'
-        '})()">\n'
+        "          onclick=\"(function(){"
+        "var el=document.getElementById('branch-more');"
+        "var btn=document.getElementById('more-btn');"
+        "var open=el.style.display!=='none';"
+        "el.style.display=open?'none':'block';"
+        f"btn.textContent=open?'Zobrazit všech {n_rest} dalších poboček ▼':'Skrýt ▲';"
+        "})()\">\n"
         f'    Zobrazit všech {n_rest} dalších poboček ▼\n'
         '  </button>\n'
         '</div>\n'
@@ -839,7 +981,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         f'    <div>{corr_right}</div>\n'
         '  </div>\n'
         '  <p style="margin-top:10px;font-size:0.69rem;color:#94a3b8;">'
-        'Pearsonův r · páry s |r| &gt; 0.2 · ±1 = perfektní lineární vztah</p>\n'
+        'Pearsonův r · páry s |r| &gt; 0.2 · ±1 = perfektní lineární vztah</p>\n'
         '</div>\n'
 
         # ── Scénář 1 ───────────────────────────────────────────────────────────
@@ -849,12 +991,12 @@ document.addEventListener('DOMContentLoaded',()=>{
         '📋 Scénář 1 — nejpřísnější optimalizace</div>\n'
         f'  <div class="sc1-desc">'
         f'<strong>Pravidlo:</strong> Mimo Prahu a Brno zůstane v každém městě <strong>jedna pobočka</strong>'
-        f' — nejlepší dle IR kvintilu s preferencí flagship formátu.'
-        f' V Praze a Brně jsou zachovány flagshipy (max {MAX_METRO_FLAGSHIP}).'
-        f' <span style="color:#94a3b8;">Kliknutím na bod v mapě lze stav přepnout.</span>'
+        f' — nejlepší dle IR kvintilu, přednost flagship formátu.'
+        f' V Praze a Brně max {MAX_METRO_FLAGSHIP} flagship.'
+        f' <span style="color:#94a3b8;">Kliknutím na bod přepnete stav pobočky.</span>'
         f'</div>\n'
 
-        # stats
+        # stats chips
         '  <div class="stats-row">\n'
         f'    <div class="stat-chip green"><b id="sc1-nk">{n_keep}</b>Zachovat</div>\n'
         f'    <div class="stat-chip red"><b id="sc1-nc">{n_close}</b>Uzavřít</div>\n'
@@ -864,13 +1006,16 @@ document.addEventListener('DOMContentLoaded',()=>{
         '    <div class="stat-chip red"><b id="sc1-churn">—</b>Odhad ztráty výnosů (5% odchod)</div>\n'
         '  </div>\n'
 
+        # layer toggle buttons
+        '  <div class="lyr-toggles">\n'
+        '    <button class="lyr-btn keep-k lyr-on" onclick="toggleSc1Layer([\'pts-k\'],this)">🟢 Zachovat — body</button>\n'
+        '    <button class="lyr-btn keep-k lyr-on" onclick="toggleSc1Layer([\'cir-fill-k\',\'cir-line-k\'],this)">🟢 Zachovat — kružnice</button>\n'
+        '    <button class="lyr-btn close-k lyr-on" onclick="toggleSc1Layer([\'pts-c\'],this)">🔴 Uzavřít — body</button>\n'
+        '    <button class="lyr-btn close-k lyr-on" onclick="toggleSc1Layer([\'cir-fill-c\',\'cir-line-c\'],this)">🔴 Uzavřít — kružnice</button>\n'
+        '  </div>\n'
+
         # map
         '  <div class="map-box" style="height:520px;" id="sc1-map"></div>\n'
-        '  <div style="display:flex;gap:14px;margin-bottom:18px;font-size:0.75rem;flex-wrap:wrap;">\n'
-        '    <span>🟢 <span class="badge b-keep">Zachovat</span></span>\n'
-        '    <span>🔴 <span class="badge b-close">Uzavřít</span></span>\n'
-        '    <span style="color:#94a3b8;">Kružnice = 10 km od pobočky · Klik = přepnout</span>\n'
-        '  </div>\n'
 
         # impact + calcs
         '  <div class="two-col">\n'
@@ -918,7 +1063,38 @@ document.addEventListener('DOMContentLoaded',()=>{
         '    </table>\n'
         '    </div>\n'
         '  </div>\n'
-        '</div>\n'   # /card sc1
+        '</div>\n'   # /sc1
+
+        # ── Klíčové dopady ─────────────────────────────────────────────────────
+        '\n<!-- Klíčové dopady -->\n'
+        '<div class="card" style="border-top:3px solid #0891b2;">\n'
+        '  <div style="font-size:1rem;font-weight:700;color:#0e7490;margin-bottom:6px;">'
+        '💡 Klíčové dopady — živá srovnávací analýza</div>\n'
+        '  <div style="font-size:0.77rem;color:#64748b;margin-bottom:14px;line-height:1.5;">'
+        'Hodnoty se aktualizují při každé změně scénáře 1 (klik na pobočku) '
+        'i interaktivního modelu (posun slideru). '
+        '<span style="color:#94a3b8;">Dostupnost = průměr vzdáleností k 5 nejbližším pobočkám, '
+        'počítáno v prohlížeči pomocí haversine.</span>'
+        '</div>\n'
+        '  <div style="overflow-x:auto;">\n'
+        '  <table class="insight-tbl">\n'
+        '    <thead><tr>\n'
+        '      <th class="insight-th left" style="min-width:260px;">Metrika</th>\n'
+        '      <th class="insight-th">Baseline (nyní)</th>\n'
+        '      <th class="insight-th" style="color:#1d4ed8;">📋 Scénář 1</th>\n'
+        '      <th class="insight-th" style="color:#6d28d9;">⚖️ Interaktivní model</th>\n'
+        '    </tr></thead>\n'
+        '    <tbody id="insight-body">\n'
+        '      <tr><td colspan="4" style="padding:20px;text-align:center;color:#94a3b8;'
+        'font-size:0.8rem;">Načítám…</td></tr>\n'
+        '    </tbody>\n'
+        '  </table>\n'
+        '  </div>\n'
+        f'  <p style="margin-top:10px;font-size:0.69rem;color:#94a3b8;">'
+        f'Cílový limit bankéřů: {BANKER_CAPACITY:,} klientů/bankéř · '
+        f'Odchodovost: {CLIENT_CHURN_RATE*100:.0f} % · '
+        f'Dostupnost dle {AVAIL_N_NEAREST} nejbližších poboček</p>\n'
+        '</div>\n'
 
         # ── Interaktivní model ─────────────────────────────────────────────────
         '\n<!-- Interaktivní model -->\n'
@@ -926,9 +1102,8 @@ document.addEventListener('DOMContentLoaded',()=>{
         '  <div style="font-size:1rem;font-weight:700;color:#6d28d9;margin-bottom:6px;">'
         '⚖️ Interaktivní model — vyvažování priorit</div>\n'
         '  <div class="sc1-desc">'
-        'Posunutím vah zvolíte, co má být při výběru zachované pobočky prioritou.'
-        ' Model vybere v každém městě jednu pobočku (Praha/Brno: '
-        f'max {MAX_METRO_FLAGSHIP} flagship) s nejvyšším váženým skóre.'
+        'Posun váhy určuje, co má mít přednost při výběru zachované pobočky ve městě.'
+        f' Praha/Brno: max {MAX_METRO_FLAGSHIP} flagshipy.'
         '</div>\n'
 
         # sliders
@@ -937,7 +1112,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         '      <div class="slider-label">🗺️ Zachování dostupnosti<span id="lbl-avail">33</span></div>\n'
         '      <input type="range" id="w-avail" min="0" max="100" value="33">\n'
         '      <div style="font-size:0.69rem;color:#94a3b8;margin-top:4px;">'
-        'Preferuje izolované pobočky (vysoká avail km = v oblasti bez konkurence)</div>\n'
+        'Preferuje pobočky s vysokou avail_km (izolované lokality)</div>\n'
         '    </div>\n'
         '    <div>\n'
         '      <div class="slider-label">💰 Zachování výnosů<span id="lbl-rev">33</span></div>\n'
@@ -967,37 +1142,35 @@ document.addEventListener('DOMContentLoaded',()=>{
         '  <div class="two-col" style="align-items:start;">\n'
         '    <div>\n'
         '      <div class="map-box" style="height:440px;" id="model-map"></div>\n'
-        '      <div style="font-size:0.72rem;color:#94a3b8;margin-top:6px;">'
-        '🟢 Zachovat &nbsp; 🔴 Uzavřít &nbsp; Kružnice = 10 km</div>\n'
+        '      <div style="font-size:0.72rem;color:#94a3b8;margin-top:4px;">'
+        '🟢 Zachovat &nbsp;🔴 Uzavřít &nbsp;Kružnice = 10 km</div>\n'
         '    </div>\n'
         '    <div>\n'
         '      <div class="ct">Zachované pobočky (seřazeno dle skóre)</div>\n'
         '      <div class="scroll-tbl" style="max-height:440px;">\n'
         '      <table style="width:100%;border-collapse:collapse;">\n'
-        '        <thead>\n'
-        '          <tr style="background:#f8fafc;">\n'
-        '            <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;'
-        'color:#64748b;border-bottom:2px solid #e2e8f0;text-align:left;">Pobočka</th>\n'
-        '            <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;'
-        'color:#64748b;border-bottom:2px solid #e2e8f0;text-align:left;">Město</th>\n'
-        '            <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;'
-        'color:#64748b;border-bottom:2px solid #e2e8f0;text-align:left;">Formát</th>\n'
-        '            <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;'
-        'color:#64748b;border-bottom:2px solid #e2e8f0;text-align:right;">Klienti</th>\n'
-        '            <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;'
-        'color:#64748b;border-bottom:2px solid #e2e8f0;text-align:right;">Výnosy</th>\n'
-        '            <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;'
-        'color:#64748b;border-bottom:2px solid #e2e8f0;text-align:right;">Avail. km</th>\n'
-        '            <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;'
-        'color:#2563eb;border-bottom:2px solid #e2e8f0;text-align:right;">Skóre</th>\n'
-        '          </tr>\n'
-        '        </thead>\n'
+        '        <thead><tr style="background:#f8fafc;">\n'
+        '          <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#64748b;'
+        'border-bottom:2px solid #e2e8f0;text-align:left;">Pobočka</th>\n'
+        '          <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#64748b;'
+        'border-bottom:2px solid #e2e8f0;text-align:left;">Město</th>\n'
+        '          <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#64748b;'
+        'border-bottom:2px solid #e2e8f0;text-align:left;">Formát</th>\n'
+        '          <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#64748b;'
+        'border-bottom:2px solid #e2e8f0;text-align:right;">Klienti</th>\n'
+        '          <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#64748b;'
+        'border-bottom:2px solid #e2e8f0;text-align:right;">Výnosy</th>\n'
+        '          <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#64748b;'
+        'border-bottom:2px solid #e2e8f0;text-align:right;">Avail. km</th>\n'
+        '          <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#2563eb;'
+        'border-bottom:2px solid #e2e8f0;text-align:right;">Skóre</th>\n'
+        '        </tr></thead>\n'
         '        <tbody id="ml-body"></tbody>\n'
         '      </table>\n'
         '      </div>\n'
         '    </div>\n'
         '  </div>\n'
-        '</div>\n'   # /card model
+        '</div>\n'   # /model
 
         '</div>\n'  # /wrap
         '<script>\n' + js_code + '\n</script>\n'
