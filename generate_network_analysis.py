@@ -577,8 +577,8 @@ function renderStats(stObj,pfx){
   el('churn').textContent=fmtMczk(s.churnRev);
 }
 
-// ── Map ready tracking ────────────────────────────────────────────────────────
-const _mapReady={};
+// ── Map updater closures (assigned inside 'load' handler) ───────────────────
+let _updateSc1Map=null,_updateModelMap=null;
 
 // ── Layer toggle (Sc1 map) ────────────────────────────────────────────────────
 function toggleSc1Layer(layerIds,btn){
@@ -627,12 +627,12 @@ function createMap(containerId,stObj,onToggle){
       paint:{'circle-radius':9,'circle-color':'#16a34a',
              'circle-stroke-width':1.5,'circle-stroke-color':'#fff'}});
 
-    _mapReady[containerId]=true;
-    // Flush any state change that arrived before load finished
-    if(_pendingState[containerId]){
-      updateMap(map,_pendingState[containerId]);
-      delete _pendingState[containerId];
-    }
+    const _srcUpdate=(stObj)=>{
+      map.getSource('pts').setData(buildPoints(stObj));
+      map.getSource('cir').setData(buildCircles(stObj));
+    };
+    if(containerId==='sc1-map')_updateSc1Map=_srcUpdate;
+    else _updateModelMap=_srcUpdate;
 
     const popup=new mapboxgl.Popup({closeButton:false,closeOnClick:false,offset:12});
     ['pts-k','pts-c'].forEach(lyr=>{
@@ -659,13 +659,11 @@ function createMap(containerId,stObj,onToggle){
   return map;
 }
 
-const _pendingState={};
 function updateMap(map,stObj){
-  const cid=map.getContainer().id;
-  if(!_mapReady[cid]){_pendingState[cid]=stObj;return;}
   try{
-    map.getSource('pts').setData(buildPoints(stObj));
-    map.getSource('cir').setData(buildCircles(stObj));
+    const cid=map&&map.getContainer?map.getContainer().id:'';
+    const fn=cid==='sc1-map'?_updateSc1Map:_updateModelMap;
+    if(fn)fn(stObj);
   }catch(e){}
 }
 
@@ -735,28 +733,47 @@ function insightRow(label,context,base,s1val,mdlval,fmtFn,goodDir){
     '</tr>';
 }
 
+function _renderInsightNow(){
+  const tbody=document.getElementById('insight-body');
+  if(!tbody)return;
+  const s1=calcInsights(sc1State);
+  const md=calcInsights(modelState);
+  tbody.innerHTML=
+    insightRow('Klientů na bankéře',
+      'Všichni klienti sítě ÷ zbývající bankéři (cílový limit: '+BANKER_CAPACITY+')',
+      BASE_CLI_PER_BAN,s1.cliPerBan,md.cliPerBan,fmtF1,'down')+
+    insightRow('Nájemné / výnosy',
+      'Podíl ročních nájmů zachovaných poboček na jejich celkových výnosech',
+      BASE_RENT_REV_PCT,s1.rentRevPct,md.rentRevPct,fmtPct,'down')+
+    insightRow('C/I ratio průměr',
+      'Výnosově vážený průměr nákladové efektivity (prime náklady / výnosy)',
+      BASE_AVG_CI,s1.avgCI,md.avgCI,fmtPct,'down')+
+    insightRow('Dostupnost sítě (km)',
+      'Průměrná vzdálenost pobočky k '+AVAIL_N_NEAREST+' nejbližším — výpočet v prohlížeči',
+      BASE_AVAIL_KM,s1.availKm,md.availKm,fmtKm,'down');
+}
+
 let _insightDebounce=null;
 function renderInsightCard(){
   clearTimeout(_insightDebounce);
-  _insightDebounce=setTimeout(()=>{
-    const tbody=document.getElementById('insight-body');
-    if(!tbody)return;
-    const s1=calcInsights(sc1State);
-    const md=calcInsights(modelState);
-    tbody.innerHTML=
-      insightRow('Klientů na bankéře',
-        'Všichni klienti sítě ÷ zbývající bankéři (cílový limit: '+BANKER_CAPACITY+')',
-        BASE_CLI_PER_BAN,s1.cliPerBan,md.cliPerBan,fmtF1,'down')+
-      insightRow('Nájemné / výnosy',
-        'Podíl ročních nájmů zachovaných poboček na jejich celkových výnosech',
-        BASE_RENT_REV_PCT,s1.rentRevPct,md.rentRevPct,fmtPct,'down')+
-      insightRow('C/I ratio průměr',
-        'Výnosově vážený průměr nákladové efektivity (prime náklady / výnosy)',
-        BASE_AVG_CI,s1.avgCI,md.avgCI,fmtPct,'down')+
-      insightRow('Dostupnost sítě (km)',
-        'Průměrná vzdálenost pobočky k '+AVAIL_N_NEAREST+' nejbližším — výpočet v prohlížeči',
-        BASE_AVAIL_KM,s1.availKm,md.availKm,fmtKm,'down');
-  },120);
+  _insightDebounce=setTimeout(_renderInsightNow,120);
+}
+
+// ── Propsat hodnoty (explicitní aplikace modelu) ───────────────────────────
+function propsatHodnoty(){
+  const wA=+document.getElementById('w-avail').value||33;
+  const wR=+document.getElementById('w-rev').value||33;
+  const wC=+document.getElementById('w-cli').value||33;
+  modelState=scoreAndBuild(wA,wR,wC);
+  if(_updateModelMap){try{_updateModelMap(modelState);}catch(e){}}
+  renderStats(modelState,'model');
+  renderModelList(modelState);
+  clearTimeout(_insightDebounce);
+  _renderInsightNow();
+  // Visual feedback on button
+  const btn=document.getElementById('propsat-btn');
+  if(btn){btn.textContent='✓ Propsat';btn.style.background='#16a34a';
+    setTimeout(()=>{btn.textContent='🔄 Propsat hodnoty';btn.style.background='#7c3aed';},1400);}
 }
 
 // ── Scénář 1 ─────────────────────────────────────────────────────────────────
@@ -831,7 +848,7 @@ function applyModel(){
 document.addEventListener('DOMContentLoaded',()=>{
   sc1Map=createMap('sc1-map',sc1State,(map,state,id)=>{
     state[id]=state[id]==='keep'?'close':'keep';
-    updateMap(map,state);
+    if(_updateSc1Map){try{_updateSc1Map(state);}catch(e){}}
     renderStats(state,'sc1');
     renderInsightCard();
   });
@@ -841,7 +858,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   modelMap=createMap('model-map',modelState,null);
   renderStats(modelState,'model');
   renderModelList(modelState);
-  renderInsightCard();
+  // insight card rendered after both maps init (availability needs both states ready)
+  setTimeout(()=>_renderInsightNow(),200);
 
   ['w-avail','w-rev','w-cli'].forEach(id=>{
     document.getElementById(id).addEventListener('input',applyModel);
@@ -1126,6 +1144,15 @@ document.addEventListener('DOMContentLoaded',()=>{
         '      <div style="font-size:0.69rem;color:#94a3b8;margin-top:4px;">'
         'Preferuje pobočky s nejvyšším počtem primárních klientů</div>\n'
         '    </div>\n'
+        '  </div>\n'
+        '  <div style="margin-bottom:14px;">\n'
+        '    <button id="propsat-btn" onclick="propsatHodnoty()"\n'
+        '      style="padding:9px 22px;background:#7c3aed;color:white;border:none;'
+        'border-radius:8px;font-size:0.84rem;font-weight:700;cursor:pointer;'
+        'transition:background .2s;">'
+        '🔄 Propsat hodnoty</button>\n'
+        '    <span style="margin-left:12px;font-size:0.73rem;color:#94a3b8;">'
+        'Aplikuje aktuální nastavení sliderů do mapy a srovnávací analýzy</span>\n'
         '  </div>\n'
 
         # model stats
