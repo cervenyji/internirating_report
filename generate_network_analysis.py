@@ -472,6 +472,103 @@ def generate_network_analysis_report(
             f'</tr>\n'
         )
 
+    # ── Klientský pohled ──────────────────────────────────────────────────────
+    print('  👥 Analýza klientského pohledu...')
+
+    BRANCH_DEP_CHURN = 0.25   # odhadovaná odchodovost pobočkových klientů při uzavření
+
+    # Proxy: fyzické schůzky / primární klienti = míra závislosti na pobočce (0..1)
+    _meet = df['POCET_SCHUZEK_FYZICKY'] / df['PRIMARNI_KLIENTI'].clip(lower=1)
+    df['_meet_ratio'] = _meet.clip(0.0, 1.0).fillna(0.0)
+
+    cdf_c = cdf.copy()
+    cdf_c['_meet_ratio'] = df.loc[cdf.index, '_meet_ratio'].values
+
+    visits_loaded = False
+    try:
+        _vdf = pd.read_csv('../in/tables/VISITS_2025.csv', low_memory=False)
+        _vdf.columns = [c.strip().upper().replace(' ', '_') for c in _vdf.columns]
+        _bid_c = next((c for c in ['BRANCH_ID', 'BRANCH_CODE', 'ID_POBOCKY', 'POBOCKA'] if c in _vdf.columns), None)
+        _cid_c = next((c for c in ['PT_UNIFIED_KEY', 'CLIENT_ID', 'KLIENT_ID'] if c in _vdf.columns), None)
+        if _bid_c and _cid_c:
+            _vis_cnt = _vdf.groupby(_bid_c)[_cid_c].nunique().to_dict()
+            _bc_col = next((c for c in ['BRANCH_CODE', 'BRANCH_ID'] if c in cdf_c.columns), None)
+            if _bc_col:
+                cdf_c['_visitors'] = cdf_c[_bc_col].map(_vis_cnt).fillna(0)
+                cdf_c['_meet_ratio'] = (cdf_c['_visitors'] / cdf_c['PRIMARNI_KLIENTI'].clip(lower=1)).clip(0.0, 1.0)
+                visits_loaded = True
+                print(f'     Visits CSV: {len(_vdf):,} řádků, reálná data návštěv')
+    except Exception:
+        pass
+
+    cdf_c['_est_branch_dep'] = (cdf_c['PRIMARNI_KLIENTI'] * cdf_c['_meet_ratio']).round().astype(int).clip(lower=0)
+    cdf_c['_est_digital']    = (cdf_c['PRIMARNI_KLIENTI'] - cdf_c['_est_branch_dep']).clip(lower=0)
+
+    tot_cli_closed   = int(cdf_c['PRIMARNI_KLIENTI'].sum())
+    tot_branch_dep   = int(cdf_c['_est_branch_dep'].sum())
+    tot_digital_c    = int(cdf_c['_est_digital'].sum())
+    tot_churn_branch = int(round(tot_branch_dep * BRANCH_DEP_CHURN))
+    tot_churn_dig    = int(round(tot_digital_c * CLIENT_CHURN_RATE))
+    tot_churn_total  = tot_churn_branch + tot_churn_dig
+    churn_rev_branch = tot_churn_branch * rev_per_cli
+    churn_rev_dig    = tot_churn_dig    * rev_per_cli
+    churn_rev_total  = churn_rev_branch + churn_rev_dig
+
+    # Věkové skupiny — pokud jsou dostupné ve vstupních datech
+    _AGE_GROUPS = ['1-15', '16-25', '26-45', '46-65', '65+']
+    _AGE_COLORS = {'1-15':'#2770ef','16-25':'#0bb440','26-45':'#00a3a5','46-65':'#fd6230','65+':'#9b59b6'}
+    _age_avail  = [g for g in _AGE_GROUPS if f'{g}_POCET_KLIENTU' in cdf_c.columns]
+    age_bars_html = ''
+    if _age_avail:
+        _age_tots  = {g: int(cdf_c[f'{g}_POCET_KLIENTU'].sum()) for g in _age_avail}
+        _age_total = sum(_age_tots.values()) or 1
+        for g, cnt in _age_tots.items():
+            pct = cnt / _age_total * 100
+            c   = _AGE_COLORS.get(g, '#64748b')
+            age_bars_html += (
+                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+                f'<div style="min-width:42px;font-size:0.75rem;font-weight:700;color:{c};">{g}</div>'
+                f'<div style="flex:1;background:#f1f5f9;border-radius:3px;height:7px;overflow:hidden;">'
+                f'<div style="width:{pct:.1f}%;background:{c};height:100%;border-radius:3px;"></div></div>'
+                f'<div style="min-width:82px;text-align:right;font-size:0.74rem;color:#64748b;">'
+                f'{cnt:,} &nbsp;({pct:.0f}%)</div>'
+                f'</div>'
+            )
+
+    # Stacked bar (pobočkoví vs digitální) na úrovni sítě
+    _bd_pct_net = tot_branch_dep / max(tot_cli_closed, 1) * 100
+    _dg_pct_net = 100.0 - _bd_pct_net
+
+    # Tabulka: top uzavřené pobočky dle počtu klientů
+    _cli_rows_html = ''
+    for _, row in cdf_c.sort_values('PRIMARNI_KLIENTI', ascending=False).head(12).iterrows():
+        pc  = int(row['PRIMARNI_KLIENTI'])
+        bd  = int(row['_est_branch_dep'])
+        dg  = int(row['_est_digital'])
+        mr  = float(row['_meet_ratio'])
+        bd_w = max(1, int(mr * 70))
+        dg_w = max(1, 70 - bd_w)
+        est_churn = int(round(bd * BRANCH_DEP_CHURN)) + int(round(dg * CLIENT_CHURN_RATE))
+        _cli_rows_html += (
+            f'<tr style="border-bottom:1px solid #f1f5f9;">'
+            f'<td style="padding:5px 9px;font-size:0.78rem;font-weight:600;">{row["BRANCH_NAME"]}</td>'
+            f'<td style="padding:5px 9px;font-size:0.73rem;color:#64748b;">{row["_city"]}</td>'
+            f'<td style="padding:5px 9px;text-align:right;font-size:0.79rem;">{pc:,}</td>'
+            f'<td style="padding:5px 9px;">'
+            f'<div style="display:flex;gap:2px;align-items:center;">'
+            f'<div style="width:{bd_w}px;background:#dc2626;height:7px;border-radius:2px 0 0 2px;opacity:.65;" title="Pobočkoví: {bd:,}"></div>'
+            f'<div style="width:{dg_w}px;background:#2563eb;height:7px;border-radius:0 2px 2px 0;opacity:.35;" title="Digitální: {dg:,}"></div>'
+            f'</div></td>'
+            f'<td style="padding:5px 9px;text-align:right;font-size:0.79rem;color:#dc2626;font-weight:700;">{bd:,}</td>'
+            f'<td style="padding:5px 9px;text-align:right;font-size:0.79rem;color:#2563eb;">{dg:,}</td>'
+            f'<td style="padding:5px 9px;text-align:right;font-size:0.79rem;color:#ea580c;font-weight:700;">{est_churn:,}</td>'
+            f'</tr>\n'
+        )
+
+    _cli_source_note = ('Počet unikátních návštěvníků z VISITS_2025.csv'
+                        if visits_loaded else
+                        'Proxy: fyzické schůzky ÷ primární klienti (VISITS_2025.csv není dostupný)')
+
     # ── JSON dat pro mapu ──────────────────────────────────────────────────────
     print('  🗂️  Serializace dat pro JS...')
     lat_c = float(df_sc1['_lat'].dropna().mean()) if df_sc1['_lat'].notna().any() else 49.8
@@ -838,7 +935,7 @@ function applyModel(){
   document.getElementById('lbl-rev').textContent=Math.round(wR);
   document.getElementById('lbl-cli').textContent=Math.round(wC);
   modelState=scoreAndBuild(wA,wR,wC);
-  if(modelMap)updateMap(modelMap,modelState);
+  if(_updateModelMap)try{_updateModelMap(modelState);}catch(e){}
   renderStats(modelState,'model');
   renderModelList(modelState);
   renderInsightCard();
@@ -1198,6 +1295,96 @@ document.addEventListener('DOMContentLoaded',()=>{
         '    </div>\n'
         '  </div>\n'
         '</div>\n'   # /model
+
+        # ── Pohled přes klienty ────────────────────────────────────────────────
+        '\n<!-- Klientský pohled -->\n'
+        '<div class="card" style="border-top:3px solid #ea580c;">\n'
+        '  <div style="font-size:1rem;font-weight:700;color:#c2410c;margin-bottom:6px;">'
+        '👥 Pohled přes klienty — dopad uzavření poboček</div>\n'
+        f'  <div style="font-size:0.76rem;color:#64748b;margin-bottom:16px;">'
+        f'Analýza {n_close} uzavíraných poboček (Scénář 1) &nbsp;·&nbsp; {_cli_source_note}</div>\n'
+
+        # summary chips row
+        '  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px;">\n'
+        f'    <div class="stat-chip"><b style="color:#ea580c;">{tot_cli_closed:,}</b>Klientů v uzavíraných pobočkách</div>\n'
+        f'    <div class="stat-chip red"><b>{tot_branch_dep:,}</b>Pobočkově závislí (riziko odchodu)</div>\n'
+        f'    <div class="stat-chip"><b style="color:#2563eb;">{tot_digital_c:,}</b>Digitální klienti (nízké riziko)</div>\n'
+        f'    <div class="stat-chip red"><b>{tot_churn_total:,}</b>Odhadovaný odchod celkem</div>\n'
+        f'    <div class="stat-chip red"><b>{churn_rev_total/1e6:.0f} M Kč</b>Odhadovaná ztráta výnosů/rok</div>\n'
+        '  </div>\n'
+
+        # stacked bar — branch-dep vs digital
+        '  <div style="margin-bottom:18px;">\n'
+        '    <div style="font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:6px;">'
+        'Segmentace klientů uzavíraných poboček</div>\n'
+        '    <div style="display:flex;height:20px;border-radius:6px;overflow:hidden;'
+        'background:#f1f5f9;margin-bottom:6px;">\n'
+        f'      <div style="width:{_bd_pct_net:.1f}%;background:#dc2626;opacity:.7;" '
+        f'title="Pobočkoví: {tot_branch_dep:,}"></div>\n'
+        f'      <div style="width:{_dg_pct_net:.1f}%;background:#2563eb;opacity:.3;" '
+        f'title="Digitální: {tot_digital_c:,}"></div>\n'
+        '    </div>\n'
+        '    <div style="display:flex;gap:18px;font-size:0.72rem;">\n'
+        f'      <span><span style="display:inline-block;width:10px;height:10px;'
+        f'background:#dc2626;opacity:.7;border-radius:2px;margin-right:4px;"></span>'
+        f'Pobočkoví {_bd_pct_net:.0f}% ({tot_branch_dep:,}) — odchod {BRANCH_DEP_CHURN*100:.0f}%</span>\n'
+        f'      <span><span style="display:inline-block;width:10px;height:10px;'
+        f'background:#2563eb;opacity:.5;border-radius:2px;margin-right:4px;"></span>'
+        f'Digitální {_dg_pct_net:.0f}% ({tot_digital_c:,}) — odchod {CLIENT_CHURN_RATE*100:.0f}%</span>\n'
+        '    </div>\n'
+        '  </div>\n'
+
+        # two-col: churn breakdown + age groups
+        '  <div class="two-col" style="margin-bottom:20px;">\n'
+        '    <div>\n'
+        '      <div class="ct">📉 Odhadovaný odchod a ztráta výnosů</div>\n'
+        + (
+            _calc_row('Pobočkoví klienti — odchod',
+                      f'{tot_churn_branch:,} ({BRANCH_DEP_CHURN*100:.0f}% ze {tot_branch_dep:,})',
+                      f'≈ {churn_rev_branch/1e6:.0f} M Kč/rok', '#dc2626') +
+            _calc_row('Digitální klienti — odchod',
+                      f'{tot_churn_dig:,} ({CLIENT_CHURN_RATE*100:.0f}% z {tot_digital_c:,})',
+                      f'≈ {churn_rev_dig/1e6:.0f} M Kč/rok', '#2563eb') +
+            _calc_row('Celkový odchad odchodu',
+                      f'{tot_churn_total:,} klientů',
+                      f'≈ {churn_rev_total/1e6:.0f} M Kč/rok', '#ea580c')
+        )
+        + '    </div>\n'
+        '    <div>\n'
+        '      <div class="ct">🎂 Věkové skupiny v uzavíraných pobočkách</div>\n'
+        + (age_bars_html if age_bars_html else
+           '<div style="font-size:0.78rem;color:#94a3b8;padding:12px 0;">'
+           'Data věkových skupin nejsou dostupná ve vstupním datasetu.</div>')
+        + '    </div>\n'
+        '  </div>\n'
+
+        # top branches table
+        '  <div class="ct">Top uzavírané pobočky dle počtu klientů</div>\n'
+        '  <div style="overflow-x:auto;">\n'
+        '  <table style="width:100%;border-collapse:collapse;min-width:600px;">\n'
+        '    <thead><tr style="background:#fff4ed;">\n'
+        '      <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#9a3412;'
+        'border-bottom:1px solid #fed7aa;text-align:left;">Pobočka</th>\n'
+        '      <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#9a3412;'
+        'border-bottom:1px solid #fed7aa;text-align:left;">Město</th>\n'
+        '      <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#9a3412;'
+        'border-bottom:1px solid #fed7aa;text-align:right;">Klientů</th>\n'
+        '      <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#9a3412;'
+        'border-bottom:1px solid #fed7aa;">Segment</th>\n'
+        '      <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#dc2626;'
+        'border-bottom:1px solid #fed7aa;text-align:right;">Pobočkoví</th>\n'
+        '      <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#2563eb;'
+        'border-bottom:1px solid #fed7aa;text-align:right;">Digitální</th>\n'
+        '      <th style="padding:5px 9px;font-size:0.68rem;font-weight:700;color:#ea580c;'
+        'border-bottom:1px solid #fed7aa;text-align:right;">Odhad odchodu</th>\n'
+        '    </tr></thead>\n'
+        f'    <tbody>{_cli_rows_html}</tbody>\n'
+        '  </table>\n'
+        '  </div>\n'
+        f'  <p style="margin-top:10px;font-size:0.69rem;color:#94a3b8;">'
+        f'Pobočkoví klienti: míra závislosti × {BRANCH_DEP_CHURN*100:.0f}% odchodovost &nbsp;·&nbsp; '
+        f'Digitální klienti: {CLIENT_CHURN_RATE*100:.0f}% odchodovost &nbsp;·&nbsp; {_cli_source_note}</p>\n'
+        '</div>\n'   # /klientský pohled
 
         '</div>\n'  # /wrap
         '<script>\n' + js_code + '\n</script>\n'
