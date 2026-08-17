@@ -646,6 +646,26 @@ function buildCircles(stObj){
   }))};
 }
 
+// ── Map data updater — přímé volání bez closure ────────────────────────────
+// Použijeme globální reference sc1Map / modelMap; žádné closure potřeba.
+function updateMapData(map,stObj){
+  if(!map)return;
+  // Pokud mapa ještě není načtená, zaregistrujeme jednorázový pokus po 'idle'
+  try{
+    const ps=map.getSource('pts'),cs=map.getSource('cir');
+    if(ps&&cs){ps.setData(buildPoints(stObj));cs.setData(buildCircles(stObj));return;}
+  }catch(e){}
+  // Map source ještě neexistuje — počkáme na 'idle' (nastane po load)
+  const retry=()=>{
+    try{
+      const ps=map.getSource('pts'),cs=map.getSource('cir');
+      if(ps)ps.setData(buildPoints(stObj));
+      if(cs)cs.setData(buildCircles(stObj));
+    }catch(e2){}
+  };
+  map.once('idle',retry);
+}
+
 // ── Stats chips ──────────────────────────────────────────────────────────────
 function calcStats(stObj){
   const keep=BRANCHES.filter(b=>stObj[b.id]==='keep');
@@ -674,10 +694,7 @@ function renderStats(stObj,pfx){
   el('churn').textContent=fmtMczk(s.churnRev);
 }
 
-// ── Map updater closures (assigned inside 'load' handler) ───────────────────
-let _updateSc1Map=null,_updateModelMap=null;
-
-// ── Layer toggle (Sc1 map) ────────────────────────────────────────────────────
+// ── Layer toggle (Sc1 map) ───────────────────────────────────────────────────
 function toggleSc1Layer(layerIds,btn){
   if(!sc1Map)return;
   const on=btn.classList.contains('lyr-on');
@@ -688,7 +705,7 @@ function toggleSc1Layer(layerIds,btn){
 }
 
 // ── Map factory ──────────────────────────────────────────────────────────────
-function createMap(containerId,stObj,onToggle){
+function createMap(containerId,initState,onToggle){
   mapboxgl.accessToken=MAPBOX_TOKEN;
   const map=new mapboxgl.Map({
     container:containerId,
@@ -700,8 +717,10 @@ function createMap(containerId,stObj,onToggle){
   map.addControl(new mapboxgl.AttributionControl({compact:true}));
 
   map.on('load',()=>{
-    map.addSource('pts',{type:'geojson',data:buildPoints(stObj)});
-    map.addSource('cir',{type:'geojson',data:buildCircles(stObj)});
+    // Snapshot stavu v momentě načtení (může být novější než initState)
+    const curState=containerId==='sc1-map'?sc1State:modelState;
+    map.addSource('pts',{type:'geojson',data:buildPoints(curState)});
+    map.addSource('cir',{type:'geojson',data:buildCircles(curState)});
 
     map.addLayer({id:'cir-fill-c',type:'fill',source:'cir',
       filter:['==',['get','state'],'close'],
@@ -724,19 +743,14 @@ function createMap(containerId,stObj,onToggle){
       paint:{'circle-radius':9,'circle-color':'#16a34a',
              'circle-stroke-width':1.5,'circle-stroke-color':'#fff'}});
 
-    const _srcUpdate=(stObj)=>{
-      map.getSource('pts').setData(buildPoints(stObj));
-      map.getSource('cir').setData(buildCircles(stObj));
-    };
-    if(containerId==='sc1-map')_updateSc1Map=_srcUpdate;
-    else _updateModelMap=_srcUpdate;
-
     const popup=new mapboxgl.Popup({closeButton:false,closeOnClick:false,offset:12});
     ['pts-k','pts-c'].forEach(lyr=>{
       map.on('mouseenter',lyr,e=>{
         map.getCanvas().style.cursor='pointer';
         const p=e.features[0].properties;
-        const cur=stObj[p.id]||'close';
+        // Stav čteme přímo z globálního objektu — vždy aktuální
+        const liveState=containerId==='sc1-map'?sc1State:modelState;
+        const cur=liveState[p.id]||'close';
         const hint=onToggle?('<br><em style="color:#94a3b8;font-size:0.75rem">Klikni: '+(cur==='keep'?'uzavřít':'zachovat')+'</em>'):'';
         popup.setLngLat(e.lngLat).setHTML(
           '<div style="font-family:system-ui;font-size:0.82rem;line-height:1.5;max-width:210px;">'+
@@ -748,20 +762,12 @@ function createMap(containerId,stObj,onToggle){
       if(onToggle){
         map.on('click',lyr,e=>{
           const id=e.features[0].properties.id;
-          onToggle(map,stObj,id);
+          onToggle(map,id);
         });
       }
     });
   });
   return map;
-}
-
-function updateMap(map,stObj){
-  try{
-    const cid=map&&map.getContainer?map.getContainer().id:'';
-    const fn=cid==='sc1-map'?_updateSc1Map:_updateModelMap;
-    if(fn)fn(stObj);
-  }catch(e){}
 }
 
 // ── Haversine (km) ────────────────────────────────────────────────────────────
@@ -788,24 +794,16 @@ function computeAvailKm(bs){
 
 // ── Insight card ──────────────────────────────────────────────────────────────
 function calcInsights(stObj){
-  const all=BRANCHES;
-  const keep=all.filter(b=>stObj[b.id]==='keep');
-  const totCli=all.reduce((s,b)=>s+b.clients,0);
-  const totRev=all.reduce((s,b)=>s+b.revenue,0);
-  const totRent=all.reduce((s,b)=>s+b.rent,0);
+  const keep=BRANCHES.filter(b=>stObj[b.id]==='keep');
   const kBan=keep.reduce((s,b)=>s+b.bankers,0);
-  const kCli=keep.reduce((s,b)=>s+b.clients,0);
+  const totCli=BRANCHES.reduce((s,b)=>s+b.clients,0);
   const kRev=keep.reduce((s,b)=>s+b.revenue,0);
   const kRent=keep.reduce((s,b)=>s+b.rent,0);
-  // Banker capacity: all clients divided by remaining bankers
   const cliPerBan=kBan>0?totCli/kBan:null;
-  // Rent / revenue %
   const rentRevPct=kRev>0?kRent/kRev*100:null;
-  // C/I: revenue-weighted avg of kept branches
   let ciN=0,ciD=0;
   keep.forEach(b=>{if(b.ci!=null&&b.revenue>0){ciN+=b.ci*b.revenue;ciD+=b.revenue;}});
   const avgCI=ciD>0?ciN/ciD:null;
-  // Availability (JS haversine)
   const availKm=computeAvailKm(keep);
   return {cliPerBan,rentRevPct,avgCI,availKm};
 }
@@ -854,23 +852,6 @@ let _insightDebounce=null;
 function renderInsightCard(){
   clearTimeout(_insightDebounce);
   _insightDebounce=setTimeout(_renderInsightNow,120);
-}
-
-// ── Propsat hodnoty (explicitní aplikace modelu) ───────────────────────────
-function propsatHodnoty(){
-  const wA=+document.getElementById('w-avail').value||33;
-  const wR=+document.getElementById('w-rev').value||33;
-  const wC=+document.getElementById('w-cli').value||33;
-  modelState=scoreAndBuild(wA,wR,wC);
-  if(_updateModelMap){try{_updateModelMap(modelState);}catch(e){}}
-  renderStats(modelState,'model');
-  renderModelList(modelState);
-  clearTimeout(_insightDebounce);
-  _renderInsightNow();
-  // Visual feedback on button
-  const btn=document.getElementById('propsat-btn');
-  if(btn){btn.textContent='✓ Propsat';btn.style.background='#16a34a';
-    setTimeout(()=>{btn.textContent='🔄 Propsat hodnoty';btn.style.background='#7c3aed';},1400);}
 }
 
 // ── Scénář 1 ─────────────────────────────────────────────────────────────────
@@ -927,6 +908,7 @@ function renderModelList(stObj){
   )).join('');
 }
 
+// ── Aplikace modelu (slider input) ───────────────────────────────────────────
 function applyModel(){
   const wA=+document.getElementById('w-avail').value||33;
   const wR=+document.getElementById('w-rev').value||33;
@@ -935,18 +917,34 @@ function applyModel(){
   document.getElementById('lbl-rev').textContent=Math.round(wR);
   document.getElementById('lbl-cli').textContent=Math.round(wC);
   modelState=scoreAndBuild(wA,wR,wC);
-  if(_updateModelMap)try{_updateModelMap(modelState);}catch(e){}
+  updateMapData(modelMap,modelState);
   renderStats(modelState,'model');
   renderModelList(modelState);
   renderInsightCard();
 }
 
+// ── Propsat hodnoty (tlačítko — okamžitá aktualizace) ────────────────────────
+function propsatHodnoty(){
+  const wA=+document.getElementById('w-avail').value||33;
+  const wR=+document.getElementById('w-rev').value||33;
+  const wC=+document.getElementById('w-cli').value||33;
+  modelState=scoreAndBuild(wA,wR,wC);
+  updateMapData(modelMap,modelState);
+  renderStats(modelState,'model');
+  renderModelList(modelState);
+  clearTimeout(_insightDebounce);
+  _renderInsightNow();
+  const btn=document.getElementById('propsat-btn');
+  if(btn){btn.textContent='✓ Propsat';btn.style.background='#16a34a';
+    setTimeout(()=>{btn.textContent='🔄 Propsat hodnoty';btn.style.background='#7c3aed';},1400);}
+}
+
 // ── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded',()=>{
-  sc1Map=createMap('sc1-map',sc1State,(map,state,id)=>{
-    state[id]=state[id]==='keep'?'close':'keep';
-    if(_updateSc1Map){try{_updateSc1Map(state);}catch(e){}}
-    renderStats(state,'sc1');
+  sc1Map=createMap('sc1-map',sc1State,(map,id)=>{
+    sc1State[id]=sc1State[id]==='keep'?'close':'keep';
+    updateMapData(sc1Map,sc1State);
+    renderStats(sc1State,'sc1');
     renderInsightCard();
   });
   renderStats(sc1State,'sc1');
@@ -955,7 +953,6 @@ document.addEventListener('DOMContentLoaded',()=>{
   modelMap=createMap('model-map',modelState,null);
   renderStats(modelState,'model');
   renderModelList(modelState);
-  // insight card rendered after both maps init (availability needs both states ready)
   setTimeout(()=>_renderInsightNow(),200);
 
   ['w-avail','w-rev','w-cli'].forEach(id=>{
