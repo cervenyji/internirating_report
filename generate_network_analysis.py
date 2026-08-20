@@ -452,7 +452,7 @@ def generate_network_analysis_report(
                   _fv(c_rent, 'mkczk') + '/rok', '', '#16a34a') +
         _calc_row('Průměrná plocha poboček — před / po',
                   f'{avg_plocha:.0f} → {k_plocha:.0f} m²',
-                  f'změna {k_plocha - avg_plocha:+.0f} m²', '#0891b2')
+                  f'změna {k_plocha - avg_plocha:+.0f} m²', '#02A3A4')
     )
 
     close_rows_html = ''
@@ -963,78 +963,121 @@ document.addEventListener('DOMContentLoaded',()=>{
 
     js_code = js_data + js_logic
 
-    # ── CSS ────────────────────────────────────────────────────────────────────
+    # ── CSS — ČS brand guidelines (Bright Blue accent) ────────────────────────
     CSS = (
+        ':root{'
+        '--cs-blue:#2870ED;--cs-teal:#02A3A4;--cs-forest:#028661;--cs-apple:#0CB43F;'
+        '--cs-orange:#FF6130;--cs-pink:#EB4C79;--cs-aubergine:#721C7A;--cs-stone:#245375;'
+        '--cs-accent:#2870ED;'  # Bright Blue — zvolená barva
+        '--cs-anthracite:#202020;--cs-gray-dark:#4A4A4A;--cs-gray:#9B9B9B;'
+        '--cs-gray-light:#E6E6E6;--cs-bg:#F4F6FA;'
+        '}\n'
         '*{box-sizing:border-box;margin:0;padding:0;}\n'
-        'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;'
-        'background:#f0f4fb;color:#1e2a38;}\n'
-        '.hdr{background:linear-gradient(135deg,#1a3a6c 0%,#2563eb 100%);'
-        'color:white;padding:22px 32px 18px;}\n'
-        '.hdr h1{font-size:1.4rem;font-weight:800;margin-bottom:3px;}\n'
-        '.hdr p{font-size:0.79rem;opacity:.75;}\n'
-        '.wrap{max-width:1440px;margin:0 auto;padding:22px 18px 36px;}\n'
-        '.card{background:white;border-radius:12px;padding:20px 22px;'
-        'box-shadow:0 1px 5px rgba(0,0,0,.07);margin-bottom:20px;}\n'
-        '.card-full{border-top:3px solid #2563eb;}\n'
-        '.ct{font-size:0.68rem;font-weight:700;color:#2563eb;text-transform:uppercase;'
-        'letter-spacing:.6px;margin-bottom:12px;}\n'
+        'body{font-family:"Inter",Arial,"Helvetica Neue",sans-serif;'
+        'background:var(--cs-bg);color:var(--cs-anthracite);line-height:1.5;font-size:14px;}\n'
+        # Hero
+        '.hdr{background:var(--cs-accent);color:#fff;padding:40px 48px 28px;position:relative;overflow:hidden;}\n'
+        '.hdr::before{content:"";position:absolute;top:0;left:0;width:44px;height:3px;'
+        'background:rgba(255,255,255,.65);}\n'
+        '.hdr::after{content:"";position:absolute;top:0;left:0;width:3px;height:44px;'
+        'background:rgba(255,255,255,.65);}\n'
+        '.hdr-top{font-size:0.66rem;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;'
+        'opacity:.7;margin-bottom:14px;}\n'
+        '.hdr h1{font-size:1.95rem;font-weight:800;line-height:1.18;margin-bottom:10px;'
+        'text-wrap:balance;max-width:820px;}\n'
+        '.hdr-sub{font-size:0.82rem;opacity:.72;margin-bottom:22px;}\n'
+        '.hdr-meta{font-size:0.74rem;opacity:.6;border-top:1px solid rgba(255,255,255,.22);'
+        'padding-top:12px;display:flex;gap:20px;align-items:center;flex-wrap:wrap;}\n'
+        '.hdr-claim{font-size:0.88rem;font-weight:700;opacity:.9;margin-left:auto;letter-spacing:.4px;}\n'
+        # Wrap
+        '.wrap{max-width:1440px;margin:0 auto;padding:24px 20px 16px;}\n'
+        # Cards — each section gets its own border-top color
+        '.card{background:#fff;border-radius:10px;padding:22px 24px;'
+        'box-shadow:0 1px 6px rgba(0,0,0,.06);margin-bottom:20px;'
+        'border-top:3px solid var(--cs-accent);}\n'
+        '.card-teal{border-top-color:var(--cs-teal);}\n'
+        '.card-forest{border-top-color:var(--cs-forest);}\n'
+        '.card-stone{border-top-color:var(--cs-stone);}\n'
+        '.card-aubergine{border-top-color:var(--cs-aubergine);}\n'
+        '.card-orange{border-top-color:var(--cs-orange);}\n'
+        # Section label (CT)
+        '.ct{font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.9px;'
+        'margin-bottom:14px;color:var(--cs-accent);}\n'
+        '.ct-teal{color:var(--cs-teal);}\n'
+        '.ct-forest{color:var(--cs-forest);}\n'
+        '.ct-stone{color:var(--cs-stone);}\n'
+        '.ct-aubergine{color:var(--cs-aubergine);}\n'
+        '.ct-orange{color:var(--cs-orange);}\n'
+        # Layout
         '.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;}\n'
         '@media(max-width:860px){.two-col{grid-template-columns:1fr;}}\n'
-        '.map-box{border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;margin-bottom:12px;}\n'
+        '.map-box{border-radius:8px;overflow:hidden;border:1px solid var(--cs-gray-light);margin-bottom:12px;}\n'
+        # Tables
         '.impact-tbl{width:100%;border-collapse:collapse;}\n'
-        '.impact-tbl th{background:#f8fafc;padding:5px 10px;font-size:0.68rem;font-weight:700;'
-        'color:#64748b;border-bottom:2px solid #e2e8f0;white-space:nowrap;}\n'
-        '.impact-tbl tr:hover td{background:#f8fafc;}\n'
-        '.stats-row{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 14px;}\n'
-        '.stat-chip{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;'
-        'padding:6px 14px;font-size:0.77rem;}\n'
-        '.stat-chip b{font-size:0.93rem;color:#1e2a38;display:block;margin-bottom:1px;}\n'
-        '.stat-chip.green b{color:#16a34a;}\n'
-        '.stat-chip.red b{color:#dc2626;}\n'
-        '.badge{display:inline-block;border-radius:5px;padding:2px 8px;'
-        'font-size:0.69rem;font-weight:700;}\n'
-        '.b-keep{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0;}\n'
-        '.b-close{background:#fef2f2;color:#dc2626;border:1px solid #fecaca;}\n'
-        '.show-more-btn{display:inline-block;margin-top:10px;padding:6px 16px;'
-        'background:#f0f4fb;border:1px solid #e2e8f0;border-radius:8px;'
-        'font-size:0.77rem;font-weight:600;color:#2563eb;cursor:pointer;'
-        'transition:background .15s;}\n'
-        '.show-more-btn:hover{background:#dbeafe;}\n'
+        '.impact-tbl th{background:#f6f8fb;padding:6px 10px;font-size:0.67rem;font-weight:700;'
+        'color:var(--cs-gray-dark);border-bottom:2px solid var(--cs-gray-light);white-space:nowrap;}\n'
+        '.impact-tbl tr:hover td{background:#f6f8fb;}\n'
+        # Chips
+        '.stats-row{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 16px;}\n'
+        '.stat-chip{background:#f6f8fb;border:1px solid var(--cs-gray-light);border-radius:8px;'
+        'padding:7px 14px;font-size:0.77rem;color:var(--cs-gray-dark);}\n'
+        '.stat-chip b{font-size:0.91rem;color:var(--cs-anthracite);display:block;margin-bottom:2px;}\n'
+        '.stat-chip.green b{color:var(--cs-forest);}\n'
+        '.stat-chip.red b{color:#C0392B;}\n'
+        # Badges
+        '.badge{display:inline-block;border-radius:4px;padding:2px 8px;font-size:0.68rem;font-weight:700;}\n'
+        '.b-keep{background:#E8F5EF;color:var(--cs-forest);border:1px solid #b3d9c6;}\n'
+        '.b-close{background:#FCECEA;color:#C0392B;border:1px solid #f5beba;}\n'
+        # Show more
+        '.show-more-btn{display:inline-block;margin-top:10px;padding:7px 18px;'
+        'background:#f6f8fb;border:1.5px solid var(--cs-gray-light);border-radius:6px;'
+        'font-size:0.77rem;font-weight:600;color:var(--cs-accent);cursor:pointer;'
+        'transition:background .15s;font-family:inherit;}\n'
+        '.show-more-btn:hover{background:#e0eafc;}\n'
         '.scroll-tbl{max-height:320px;overflow-y:auto;}\n'
-        '.slider-row{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;'
-        'margin-bottom:18px;}\n'
+        # Sliders
+        '.slider-row{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:18px;}\n'
         '@media(max-width:700px){.slider-row{grid-template-columns:1fr;}}\n'
-        '.slider-label{font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:6px;'
+        '.slider-label{font-size:0.78rem;font-weight:600;color:var(--cs-gray-dark);margin-bottom:6px;'
         'display:flex;justify-content:space-between;}\n'
-        '.slider-label span{font-size:0.9rem;font-weight:800;color:#2563eb;}\n'
-        'input[type=range]{width:100%;accent-color:#2563eb;height:4px;cursor:pointer;}\n'
-        '.sc1-desc{font-size:0.78rem;color:#374151;margin-bottom:14px;line-height:1.55;}\n'
+        '.slider-label span{font-size:0.9rem;font-weight:800;color:var(--cs-aubergine);}\n'
+        'input[type=range]{width:100%;accent-color:var(--cs-aubergine);height:4px;cursor:pointer;}\n'
+        '.sc1-desc{font-size:0.78rem;color:var(--cs-gray-dark);margin-bottom:14px;line-height:1.55;}\n'
         '.corr-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 28px;}\n'
         '@media(max-width:700px){.corr-grid{grid-template-columns:1fr;}}\n'
-        # layer toggle buttons
+        # Layer toggles
         '.lyr-toggles{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px;}\n'
-        '.lyr-btn{display:flex;align-items:center;gap:5px;padding:4px 12px;cursor:pointer;'
-        'border-radius:20px;border:1.5px solid #e2e8f0;background:white;font-size:0.74rem;'
-        'font-weight:600;transition:all .15s;user-select:none;}\n'
+        '.lyr-btn{display:flex;align-items:center;gap:5px;padding:5px 13px;cursor:pointer;'
+        'border-radius:20px;border:1.5px solid var(--cs-gray-light);background:#fff;font-size:0.74rem;'
+        'font-weight:600;transition:all .15s;user-select:none;font-family:inherit;}\n'
         '.lyr-btn.lyr-on{opacity:1;}\n'
-        '.lyr-btn.lyr-off{opacity:.45;text-decoration:line-through;background:#f8fafc;}\n'
-        '.lyr-btn.keep-k.lyr-on{border-color:#16a34a;color:#16a34a;}\n'
-        '.lyr-btn.close-k.lyr-on{border-color:#dc2626;color:#dc2626;}\n'
-        # insight card
+        '.lyr-btn.lyr-off{opacity:.4;text-decoration:line-through;background:#f6f8fb;}\n'
+        '.lyr-btn.keep-k.lyr-on{border-color:var(--cs-forest);color:var(--cs-forest);}\n'
+        '.lyr-btn.close-k.lyr-on{border-color:#C0392B;color:#C0392B;}\n'
+        # Insight table
         '.insight-tbl{width:100%;border-collapse:collapse;}\n'
-        '.ic-row{border-bottom:1px solid #f1f5f9;}\n'
-        '.ic-row:hover td{background:#f8fafc;}\n'
-        '.ic-lbl{padding:9px 12px;font-size:0.82rem;font-weight:600;min-width:220px;}\n'
-        '.ic-ctx{font-size:0.69rem;color:#94a3b8;font-weight:400;margin-top:2px;}\n'
-        '.ic-base{padding:9px 12px;text-align:right;font-size:0.85rem;color:#64748b;'
-        'white-space:nowrap;}\n'
-        '.ic-val{padding:9px 12px;text-align:right;font-size:0.88rem;white-space:nowrap;}\n'
-        '.ic-na{color:#94a3b8;}\n'
+        '.ic-row{border-bottom:1px solid #eef0f4;}\n'
+        '.ic-row:hover td{background:#f6f8fb;}\n'
+        '.ic-lbl{padding:10px 12px;font-size:0.82rem;font-weight:600;min-width:220px;}\n'
+        '.ic-ctx{font-size:0.69rem;color:var(--cs-gray);font-weight:400;margin-top:2px;}\n'
+        '.ic-base{padding:10px 12px;text-align:right;font-size:0.85rem;color:var(--cs-gray-dark);white-space:nowrap;}\n'
+        '.ic-val{padding:10px 12px;text-align:right;font-size:0.88rem;white-space:nowrap;}\n'
+        '.ic-na{color:var(--cs-gray);}\n'
         '.ic-sym{font-size:0.72rem;}\n'
-        '.insight-th{padding:7px 12px;font-size:0.69rem;font-weight:700;color:#64748b;'
-        'background:#f8fafc;border-bottom:2px solid #e2e8f0;text-align:right;'
-        'white-space:nowrap;}\n'
+        '.insight-th{padding:8px 12px;font-size:0.67rem;font-weight:700;color:var(--cs-gray-dark);'
+        'background:#f6f8fb;border-bottom:2px solid var(--cs-gray-light);text-align:right;white-space:nowrap;}\n'
         '.insight-th.left{text-align:left;}\n'
+        # Footer
+        '.ftr{background:var(--cs-accent);color:#fff;padding:28px 48px;display:flex;'
+        'align-items:center;justify-content:space-between;gap:20px;position:relative;overflow:hidden;}\n'
+        '.ftr::before{content:"";position:absolute;top:0;left:0;width:44px;height:3px;'
+        'background:rgba(255,255,255,.55);}\n'
+        '.ftr::after{content:"";position:absolute;top:0;left:0;width:3px;height:44px;'
+        'background:rgba(255,255,255,.55);}\n'
+        '.ftr-left{font-size:0.77rem;opacity:.75;line-height:1.7;}\n'
+        '.ftr-claim{font-size:1.15rem;font-weight:800;letter-spacing:.5px;}\n'
+        '.ftr-hash{font-size:0.82rem;font-weight:600;opacity:.72;margin-top:3px;}\n'
+        '@media(max-width:600px){.ftr{flex-direction:column;align-items:flex-start;padding:24px 20px;}}\n'
     )
 
     # ── Assemble HTML ──────────────────────────────────────────────────────────
@@ -1045,14 +1088,22 @@ document.addEventListener('DOMContentLoaded',()=>{
         '<meta charset="UTF-8">\n'
         '<meta name="viewport" content="width=device-width,initial-scale=1.0">\n'
         '<title>Analýza sítě poboček</title>\n'
+        "<link rel='preconnect' href='https://fonts.googleapis.com'>\n"
+        "<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>\n"
+        "<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap' rel='stylesheet'>\n"
         "<link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet'/>\n"
         "<script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>\n"
         '<style>\n' + CSS + '\n</style>\n'
         '</head>\n'
         '<body>\n'
         '<div class="hdr">\n'
-        f'  <h1>🏦 Analýza sítě poboček — optimalizace</h1>\n'
-        f'  <p>{n_total} poboček v perimetru · Dostupnost, kapacita, scénáře</p>\n'
+        '  <div class="hdr-top">Česká spořitelna · Interní analýza</div>\n'
+        f'  <h1>Analýza sítě poboček — optimalizace</h1>\n'
+        f'  <div class="hdr-sub">{n_total} poboček v perimetru · Dostupnost, kapacita, scénáře</div>\n'
+        '  <div class="hdr-meta">\n'
+        f'    <span>Network Analysis Report</span>\n'
+        '    <span class="hdr-claim">Ať se daří</span>\n'
+        '  </div>\n'
         '</div>\n'
         '<div class="wrap">\n'
 
@@ -1086,8 +1137,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 
         # ── Korelace ───────────────────────────────────────────────────────────
         '\n<!-- Korelace -->\n'
-        '<div class="card">\n'
-        '  <div class="ct">🔗 Nejvýznamnější korelace mezi metrikami</div>\n'
+        '<div class="card card-teal">\n'
+        '  <div class="ct ct-teal">🔗 Nejvýznamnější korelace mezi metrikami</div>\n'
         '  <div class="corr-grid">\n'
         f'    <div>{corr_left}</div>\n'
         f'    <div>{corr_right}</div>\n'
@@ -1098,8 +1149,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 
         # ── Scénář 1 ───────────────────────────────────────────────────────────
         '\n<!-- Scénář 1 -->\n'
-        '<div class="card card-full">\n'
-        '  <div style="font-size:1rem;font-weight:700;color:#1d4ed8;margin-bottom:6px;">'
+        '<div class="card card-forest">\n'
+        '  <div style="font-size:1rem;font-weight:700;color:var(--cs-forest);margin-bottom:6px;">'
         '📋 Scénář 1 — nejpřísnější optimalizace</div>\n'
         f'  <div class="sc1-desc">'
         f'<strong>Pravidlo:</strong> Mimo Prahu a Brno zůstane v každém městě <strong>jedna pobočka</strong>'
@@ -1179,10 +1230,10 @@ document.addEventListener('DOMContentLoaded',()=>{
 
         # ── Klíčové dopady ─────────────────────────────────────────────────────
         '\n<!-- Klíčové dopady -->\n'
-        '<div class="card" style="border-top:3px solid #0891b2;">\n'
-        '  <div style="font-size:1rem;font-weight:700;color:#0e7490;margin-bottom:6px;">'
+        '<div class="card card-stone">\n'
+        '  <div style="font-size:1rem;font-weight:700;color:var(--cs-stone);margin-bottom:6px;">'
         '💡 Klíčové dopady — živá srovnávací analýza</div>\n'
-        '  <div style="font-size:0.77rem;color:#64748b;margin-bottom:14px;line-height:1.5;">'
+        '  <div style="font-size:0.77rem;color:var(--cs-gray-dark);margin-bottom:14px;line-height:1.5;">'
         'Hodnoty se aktualizují při každé změně scénáře 1 (klik na pobočku) '
         'i interaktivního modelu (posun slideru). '
         '<span style="color:#94a3b8;">Dostupnost = průměr vzdáleností k 5 nejbližším pobočkám, '
@@ -1193,8 +1244,8 @@ document.addEventListener('DOMContentLoaded',()=>{
         '    <thead><tr>\n'
         '      <th class="insight-th left" style="min-width:260px;">Metrika</th>\n'
         '      <th class="insight-th">Baseline (nyní)</th>\n'
-        '      <th class="insight-th" style="color:#1d4ed8;">📋 Scénář 1</th>\n'
-        '      <th class="insight-th" style="color:#6d28d9;">⚖️ Interaktivní model</th>\n'
+        '      <th class="insight-th" style="color:var(--cs-forest);">📋 Scénář 1</th>\n'
+        '      <th class="insight-th" style="color:var(--cs-aubergine);">⚖️ Interaktivní model</th>\n'
         '    </tr></thead>\n'
         '    <tbody id="insight-body">\n'
         '      <tr><td colspan="4" style="padding:20px;text-align:center;color:#94a3b8;'
@@ -1210,8 +1261,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 
         # ── Interaktivní model ─────────────────────────────────────────────────
         '\n<!-- Interaktivní model -->\n'
-        '<div class="card card-full" style="border-top-color:#7c3aed;">\n'
-        '  <div style="font-size:1rem;font-weight:700;color:#6d28d9;margin-bottom:6px;">'
+        '<div class="card card-aubergine">\n'
+        '  <div style="font-size:1rem;font-weight:700;color:var(--cs-aubergine);margin-bottom:6px;">'
         '⚖️ Interaktivní model — vyvažování priorit</div>\n'
         '  <div class="sc1-desc">'
         'Posun váhy určuje, co má mít přednost při výběru zachované pobočky ve městě.'
@@ -1295,8 +1346,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 
         # ── Pohled přes klienty ────────────────────────────────────────────────
         '\n<!-- Klientský pohled -->\n'
-        '<div class="card" style="border-top:3px solid #ea580c;">\n'
-        '  <div style="font-size:1rem;font-weight:700;color:#c2410c;margin-bottom:6px;">'
+        '<div class="card card-orange">\n'
+        '  <div style="font-size:1rem;font-weight:700;color:var(--cs-orange);margin-bottom:6px;">'
         '👥 Pohled přes klienty — dopad uzavření poboček</div>\n'
         f'  <div style="font-size:0.76rem;color:#64748b;margin-bottom:16px;">'
         f'Analýza {n_close} uzavíraných poboček (Scénář 1) &nbsp;·&nbsp; {_cli_source_note}</div>\n'
@@ -1384,6 +1435,19 @@ document.addEventListener('DOMContentLoaded',()=>{
         '</div>\n'   # /klientský pohled
 
         '</div>\n'  # /wrap
+
+        # ── Footer ČS brand ───────────────────────────────────────────────────
+        '<div class="ftr">\n'
+        '  <div class="ftr-left">\n'
+        f'    Česká spořitelna &nbsp;·&nbsp; Analýza optimalizace sítě poboček<br>\n'
+        f'    {n_total} poboček v perimetru &nbsp;·&nbsp; Scénář 1 + Interaktivní model\n'
+        '  </div>\n'
+        '  <div style="text-align:right;">\n'
+        '    <div class="ftr-claim">Ať se daří</div>\n'
+        '    <div class="ftr-hash">#silnější</div>\n'
+        '  </div>\n'
+        '</div>\n'
+
         '<script>\n' + js_code + '\n</script>\n'
         '</body>\n'
         '</html>'
