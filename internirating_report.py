@@ -6259,43 +6259,60 @@ def generate_simulation_standalone_report(html_250, html_280, html_300):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Simulace sítě poboček 2030</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+:root{{
+  --cs-accent:#2870ED;--cs-teal:#02A3A4;--cs-forest:#028661;--cs-apple:#0CB43F;
+  --cs-orange:#FF6130;--cs-pink:#EB4C79;--cs-aubergine:#721C7A;--cs-stone:#245375;
+  --cs-anthracite:#202020;--cs-gray-dark:#4A4A4A;--cs-gray:#9B9B9B;
+  --cs-gray-light:#E6E6E6;--cs-bg:#F4F6FA;
+}}
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0;}}
-body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-     background:#f0f4fb;color:#0f172a;}}
-.page-header{{background:linear-gradient(135deg,#1e40af,#2770f0);color:#fff;
-              padding:22px 32px;}}
-.page-header h1{{font-size:1.5rem;font-weight:800;letter-spacing:-.5px;}}
-.page-header p{{font-size:0.82rem;opacity:.8;margin-top:4px;}}
-.tabs{{display:flex;gap:0;background:#fff;border-bottom:2px solid #e8edf5;
+body{{font-family:"Inter",Arial,"Helvetica Neue",sans-serif;
+     background:var(--cs-bg);color:var(--cs-anthracite);line-height:1.5;}}
+.page-header{{position:relative;background:var(--cs-accent);color:#fff;
+              padding:32px 48px 24px;overflow:hidden;}}
+.page-header::before{{content:"";position:absolute;top:0;left:0;width:52px;height:3px;background:rgba(255,255,255,.65);}}
+.page-header::after{{content:"";position:absolute;top:0;left:0;width:3px;height:52px;background:rgba(255,255,255,.65);}}
+.page-header h1{{font-size:1.6rem;font-weight:800;letter-spacing:-.3px;line-height:1.2;}}
+.page-header p{{font-size:0.83rem;opacity:.82;margin-top:5px;}}
+.tabs{{display:flex;gap:0;background:#fff;border-bottom:2px solid var(--cs-gray-light);
        padding:0 24px;position:sticky;top:0;z-index:100;
        box-shadow:0 2px 8px rgba(0,0,0,.06);}}
 .tab-btn{{padding:12px 20px;border:none;background:none;cursor:pointer;
-          font-size:0.85rem;font-weight:600;color:#64748b;border-bottom:3px solid transparent;
-          transition:all .15s;white-space:nowrap;}}
-.tab-btn.active{{color:#2770f0;border-bottom-color:#2770f0;}}
-.tab-btn:hover:not(.active){{color:#1e40af;background:#f8fbff;}}
+          font-size:0.85rem;font-weight:600;color:var(--cs-gray-dark);border-bottom:3px solid transparent;
+          transition:all .15s;white-space:nowrap;font-family:inherit;}}
+.tab-btn.active{{color:var(--cs-accent);border-bottom-color:var(--cs-accent);}}
+.tab-btn:hover:not(.active){{color:var(--cs-stone);background:#f4f6fa;}}
 .tab-panel{{display:none;padding:24px;max-width:1600px;margin:0 auto;}}
 .tab-panel.active{{display:block;}}
-.card{{background:#fff;border-radius:10px;border:1px solid #e8edf5;
+.card{{background:#fff;border-radius:10px;border:1px solid var(--cs-gray-light);
        box-shadow:0 2px 8px rgba(0,0,0,.04);padding:18px 20px;margin-bottom:16px;}}
-.card-title{{font-size:1rem;font-weight:700;color:#1e3a5f;margin-bottom:14px;}}
+.card-title{{font-size:1rem;font-weight:700;color:var(--cs-stone);margin-bottom:14px;}}
 .cmp-table{{width:100%;border-collapse:collapse;}}
-.cmp-table th{{background:#f8fbff;padding:8px 12px;border:1px solid #e8edf5;
+.cmp-table th{{background:#f4f6fa;padding:8px 12px;border:1px solid var(--cs-gray-light);
                font-size:0.78rem;color:#555;text-align:center;}}
 .cmp-table th:first-child{{text-align:left;}}
-.cmp-table th.hbase{{background:#ecfdf5;color:#065f46;}}
-.cmp-table th.h250{{background:#eff6ff;color:#1d4ed8;}}
-.cmp-table th.h280{{background:#ecfeff;color:#155e75;}}
-.cmp-table th.h300{{background:#f5f3ff;color:#6d28d9;}}
+.cmp-table th.hbase{{background:#e6f4f0;color:var(--cs-forest);}}
+.cmp-table th.h250{{background:#e8f0fd;color:var(--cs-accent);}}
+.cmp-table th.h280{{background:#e0f6f6;color:var(--cs-teal);}}
+.cmp-table th.h300{{background:#f0e8f6;color:var(--cs-aubergine);}}
 .br-table{{width:100%;border-collapse:collapse;font-size:0.82rem;}}
-.br-search{{padding:8px 14px;border:1px solid #d1d5db;border-radius:8px;
-            font-size:0.85rem;width:280px;outline:none;}}
-.br-search:focus{{border-color:#2770f0;box-shadow:0 0 0 3px #2770f022;}}
+.br-search{{padding:8px 14px;border:1px solid var(--cs-gray-light);border-radius:8px;
+            font-size:0.85rem;width:280px;outline:none;font-family:inherit;}}
+.br-search:focus{{border-color:var(--cs-accent);box-shadow:0 0 0 3px rgba(40,112,237,.15);}}
+.page-footer{{position:relative;background:var(--cs-accent);color:#fff;
+              padding:20px 48px;display:flex;justify-content:space-between;align-items:center;
+              margin-top:32px;overflow:hidden;}}
+.page-footer::before{{content:"";position:absolute;top:0;left:0;width:52px;height:3px;background:rgba(255,255,255,.6);}}
+.page-footer::after{{content:"";position:absolute;top:0;left:0;width:3px;height:52px;background:rgba(255,255,255,.6);}}
+.page-footer-claim{{font-size:1.05rem;font-weight:800;letter-spacing:.4px;}}
+.page-footer-hash{{font-size:0.78rem;font-weight:600;opacity:.72;margin-top:2px;}}
 @media(max-width:768px){{
   .tabs{{overflow-x:auto;}}
   .tab-panel{{padding:12px;}}
   .br-table{{font-size:0.72rem;}}
+  .page-header{{padding:24px 24px 18px;}}
 }}
 </style>
 </head>
@@ -6394,15 +6411,15 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <div style="overflow-x:auto;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);">
       <table class="br-table" id="br-tbl">
         <thead style="position:sticky;top:0;z-index:5;">
-          <tr style="background:#2770f0;color:white;">
-            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:left;min-width:180px;">Pobo&#269;ka</th>
-            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:center;min-width:65px;">Sim.</th>
-            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:center;min-width:110px;">Rating 2025&#x2192;2030</th>
-            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:center;min-width:110px;">C/I trend<br><span style="font-weight:400;font-size:0.65rem;opacity:.85;">ni&#382;&#353;&#237; = lep&#353;&#237; &middot; v&#225;ha 40&nbsp;%</span></th>
-            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:left;min-width:130px;">C/I hodnoty</th>
-            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:center;min-width:110px;">V&#253;nosy trend<br><span style="font-weight:400;font-size:0.65rem;opacity:.85;">vy&#353;&#353;&#237; = lep&#353;&#237; &middot; v&#225;ha 60&nbsp;%</span></th>
-            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:left;min-width:140px;">Nov&#233; v&#253;nosy + CAGR</th>
-            <th style="padding:7px 8px;border:1px solid #1a4db5;text-align:left;min-width:130px;">Klienti 2030</th>
+          <tr style="background:var(--cs-accent);color:white;">
+            <th style="padding:7px 8px;border:1px solid rgba(255,255,255,.25);text-align:left;min-width:180px;">Pobo&#269;ka</th>
+            <th style="padding:7px 8px;border:1px solid rgba(255,255,255,.25);text-align:center;min-width:65px;">Sim.</th>
+            <th style="padding:7px 8px;border:1px solid rgba(255,255,255,.25);text-align:center;min-width:110px;">Rating 2025&#x2192;2030</th>
+            <th style="padding:7px 8px;border:1px solid rgba(255,255,255,.25);text-align:center;min-width:110px;">C/I trend<br><span style="font-weight:400;font-size:0.65rem;opacity:.85;">ni&#382;&#353;&#237; = lep&#353;&#237; &middot; v&#225;ha 40&nbsp;%</span></th>
+            <th style="padding:7px 8px;border:1px solid rgba(255,255,255,.25);text-align:left;min-width:130px;">C/I hodnoty</th>
+            <th style="padding:7px 8px;border:1px solid rgba(255,255,255,.25);text-align:center;min-width:110px;">V&#253;nosy trend<br><span style="font-weight:400;font-size:0.65rem;opacity:.85;">vy&#353;&#353;&#237; = lep&#353;&#237; &middot; v&#225;ha 60&nbsp;%</span></th>
+            <th style="padding:7px 8px;border:1px solid rgba(255,255,255,.25);text-align:left;min-width:140px;">Nov&#233; v&#253;nosy + CAGR</th>
+            <th style="padding:7px 8px;border:1px solid rgba(255,255,255,.25);text-align:left;min-width:130px;">Klienti 2030</th>
           </tr>
         </thead>
         <tbody id="br-tbody">
@@ -6670,6 +6687,16 @@ function sensCompute(wci, wrev) {{
 // Init sensitivity
 setTimeout(function() {{ sensCompute(0.40, 0.60); }}, 50);
 </script>
+
+<footer class="page-footer">
+  <div style="font-size:0.83rem;opacity:.85;">
+    Česká spořitelna &nbsp;·&nbsp; Simulace sítě poboček &ndash; výhled 2030
+  </div>
+  <div style="text-align:right;">
+    <div class="page-footer-claim">Ať se daří</div>
+    <div class="page-footer-hash">#silnější</div>
+  </div>
+</footer>
 </body>
 </html>"""
 
@@ -14315,26 +14342,41 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
 
     bootstrap_css = '''
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
     :root {
-        --brand:    #2770f0;
+        --cs-accent:    #2870ED;
+        --cs-teal:      #02A3A4;
+        --cs-forest:    #028661;
+        --cs-apple:     #0CB43F;
+        --cs-orange:    #FF6130;
+        --cs-pink:      #EB4C79;
+        --cs-aubergine: #721C7A;
+        --cs-stone:     #245375;
+        --cs-anthracite:#202020;
+        --cs-gray-dark: #4A4A4A;
+        --cs-gray:      #9B9B9B;
+        --cs-gray-light:#E6E6E6;
+        --cs-bg:        #F4F6FA;
+        /* legacy aliases used throughout */
+        --brand:    var(--cs-accent);
         --brand-dk: #1a4db5;
-        --brand-bg: #eef4ff;
-        --pos:      #0bb440;
+        --brand-bg: #e8f0fd;
+        --pos:      var(--cs-apple);
         --pos-bg:   #eafaf1;
-        --accent:   #eb4d79;
+        --accent:   var(--cs-pink);
         --accent-bg:#fdf0f4;
-        --warn:     #f59e0b;
-        --warn-bg:  #fffbeb;
-        --muted:    #6b7280;
-        --border:   #dde4f5;
+        --warn:     var(--cs-orange);
+        --warn-bg:  #fff4ee;
+        --muted:    var(--cs-gray);
+        --border:   var(--cs-gray-light);
         --surface:  #ffffff;
-        --page-bg:  #f7f9fc;
+        --page-bg:  var(--cs-bg);
     }
 
     /* ── Základní layout ───────────────────────────────────────────── */
     .report-wrapper {
-        font-family: 'Segoe UI', Arial, sans-serif;
+        font-family: "Inter", Arial, "Helvetica Neue", sans-serif;
         padding: 32px 36px;
         background: var(--page-bg);
         max-width: 1600px;
@@ -14343,8 +14385,8 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
     .region-title {
         font-size: 1.45rem;
         font-weight: 700;
-        color: #0f172a;
-        border-left: 6px solid var(--brand);
+        color: var(--cs-anthracite);
+        border-left: 6px solid var(--cs-accent);
         padding: 6px 0 6px 16px;
         margin-bottom: 28px;
         background: var(--brand-bg);
@@ -14355,7 +14397,7 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
         margin-bottom: 12px;
         font-size: 1.1rem;
         font-weight: 700;
-        color: #0f172a;
+        color: var(--cs-stone);
         padding-bottom: 6px;
         border-bottom: 2px solid var(--border);
     }
@@ -14523,11 +14565,11 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
     <div style="overflow-x:auto;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
       <table style="width:100%;border-collapse:collapse;font-size:0.83rem;">
         <thead>
-          <tr style="background:#2770f0;">
-            <th style="padding:8px 12px;text-align:left;color:white;font-weight:600;border:1px solid #1a4db5;">Dataset</th>
-            <th style="padding:8px 12px;text-align:left;color:white;font-weight:600;border:1px solid #1a4db5;">Zdroj (cesta)</th>
-            <th style="padding:8px 12px;text-align:center;color:white;font-weight:600;border:1px solid #1a4db5;white-space:nowrap;">Platnost dat</th>
-            <th style="padding:8px 12px;text-align:left;color:white;font-weight:600;border:1px solid #1a4db5;">Popis</th>
+          <tr style="background:var(--cs-accent);">
+            <th style="padding:8px 12px;text-align:left;color:white;font-weight:600;border:1px solid rgba(255,255,255,.2);">Dataset</th>
+            <th style="padding:8px 12px;text-align:left;color:white;font-weight:600;border:1px solid rgba(255,255,255,.2);">Zdroj (cesta)</th>
+            <th style="padding:8px 12px;text-align:center;color:white;font-weight:600;border:1px solid rgba(255,255,255,.2);white-space:nowrap;">Platnost dat</th>
+            <th style="padding:8px 12px;text-align:left;color:white;font-weight:600;border:1px solid rgba(255,255,255,.2);">Popis</th>
           </tr>
         </thead>
         <tbody>{datasets_rows}</tbody>
@@ -15245,7 +15287,7 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
     {bootstrap_css}
     <div class="region-title">📊 Celkový přehled ratingů 2026 — celá síť</div>
     <div style="font-size:0.85rem;color:#444;margin:-8px 0 20px 0;padding:8px 16px;
-                background:#f0f6ff;border-left:4px solid #2770f0;border-radius:0 6px 6px 0;
+                background:#e8f0fd;border-left:4px solid var(--cs-accent);border-radius:0 6px 6px 0;
                 display:inline-block;">
       📊 <strong>{len(rating_status)}</strong> poboček &nbsp;·&nbsp;
       DBS ke dni <strong>{DBS_DATE}</strong>
@@ -16226,7 +16268,7 @@ function obSet_{_fn_slug}(btn, ob){{
     {bootstrap_css}
     <div class="region-title">🗺️ Regionální report 2026 — {region}</div>
     <div style="font-size:0.85rem;color:#444;margin:-8px 0 20px 0;padding:8px 16px;
-                background:#f0f6ff;border-left:4px solid #2770f0;border-radius:0 6px 6px 0;
+                background:#e8f0fd;border-left:4px solid var(--cs-accent);border-radius:0 6px 6px 0;
                 display:inline-block;">
       📊 <strong>{len(df_reg)}</strong> poboček v regionu &nbsp;·&nbsp;
       DBS ke dni <strong>{DBS_DATE}</strong>
@@ -17437,27 +17479,31 @@ function obSet_{_fn_slug}(btn, ob){{
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Výstup z WS BNS 2026</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f8faff;color:#1e293b;}}
+  :root{{--cs-accent:#2870ED;--cs-teal:#02A3A4;--cs-forest:#028661;--cs-stone:#245375;
+         --cs-aubergine:#721C7A;--cs-orange:#FF6130;--cs-pink:#EB4C79;
+         --cs-anthracite:#202020;--cs-gray-light:#E6E6E6;--cs-bg:#F4F6FA;}}
+  body{{font-family:"Inter",Arial,"Helvetica Neue",sans-serif;margin:0;background:var(--cs-bg);color:var(--cs-anthracite);}}
   .bns-wrapper{{max-width:1400px;margin:0 auto;padding:20px;}}
-  details.collapsible-section{{margin-bottom:6px;border:1px solid #dde4f5;border-radius:8px;background:white;}}
+  details.collapsible-section{{margin-bottom:6px;border:1px solid var(--cs-gray-light);border-radius:8px;background:white;}}
   details.collapsible-section summary{{display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none;
-    padding:10px 14px;border-radius:8px;background:linear-gradient(90deg,#f0f4ff,#f8faff);
-    border-bottom:1px solid #dde4f5;user-select:none;outline:none;}}
+    padding:10px 14px;border-radius:8px;background:#f4f6fa;
+    border-bottom:1px solid var(--cs-gray-light);user-select:none;outline:none;}}
   details.collapsible-section[open] summary{{border-radius:8px 8px 0 0;}}
   .cnt-pad{{padding:16px;}}
   @supports (-webkit-touch-callout: none) {{
     input[type="text"],input[type="search"],input:not([type]),select,textarea{{font-size:16px!important;}}
     button,summary,a,label,[onclick]{{-webkit-tap-highlight-color:transparent;touch-action:manipulation;}}
   }}
-  [style*="overflow-x:auto"],-webkit-overflow-scrolling{{-webkit-overflow-scrolling:touch;}}
+  [style*="overflow-x:auto"]{{-webkit-overflow-scrolling:touch;}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/apexcharts@3"></script>
 </head><body>
 <div class="bns-wrapper">
   <div style="margin-bottom:24px;padding:20px 24px;background:white;border-radius:12px;
-              border-left:6px solid #2770f0;box-shadow:0 2px 8px rgba(0,0,0,.06);">
-    <div style="font-size:1.6rem;font-weight:800;color:#0f172a;margin-bottom:4px;">
+              border-left:6px solid var(--cs-accent);box-shadow:0 2px 8px rgba(0,0,0,.06);">
+    <div style="font-size:1.6rem;font-weight:800;color:var(--cs-stone);margin-bottom:4px;">
       🏦 Výstup z WS BNS 2026</div>
     <div style="font-size:0.88rem;color:#555;">
       📅 DBS ke dni <strong>{DBS_DATE}</strong> &nbsp;·&nbsp;
@@ -17487,6 +17533,17 @@ function obSet_{_fn_slug}(btn, ob){{
   {_sec_detail}
 
 </div>
+
+<footer style="position:relative;background:var(--cs-accent);color:#fff;padding:18px 48px;
+               display:flex;justify-content:space-between;align-items:center;overflow:hidden;">
+  <span style="position:absolute;top:0;left:0;width:52px;height:3px;background:rgba(255,255,255,.6);"></span>
+  <span style="position:absolute;top:0;left:0;width:3px;height:52px;background:rgba(255,255,255,.6);"></span>
+  <div style="font-size:0.82rem;opacity:.85;">Česká spořitelna &nbsp;·&nbsp; WS BNS 2026 — Strategie sítě poboček</div>
+  <div style="text-align:right;">
+    <div style="font-size:1rem;font-weight:800;letter-spacing:.4px;">Ať se daří</div>
+    <div style="font-size:0.75rem;font-weight:600;opacity:.72;">#silnější</div>
+  </div>
+</footer>
 </body></html>'''
 
             _bns_output = output_prefix + '_ws_bns_2026.html'
@@ -18578,7 +18635,7 @@ function obSet_{_fn_slug}(btn, ob){{
     {bootstrap_css}
     <div class="region-title">📊 Porovnání regionů 2026</div>
     <div style="font-size:0.85rem;color:#444;margin:-8px 0 20px 0;padding:8px 16px;
-                background:#f0f6ff;border-left:4px solid #2770f0;border-radius:0 6px 6px 0;
+                background:#e8f0fd;border-left:4px solid var(--cs-accent);border-radius:0 6px 6px 0;
                 display:inline-block;">
       📅 DBS ke dni <strong>{DBS_DATE}</strong> &nbsp;·&nbsp;
       <strong>{_n_regions}</strong> regionů &nbsp;·&nbsp;
@@ -20182,28 +20239,42 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
 
     bootstrap_css = '''
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-    body { font-family: 'Segoe UI', Arial, sans-serif; background:#f8f9fb; }
+    :root {
+        --cs-accent:    #2870ED;
+        --cs-teal:      #02A3A4;
+        --cs-forest:    #028661;
+        --cs-apple:     #0CB43F;
+        --cs-orange:    #FF6130;
+        --cs-pink:      #EB4C79;
+        --cs-aubergine: #721C7A;
+        --cs-stone:     #245375;
+        --cs-anthracite:#202020;
+        --cs-gray-light:#E6E6E6;
+        --cs-bg:        #F4F6FA;
+    }
+    body { font-family: "Inter", Arial, "Helvetica Neue", sans-serif; background:var(--cs-bg); color:var(--cs-anthracite); }
     .report-wrapper { padding: 28px; max-width: 1400px; margin: 0 auto; }
     .section-header { margin-top: 32px; margin-bottom: 12px; font-size: 1.15rem;
-                      font-weight: 600; color: #2c3e50; }
+                      font-weight: 600; color: var(--cs-stone); }
     .table { font-size: 0.82rem; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .table thead th { background-color: #2770f0 !important; color: white !important;
+    .table thead th { background-color: var(--cs-accent) !important; color: white !important;
                       text-align: center; vertical-align: middle; white-space: nowrap;
-                      border: 1px solid #1e5bc9; position: sticky; top: 0; z-index: 10; }
+                      border: 1px solid rgba(255,255,255,.2); position: sticky; top: 0; z-index: 10; }
     .table tbody td { vertical-align: middle; text-align: center; white-space: nowrap;
-                      border: 1px solid #dee2e6; }
-    .benchmark-val { font-weight: bold; color: #2770f0; }
+                      border: 1px solid var(--cs-gray-light); }
+    .benchmark-val { font-weight: bold; color: var(--cs-accent); }
     .legend-box { margin-top: 40px; padding: 20px; background: #fff;
-                  border: 1px solid #dee2e6; border-radius: 8px; }
-    .age-section-card { background: #fff; border: 1px solid #dee2e6; border-radius: 8px;
+                  border: 1px solid var(--cs-gray-light); border-radius: 8px; }
+    .age-section-card { background: #fff; border: 1px solid var(--cs-gray-light); border-radius: 8px;
                         padding: 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
     .scorecard { background: #fff; border-radius: 10px; padding: 14px 18px;
-                 box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-left: 5px solid #2770f0;
+                 box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-left: 5px solid var(--cs-accent);
                  min-width: 140px; }
     .scorecard .sc-label { font-size: 0.75rem; color: #888; font-weight: 600;
                            text-transform: uppercase; letter-spacing: 0.4px; }
-    .scorecard .sc-value { font-size: 1.35rem; font-weight: 700; color: #1a2a4a;
+    .scorecard .sc-value { font-size: 1.35rem; font-weight: 700; color: var(--cs-stone);
                            line-height: 1.2; margin-top: 2px; }
     .scorecard .sc-sub { font-size: 0.75rem; color: #aaa; margin-top: 2px; }
     .bm-tbl td, .bm-tbl th { padding: 5px 12px !important; }
@@ -20211,7 +20282,7 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
     details.collapsible-section > summary { list-style: none; }
     details.collapsible-section > summary::-webkit-details-marker { display: none; }
     details.collapsible-section > summary::marker { display: none; }
-    details.collapsible-section[open] > summary { border-radius: 8px 8px 0 0; border-bottom: 1px solid #dde4f5; }
+    details.collapsible-section[open] > summary { border-radius: 8px 8px 0 0; border-bottom: 1px solid var(--cs-gray-light); }
     details.collapsible-section:not([open]) > summary { border-radius: 8px; border-bottom: none; }
     .table thead th { position: -webkit-sticky; position: sticky; }
     [style*="overflow-y:auto"], [style*="overflow-x:auto"] { -webkit-overflow-scrolling: touch; }
@@ -22570,13 +22641,13 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
   <div style="display:flex;align-items:flex-start;justify-content:space-between;
               flex-wrap:wrap;gap:12px;margin-bottom:8px;">
     <div>
-      <h1 style="color:#1a3a5a;border-left:8px solid #2770f0;padding-left:15px;
+      <h1 style="color:var(--cs-stone);border-left:8px solid var(--cs-accent);padding-left:15px;
                  font-weight:bold;margin-bottom:4px;font-size:1.6rem;">{branch_name}</h1>
       <div style="padding-left:22px;color:#666;font-size:0.88rem;display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px;">
         📍 {region} &nbsp;·&nbsp; ID: <b>{branch_code}</b>
         &nbsp;&nbsp;
         {'<span style="background:#edf9f5;color:#1a8a6a;border:1px solid #a8dfc8;border-radius:12px;padding:2px 11px;font-size:0.82rem;font-weight:600;">🏦 Bezhotovostní</span>' if is_cashless_branch else '<span style="background:#fff5ef;color:#c05a10;border:1px solid #f5c9a8;border-radius:12px;padding:2px 11px;font-size:0.82rem;font-weight:600;">💵 Hotovostní</span>'}
-        <span style="background:#f0f4ff;color:#2770f0;border:1px solid #b8ccf7;border-radius:12px;padding:2px 11px;font-size:0.82rem;font-weight:600;">📐 {format_p}</span>
+        <span style="background:#e8f0fd;color:var(--cs-accent);border:1px solid rgba(40,112,237,.3);border-radius:12px;padding:2px 11px;font-size:0.82rem;font-weight:600;">📐 {format_p}</span>
         {(lambda close=_rok_str(_v(row,"PLAN_CLOSE_(ROK)")), inv=_inv_label, cl=_cl_str:
             f'<span style="background:#fdecea;color:#d62728;border:1px solid #f5b8b8;border-radius:12px;padding:2px 11px;font-size:0.82rem;font-weight:600;">🔴 Plán uzavření {close}</span>'
             if close else
@@ -22622,6 +22693,17 @@ def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovost
   {_f_atm}
 
 </div>
+
+<footer style="position:relative;background:var(--cs-accent);color:#fff;padding:18px 32px;
+               display:flex;justify-content:space-between;align-items:center;margin-top:24px;overflow:hidden;">
+  <span style="position:absolute;top:0;left:0;width:48px;height:3px;background:rgba(255,255,255,.6);"></span>
+  <span style="position:absolute;top:0;left:0;width:3px;height:48px;background:rgba(255,255,255,.6);"></span>
+  <div style="font-size:0.82rem;opacity:.85;">Česká spořitelna &nbsp;·&nbsp; {branch_name} &nbsp;·&nbsp; Report 2026</div>
+  <div style="text-align:right;">
+    <div style="font-size:1rem;font-weight:800;letter-spacing:.4px;">Ať se daří</div>
+    <div style="font-size:0.75rem;font-weight:600;opacity:.72;">#silnější</div>
+  </div>
+</footer>
 </body>
 </html>"""
 
@@ -23464,7 +23546,7 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
     top_pct    = float(br_agg.sort_values('pct_single', ascending=False).iloc[0]['pct_single']) if not br_agg.empty else 0.0
     top_pct_br = str(br_agg.sort_values('pct_single', ascending=False).iloc[0]['branch_name']) if not br_agg.empty else '—'
 
-    def _kpi(val, lbl, col='#2770f0', bg='#eff6ff', bo='#bfdbfe'):
+    def _kpi(val, lbl, col='var(--cs-accent)', bg='#e8f0fd', bo='rgba(40,112,237,.3)'):
         return (
             f'<div style="background:{bg};border:1px solid {bo};border-radius:10px;'
             f'padding:12px 18px;text-align:center;min-width:120px;flex:1;">'
@@ -23494,15 +23576,21 @@ def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Jednočlenný provoz poboček — Analýza</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+:root{{--cs-accent:#2870ED;--cs-teal:#02A3A4;--cs-forest:#028661;--cs-stone:#245375;
+       --cs-aubergine:#721C7A;--cs-orange:#FF6130;--cs-anthracite:#202020;
+       --cs-gray-light:#E6E6E6;--cs-bg:#F4F6FA;}}
 *{{box-sizing:border-box;margin:0;padding:0;}}
-body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f0f4fb;color:#1e2a38;}}
-.hdr{{background:linear-gradient(135deg,#1a3a6c 0%,#2770f0 100%);color:white;padding:22px 32px 18px;}}
-.hdr h1{{font-size:1.45rem;font-weight:800;margin-bottom:3px;}}
+body{{font-family:"Inter",Arial,"Helvetica Neue",sans-serif;background:var(--cs-bg);color:var(--cs-anthracite);}}
+.hdr{{position:relative;background:var(--cs-accent);color:white;padding:28px 48px 20px;overflow:hidden;}}
+.hdr::before{{content:"";position:absolute;top:0;left:0;width:52px;height:3px;background:rgba(255,255,255,.65);}}
+.hdr::after{{content:"";position:absolute;top:0;left:0;width:3px;height:52px;background:rgba(255,255,255,.65);}}
+.hdr h1{{font-size:1.45rem;font-weight:800;margin-bottom:3px;line-height:1.2;}}
 .hdr p{{font-size:0.8rem;opacity:.75;}}
 .wrap{{max-width:1260px;margin:0 auto;padding:22px 18px;}}
 .card{{background:white;border-radius:12px;padding:18px 20px;box-shadow:0 1px 5px rgba(0,0,0,.07);margin-bottom:18px;}}
-.ct{{font-size:0.72rem;font-weight:700;color:#2770f0;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;}}
+.ct{{font-size:0.72rem;font-weight:700;color:var(--cs-accent);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;}}
 .krow{{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;}}
 .ovr-note{{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 14px;font-size:0.75rem;color:#92400e;margin-bottom:14px;}}
 table{{width:100%;border-collapse:collapse;font-size:0.8rem;}}
@@ -23540,23 +23628,23 @@ td.clik:hover{{color:#1e40af!important;}}
             box-shadow:0 24px 64px rgba(0,0,0,.35);animation:mb-in .18s ease;}}
 @keyframes mb-in{{from{{opacity:0;transform:translateY(-14px)}}to{{opacity:1;transform:none}}}}
 .modal-hdr{{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}}
-.modal-title{{font-size:1rem;font-weight:700;color:#1e40af;}}
-.modal-close{{background:#e8f0fe;border:none;border-radius:8px;padding:5px 13px;
-              cursor:pointer;color:#2770f0;font-weight:700;font-size:0.9rem;}}
-.modal-close:hover{{background:#dbeafe;}}
+.modal-title{{font-size:1rem;font-weight:700;color:var(--cs-stone);}}
+.modal-close{{background:#e8f0fd;border:none;border-radius:8px;padding:5px 13px;
+              cursor:pointer;color:var(--cs-accent);font-weight:700;font-size:0.9rem;}}
+.modal-close:hover{{background:#d4e4fb;}}
 .modal-bar-wrap{{background:#e5e7eb;border-radius:3px;height:6px;margin:3px 0 1px;width:80px;display:inline-block;vertical-align:middle;}}
 .modal-bar{{height:100%;border-radius:3px;}}
 
 /* Sortable / filterable table */
 .srt{{cursor:pointer;user-select:none;}}
-.srt:hover{{background:#e8f0fe;color:#1e40af;}}
+.srt:hover{{background:#e8f0fd;color:var(--cs-stone);}}
 .sico{{margin-right:3px;color:#94a3b8;font-size:0.8em;}}
-.srt.asc .sico,.srt.desc .sico{{color:#2770f0;}}
+.srt.asc .sico,.srt.desc .sico{{color:var(--cs-accent);}}
 .myr{{font-size:0.62rem;color:#94a3b8;font-weight:400;}}
 .fil-wrap{{display:flex;align-items:center;gap:10px;margin-bottom:10px;}}
 .fil-inp{{flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:7px 13px;
           font-size:0.82rem;outline:none;}}
-.fil-inp:focus{{border-color:#2770f0;box-shadow:0 0 0 3px #dbeafe;}}
+.fil-inp:focus{{border-color:var(--cs-accent);box-shadow:0 0 0 3px rgba(40,112,237,.2);}}
 .fil-cnt{{font-size:0.75rem;color:#64748b;white-space:nowrap;}}
 
 /* Branch detail */
@@ -23877,6 +23965,17 @@ function tgDet(bn, bid) {{
   }});
 }})();
 </script>
+
+<footer style="position:relative;background:var(--cs-accent);color:#fff;padding:18px 48px;
+               display:flex;justify-content:space-between;align-items:center;overflow:hidden;">
+  <span style="position:absolute;top:0;left:0;width:52px;height:3px;background:rgba(255,255,255,.6);"></span>
+  <span style="position:absolute;top:0;left:0;width:3px;height:52px;background:rgba(255,255,255,.6);"></span>
+  <div style="font-size:0.82rem;opacity:.85;">Česká spořitelna &nbsp;·&nbsp; Jednočlenný provoz poboček — Analýza</div>
+  <div style="text-align:right;">
+    <div style="font-size:1rem;font-weight:800;letter-spacing:.4px;">Ať se daří</div>
+    <div style="font-size:0.75rem;font-weight:600;opacity:.72;">#silnější</div>
+  </div>
+</footer>
 </body>
 </html>"""
 
