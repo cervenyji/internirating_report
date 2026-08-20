@@ -15460,8 +15460,91 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
 </div>'''
 
         filename = f"{output_prefix}_staticky.html"
+        _cs_static_page = f'''<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rating poboček 2026 — Celkový přehled &ndash; Česká spořitelna</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{{
+  --cs-accent:#2870ED;--cs-teal:#02A3A4;--cs-forest:#028661;--cs-apple:#0CB43F;
+  --cs-orange:#FF6130;--cs-pink:#EB4C79;--cs-aubergine:#721C7A;--cs-stone:#245375;
+  --cs-anthracite:#202020;--cs-gray:#9B9B9B;--cs-gray-light:#E6E6E6;--cs-bg:#F4F6FA;
+  --brand:var(--cs-accent);--brand-bg:#e8f0fd;--border:var(--cs-gray-light);--surface:#fff;
+  --page-bg:var(--cs-bg);
+}}
+body{{font-family:"Inter",Arial,"Helvetica Neue",sans-serif;background:var(--cs-bg);
+     color:var(--cs-anthracite);margin:0;line-height:1.5;}}
+.cs-hero{{position:relative;background:var(--cs-accent);color:#fff;
+          padding:36px 48px 28px;overflow:hidden;}}
+.cs-hero::before{{content:"";position:absolute;top:0;left:0;
+                  width:56px;height:3px;background:rgba(255,255,255,.65);}}
+.cs-hero::after{{content:"";position:absolute;top:0;left:0;
+                 width:3px;height:56px;background:rgba(255,255,255,.65);}}
+.cs-hero-topline{{font-size:0.68rem;text-transform:uppercase;letter-spacing:2.5px;
+                  opacity:.72;margin-bottom:10px;font-weight:600;}}
+.cs-hero h1{{font-size:2rem;font-weight:800;margin:0 0 8px;line-height:1.1;letter-spacing:-.3px;}}
+.cs-hero-sub{{font-size:0.88rem;opacity:.82;margin:0;}}
+.cs-footer{{position:relative;background:var(--cs-accent);color:#fff;
+            padding:22px 48px;display:flex;justify-content:space-between;
+            align-items:center;overflow:hidden;margin-top:0;}}
+.cs-footer::before{{content:"";position:absolute;top:0;left:0;
+                    width:56px;height:3px;background:rgba(255,255,255,.65);}}
+.cs-footer::after{{content:"";position:absolute;top:0;left:0;
+                   width:3px;height:56px;background:rgba(255,255,255,.65);}}
+/* override fragment styles that embed bootstrap_css inside div */
+.report-wrapper{{font-family:"Inter",Arial,sans-serif !important;
+                 background:var(--cs-bg);padding:32px 36px;
+                 max-width:1600px;margin:0 auto;}}
+.report-wrapper .region-title{{border-left-color:var(--cs-accent) !important;
+                                background:var(--brand-bg) !important;
+                                color:var(--cs-anthracite) !important;}}
+.report-wrapper .section-header{{color:var(--cs-stone) !important;
+                                  border-bottom-color:var(--cs-gray-light) !important;}}
+.report-wrapper .table thead th{{background-color:var(--cs-accent) !important;
+                                  border-color:rgba(255,255,255,.2) !important;}}
+.report-wrapper .benchmark-val{{color:var(--cs-accent) !important;}}
+.report-wrapper .legend-title{{color:var(--cs-accent) !important;}}
+details.collapsible-section>summary{{
+  background:var(--brand-bg) !important;color:var(--cs-accent) !important;
+  border-color:var(--cs-gray-light) !important;font-family:"Inter",Arial,sans-serif !important;
+}}
+details.collapsible-section>summary:hover{{background:#d4e4fb !important;}}
+@media(max-width:768px){{
+  .cs-hero{{padding:24px 24px 18px;}}
+  .cs-footer{{flex-direction:column;gap:10px;text-align:center;}}
+}}
+</style>
+</head>
+<body>
+
+<header class="cs-hero">
+  <div class="cs-hero-topline">Česká spořitelna</div>
+  <h1>Celkový přehled ratingů 2026</h1>
+  <p class="cs-hero-sub">
+    <strong>{len(rating_status)}</strong> poboček v přehledu
+    &nbsp;·&nbsp; DBS ke dni <strong>{DBS_DATE}</strong>
+  </p>
+</header>
+
+{full_html}
+
+<footer class="cs-footer">
+  <div style="font-size:0.83rem;opacity:.85;">
+    Česká spořitelna &nbsp;·&nbsp; Rating poboček 2026 — Celkový přehled
+  </div>
+  <div style="text-align:right;">
+    <div style="font-size:1.05rem;font-weight:800;letter-spacing:.4px;">Ať se daří</div>
+    <div style="font-size:0.75rem;font-weight:600;opacity:.72;">#silnější</div>
+  </div>
+</footer>
+</body>
+</html>'''
         with open(filename, "w", encoding="utf-8") as f:
-            f.write(full_html)
+            f.write(_cs_static_page)
         print(f"✅ Uložen: {filename}")
 
         xlsx_filename = f"{output_prefix}_staticky.xlsx"
@@ -16394,8 +16477,56 @@ function obSet_{_fn_slug}(btn, ob){{
 </div>'''
 
             filename = f"{output_prefix}_{region.replace(' ', '_')}.html"
+            _cs_reg_page = f'''<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rating poboček 2026 — {region} &ndash; Česká spořitelna</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{{--cs-accent:#2870ED;--cs-stone:#245375;--cs-anthracite:#202020;
+       --cs-gray-light:#E6E6E6;--cs-bg:#F4F6FA;--brand:var(--cs-accent);
+       --brand-bg:#e8f0fd;--border:var(--cs-gray-light);--surface:#fff;--page-bg:var(--cs-bg);}}
+body{{font-family:"Inter",Arial,sans-serif;background:var(--cs-bg);color:var(--cs-anthracite);margin:0;}}
+.cs-hero{{position:relative;background:var(--cs-accent);color:#fff;padding:32px 48px 24px;overflow:hidden;}}
+.cs-hero::before{{content:"";position:absolute;top:0;left:0;width:56px;height:3px;background:rgba(255,255,255,.65);}}
+.cs-hero::after{{content:"";position:absolute;top:0;left:0;width:3px;height:56px;background:rgba(255,255,255,.65);}}
+.cs-hero h1{{font-size:1.9rem;font-weight:800;margin:0 0 6px;line-height:1.1;}}
+.cs-footer{{position:relative;background:var(--cs-accent);color:#fff;padding:20px 48px;
+            display:flex;justify-content:space-between;align-items:center;overflow:hidden;}}
+.cs-footer::before{{content:"";position:absolute;top:0;left:0;width:56px;height:3px;background:rgba(255,255,255,.65);}}
+.cs-footer::after{{content:"";position:absolute;top:0;left:0;width:3px;height:56px;background:rgba(255,255,255,.65);}}
+.report-wrapper{{font-family:"Inter",Arial,sans-serif !important;background:var(--cs-bg);
+                 padding:32px 36px;max-width:1600px;margin:0 auto;}}
+.report-wrapper .region-title{{border-left-color:var(--cs-accent) !important;background:var(--brand-bg) !important;}}
+.report-wrapper .section-header{{color:var(--cs-stone) !important;}}
+.report-wrapper .table thead th{{background-color:var(--cs-accent) !important;border-color:rgba(255,255,255,.2) !important;}}
+.report-wrapper .benchmark-val{{color:var(--cs-accent) !important;}}
+details.collapsible-section>summary{{background:var(--brand-bg) !important;color:var(--cs-accent) !important;
+  border-color:var(--cs-gray-light) !important;font-family:"Inter",Arial,sans-serif !important;}}
+details.collapsible-section>summary:hover{{background:#d4e4fb !important;}}
+</style>
+</head>
+<body>
+<header class="cs-hero">
+  <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:2.5px;opacity:.72;margin-bottom:8px;font-weight:600;">Česká spořitelna</div>
+  <h1>Rating poboček 2026 — {region}</h1>
+  <p style="font-size:0.85rem;opacity:.82;margin:0;">DBS ke dni <strong>{DBS_DATE}</strong></p>
+</header>
+{full_html}
+<footer class="cs-footer">
+  <div style="font-size:0.82rem;opacity:.85;">Česká spořitelna &nbsp;·&nbsp; Rating 2026 — {region}</div>
+  <div style="text-align:right;">
+    <div style="font-size:1rem;font-weight:800;letter-spacing:.4px;">Ať se daří</div>
+    <div style="font-size:0.75rem;font-weight:600;opacity:.72;">#silnější</div>
+  </div>
+</footer>
+</body>
+</html>'''
             with open(filename, "w", encoding="utf-8") as f:
-                f.write(full_html)
+                f.write(_cs_reg_page)
             print(f"✅ Uložen: {filename}")
 
             # Excel export pro region (bez výše nájemného)
