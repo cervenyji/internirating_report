@@ -546,9 +546,10 @@ NOVE_NAZVY = {
     "BRANCH_CLOSED": "Aktuálně otevřeno",
     "BRANCH_CODE":   "ID Pobočky",
     "BRANCH_NAME":   "Název pobočky",
-    "REGION_NAME":   "Region",
-    "REGION_FIXED":  "Region fixed",
-    "OBLAST":        "Oblast",
+    "REGION_NAME":      "Region",
+    "REGION_FIXED":     "Region fixed",
+    "OBLAST":           "Oblast",
+    "CONCATENATED_HJ":  "HJ",
 
     # ── 📍 Adresa ─────────────────────────────────────────────────
     "CITY":              "Město",
@@ -10856,14 +10857,28 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
               style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:#888;line-height:1;"
               title="Zavřít">✕</button>
     </div>
-    <div style="margin-bottom:14px;">
+    <div style="margin-bottom:10px;">
       <div style="font-weight:600;color:#333;margin-bottom:6px;font-size:0.88rem;">
         🔗 Seskupit podle (Group by) — vyberte jeden nebo více sloupců:
       </div>
       <div id="ft-gb-cols-{table_id}"
            style="display:flex;flex-wrap:wrap;gap:5px;background:#f8faff;
                   padding:10px;border:1px solid #dde4f5;border-radius:6px;
-                  max-height:160px;overflow-y:auto;min-height:40px;">
+                  max-height:140px;overflow-y:auto;min-height:40px;">
+      </div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <div style="font-weight:600;color:#333;margin-bottom:4px;font-size:0.88rem;">
+        🔢 Pořadí seskupení — klikněte ▲▼ pro změnu pořadí:
+      </div>
+      <div id="ft-gb-order-{table_id}"
+           style="background:#f4f6fa;padding:8px 10px;border:1px solid #dde4f5;
+                  border-radius:6px;min-height:36px;display:flex;flex-wrap:wrap;gap:4px;
+                  align-items:flex-start;">
+        <span id="ft-gb-order-empty-{table_id}"
+              style="color:#aaa;font-size:0.78rem;font-style:italic;line-height:2;">
+          Vyberte sloupce výše&hellip;
+        </span>
       </div>
     </div>
     <div style="margin-bottom:14px;">
@@ -12079,27 +12094,87 @@ setTimeout(function() {{
   if (_bCopy) {{ _bCopy.addEventListener('click', function() {{ _copyData(_getExportData(), _bCopy); }}); }}
 
   // ─── Group-by modal ──────────────────────────────────────────────────────────
-  var _gbModal   = document.getElementById('ft-gb-modal-{table_id}');
-  var _gbBtn     = document.getElementById('ft-groupby-btn-{table_id}');
-  var _gbClose   = document.getElementById('ft-gb-close-{table_id}');
-  var _gbColsDiv = document.getElementById('ft-gb-cols-{table_id}');
-  var _gbAggsDiv = document.getElementById('ft-gb-aggs-{table_id}');
-  var _gbRunBtn  = document.getElementById('ft-gb-run-{table_id}');
-  var _gbDlX     = document.getElementById('ft-gb-dl-xlsx-{table_id}');
-  var _gbDlT     = document.getElementById('ft-gb-dl-tsv-{table_id}');
-  var _gbCopy    = document.getElementById('ft-gb-copy-{table_id}');
-  var _gbResult  = document.getElementById('ft-gb-result-{table_id}');
-  var _gbData    = null;
+  var _gbModal    = document.getElementById('ft-gb-modal-{table_id}');
+  var _gbBtn      = document.getElementById('ft-groupby-btn-{table_id}');
+  var _gbClose    = document.getElementById('ft-gb-close-{table_id}');
+  var _gbColsDiv  = document.getElementById('ft-gb-cols-{table_id}');
+  var _gbOrderDiv = document.getElementById('ft-gb-order-{table_id}');
+  var _gbOrderEmp = document.getElementById('ft-gb-order-empty-{table_id}');
+  var _gbAggsDiv  = document.getElementById('ft-gb-aggs-{table_id}');
+  var _gbRunBtn   = document.getElementById('ft-gb-run-{table_id}');
+  var _gbDlX      = document.getElementById('ft-gb-dl-xlsx-{table_id}');
+  var _gbDlT      = document.getElementById('ft-gb-dl-tsv-{table_id}');
+  var _gbCopy     = document.getElementById('ft-gb-copy-{table_id}');
+  var _gbResult   = document.getElementById('ft-gb-result-{table_id}');
+  var _gbData     = null;
+  var _gbSortState = {{ col: -1, asc: true }};
+
+  function _gbRefreshOrderNums() {{
+    if (!_gbOrderDiv) return;
+    var items = _gbOrderDiv.querySelectorAll('[data-gb-order-item]');
+    items.forEach(function(item, i) {{
+      var ns = item.querySelector('.gb-onum');
+      if (ns) ns.textContent = (i + 1) + '.';
+      item.querySelector('.gb-up').disabled = (i === 0);
+      item.querySelector('.gb-dn').disabled = (i === items.length - 1);
+    }});
+    if (_gbOrderEmp) _gbOrderEmp.style.display = items.length ? 'none' : '';
+  }}
+
+  function _gbAddOrder(cidx, cname) {{
+    if (!_gbOrderDiv) return;
+    if (_gbOrderDiv.querySelector('[data-gb-order-item="' + cidx + '"]')) return;
+    var chip = document.createElement('div');
+    chip.setAttribute('data-gb-order-item', cidx);
+    chip.setAttribute('data-gb-order-cname', cname);
+    chip.style.cssText = 'display:inline-flex;align-items:center;gap:3px;padding:2px 8px 2px 4px;' +
+      'background:#e8f0fd;border:1px solid #b8ccf7;border-radius:4px;font-size:0.8rem;white-space:nowrap;';
+    var onum = document.createElement('span');
+    onum.className = 'gb-onum';
+    onum.style.cssText = 'color:#888;font-size:0.7rem;min-width:14px;text-align:right;';
+    var upB = document.createElement('button');
+    upB.className = 'gb-up';
+    upB.textContent = '▲';
+    upB.title = 'Přesunout nahoru';
+    upB.style.cssText = 'border:none;background:none;cursor:pointer;color:#2870ED;font-size:0.7rem;padding:0;line-height:1;';
+    var dnB = document.createElement('button');
+    dnB.className = 'gb-dn';
+    dnB.textContent = '▼';
+    dnB.title = 'Přesunout dolů';
+    dnB.style.cssText = 'border:none;background:none;cursor:pointer;color:#2870ED;font-size:0.7rem;padding:0;line-height:1;';
+    var nm = document.createElement('span');
+    nm.textContent = cname;
+    nm.style.cssText = 'color:#1a3a6b;font-weight:600;';
+    chip.appendChild(onum); chip.appendChild(upB); chip.appendChild(dnB); chip.appendChild(nm);
+    upB.onclick = function() {{
+      var prev = chip.previousElementSibling;
+      if (prev && prev.hasAttribute('data-gb-order-item')) {{ _gbOrderDiv.insertBefore(chip, prev); _gbRefreshOrderNums(); }}
+    }};
+    dnB.onclick = function() {{
+      var next = chip.nextElementSibling;
+      if (next && next.hasAttribute('data-gb-order-item')) {{ _gbOrderDiv.insertBefore(next, chip); _gbRefreshOrderNums(); }}
+    }};
+    _gbOrderDiv.appendChild(chip);
+    _gbRefreshOrderNums();
+  }}
+
+  function _gbRemoveOrder(cidx) {{
+    if (!_gbOrderDiv) return;
+    var el = _gbOrderDiv.querySelector('[data-gb-order-item="' + cidx + '"]');
+    if (el) el.remove();
+    _gbRefreshOrderNums();
+  }}
 
   function _buildGbModal() {{
     if (!_gbColsDiv || !_gbAggsDiv) return;
-    _gbColsDiv.innerHTML = ''; _gbAggsDiv.innerHTML = '';
+    _gbColsDiv.innerHTML = '';
+    if (_gbOrderDiv) {{ _gbOrderDiv.querySelectorAll('[data-gb-order-item]').forEach(function(el) {{ el.remove(); }}); }}
+    _gbRefreshOrderNums();
+    _gbAggsDiv.innerHTML = '';
     headerCells.forEach(function(th) {{
       if (th.style.display === 'none') return;
-      var cname = th.textContent.replace(/[↕↑↓]/g,'').replace(/[↕↑↓]/g,'').trim();
+      var cname = th.textContent.replace(/[↕↑↓]/g,'').trim();
       var cidx  = th.getAttribute('data-col-idx');
-
-      // Group-by pill checkbox
       var lbl = document.createElement('label');
       lbl.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:3px 8px;' +
         'background:white;border:1px solid #c8d4e8;border-radius:4px;cursor:pointer;' +
@@ -12108,11 +12183,12 @@ setTimeout(function() {{
       cb.type = 'checkbox';
       cb.setAttribute('data-gb-cidx', cidx);
       cb.setAttribute('data-gb-cname', cname);
+      cb.onchange = (function(ci, cn) {{ return function() {{
+        if (this.checked) _gbAddOrder(ci, cn); else _gbRemoveOrder(ci);
+      }}; }})(cidx, cname);
       lbl.appendChild(cb);
-      lbl.appendChild(document.createTextNode(' ' + cname));
+      lbl.appendChild(document.createTextNode(' ' + cname));
       _gbColsDiv.appendChild(lbl);
-
-      // Aggregation row (numeric columns only)
       if (_aggCfg[cname]) {{
         var arow = document.createElement('div');
         arow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 2px;' +
@@ -12139,9 +12215,58 @@ setTimeout(function() {{
     }});
   }}
 
+  function _gbRenderResult() {{
+    if (!_gbData || !_gbResult) return;
+    var hdrs  = _gbData.headers;
+    var gbLen = _gbData.gbLen;
+    var drows = _gbData.rows.slice();
+    var sc = _gbSortState.col, sa = _gbSortState.asc;
+    if (sc >= 0) {{
+      drows.sort(function(a, b) {{
+        var av = String(a[sc]||''), bv = String(b[sc]||'');
+        var an = parseFloat(av.replace(/\s/g,'').replace(',','.')),
+            bn = parseFloat(bv.replace(/\s/g,'').replace(',','.'));
+        if (isFinite(an) && isFinite(bn)) return sa ? an - bn : bn - an;
+        return sa ? av.localeCompare(bv, 'cs') : bv.localeCompare(av, 'cs');
+      }});
+    }}
+    var th2 = hdrs.map(function(h, hi) {{
+      var arrow = (sc === hi) ? (sa ? ' ↑' : ' ↓') : ' ↕';
+      return '<th data-gbsi="' + hi + '" style="padding:6px 10px;border:1px solid rgba(255,255,255,.2);' +
+        'text-align:left;white-space:nowrap;cursor:pointer;user-select:none;" title="Seřadit">' +
+        h.replace(/&/g,'&amp;').replace(/</g,'&lt;') +
+        '<span style="opacity:.65;font-size:.8em;margin-left:3px;">' + arrow + '</span></th>';
+    }}).join('');
+    var tb2 = drows.map(function(r, ri) {{
+      return '<tr style="background:' + (ri%2===0?'#f0f5ff':'white') + ';">' +
+        r.map(function(c, ci) {{
+            return '<td style="padding:5px 10px;border:1px solid #dee2e6;white-space:nowrap;text-align:' +
+              (ci < gbLen ? 'left' : 'right') + ';">' +
+              String(c||'').replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</td>';
+          }}).join('') + '</tr>';
+    }}).join('');
+    _gbResult.innerHTML =
+      '<div style="font-size:0.81rem;color:#666;margin-bottom:8px;">' +
+        _gbData.totalGroups + ' skupin &nbsp;·&nbsp; ' + _gbData.totalRows +
+        ' řádků &nbsp;·&nbsp; <span style="opacity:.7;">klikněte na záhlaví pro seřazení</span></div>' +
+      '<table style="border-collapse:collapse;font-size:0.83rem;min-width:100%;width:100%;">' +
+      '<thead><tr style="background:#2870ED;color:white;">' + th2 + '</tr></thead>' +
+      '<tbody>' + tb2 + '</tbody></table>';
+    _gbResult.style.display = '';
+    _gbResult.querySelectorAll('th[data-gbsi]').forEach(function(th) {{
+      th.addEventListener('click', function() {{
+        var col = parseInt(th.getAttribute('data-gbsi'));
+        if (_gbSortState.col === col) _gbSortState.asc = !_gbSortState.asc;
+        else {{ _gbSortState.col = col; _gbSortState.asc = true; }}
+        _gbRenderResult();
+      }});
+    }});
+  }}
+
   if (_gbModal && _gbBtn) {{
     _gbBtn.addEventListener('click', function() {{
       _buildGbModal();
+      _gbSortState = {{ col: -1, asc: true }};
       _gbModal.style.display = '';
       if (_gbResult) {{ _gbResult.style.display = 'none'; _gbResult.innerHTML = ''; }}
       if (_gbDlX)  _gbDlX.style.display  = 'none';
@@ -12156,15 +12281,16 @@ setTimeout(function() {{
   if (_gbRunBtn) {{
     _gbRunBtn.addEventListener('click', function() {{
       var gbCols = [];
-      if (_gbColsDiv) {{
-        Array.from(_gbColsDiv.querySelectorAll('input[data-gb-cidx]:checked')).forEach(function(cb) {{
-          gbCols.push({{ idx: cb.getAttribute('data-gb-cidx'), name: cb.getAttribute('data-gb-cname') }});
+      if (_gbOrderDiv) {{
+        _gbOrderDiv.querySelectorAll('[data-gb-order-item]').forEach(function(item) {{
+          gbCols.push({{ idx: item.getAttribute('data-gb-order-item'),
+                         name: item.getAttribute('data-gb-order-cname') }});
         }});
       }}
       if (!gbCols.length) {{ alert('Vyberte alespoň jeden sloupec pro seskupení (Group by).'); return; }}
       var aggCols = [];
       if (_gbAggsDiv) {{
-        Array.from(_gbAggsDiv.querySelectorAll('input[data-agg-cidx]:checked')).forEach(function(cb) {{
+        _gbAggsDiv.querySelectorAll('input[data-agg-cidx]:checked').forEach(function(cb) {{
           var cidx = cb.getAttribute('data-agg-cidx');
           var sel  = _gbAggsDiv.querySelector('select[data-agg-fn="' + cidx + '"]');
           aggCols.push({{ idx: cidx, name: cb.getAttribute('data-agg-cname'), fn: sel ? sel.value : 'SUM' }});
@@ -12177,7 +12303,7 @@ setTimeout(function() {{
           var td = row.querySelector('td[data-col-idx="' + gc.idx + '"]');
           return td ? td.textContent.trim() : '';
         }});
-        var key = kp.join('\\x00');
+        var key = kp.join('\x00');
         if (!groups[key]) {{
           var ad = {{}};
           aggCols.forEach(function(ac) {{ ad[ac.idx] = []; }});
@@ -12211,28 +12337,10 @@ setTimeout(function() {{
         }});
         return r;
       }});
-      _gbData = {{ headers: hdrs, rows: drows }};
-      var th2 = hdrs.map(function(h) {{
-        return '<th style="padding:6px 10px;border:1px solid #1e5bc9;text-align:left;white-space:nowrap;">'
-          + h.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</th>';
-      }}).join('');
-      var tb2 = drows.map(function(r, ri) {{
-        return '<tr style="background:' + (ri%2===0?'#f8faff':'white') + ';">'
-          + r.map(function(c, ci) {{
-              return '<td style="padding:5px 10px;border:1px solid #dee2e6;white-space:nowrap;text-align:'
-                + (ci<gbCols.length?'left':'right') + ';">'
-                + String(c).replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</td>';
-            }}).join('') + '</tr>';
-      }}).join('');
-      if (_gbResult) {{
-        _gbResult.innerHTML =
-          '<div style="font-size:0.81rem;color:#666;margin-bottom:8px;">'
-            + drows.length + ' skupin · ' + visR.length + ' řádků seskupeno</div>'
-          + '<table style="border-collapse:collapse;font-size:0.83rem;min-width:100%;">'
-          + '<thead><tr style="background:#2770f0;color:white;">' + th2 + '</tr></thead>'
-          + '<tbody>' + tb2 + '</tbody></table>';
-        _gbResult.style.display = '';
-      }}
+      _gbSortState = {{ col: -1, asc: true }};
+      _gbData = {{ headers: hdrs, rows: drows, gbLen: gbCols.length,
+                   totalGroups: drows.length, totalRows: visR.length }};
+      _gbRenderResult();
       if (_gbDlX)  _gbDlX.style.display  = '';
       if (_gbDlT)  _gbDlT.style.display  = '';
       if (_gbCopy) _gbCopy.style.display = '';
