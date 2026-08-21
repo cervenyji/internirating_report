@@ -9937,7 +9937,7 @@ def write_excel_sheet(ws, df_excel, freeze="D2"):
 COL_GROUPS = [
     # ── 🗄️ Databáze síť ───────────────────────────────────────────────────────
     ("📍 Adresa",              ["Oblast", "Region fixed", "Město", "Obvod / část", "Ulice", "Č. popisné", "Č. orientační", "RUIAN ID", "ORP", "ORP kód", "Krajské město", "Okresní město"], "#f0f4f8"),
-    ("🏢 Budova",              ["Aktuálně otevřeno", "Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Jednočlenný provoz", "Pobočka v OC", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
+    ("🏢 Budova",              ["Aktuálně otevřeno", "HJ", "Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Jednočlenný provoz", "Pobočka v OC", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
     ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
     # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
     ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25",
