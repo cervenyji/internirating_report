@@ -543,7 +543,8 @@ MERGE_COLS = {
 # Pořadí odpovídá pořadí skupin v COL_GROUPS
 NOVE_NAZVY = {
     # ── Identita ──────────────────────────────────────────────────
-    "BRANCH_CLOSED": "Aktuálně otevřeno",
+    "BRANCH_CLOSED":       "Aktuálně otevřeno",
+    "BRANCH_CLOSED_SINCE": "Stav od",
     "BRANCH_CODE":   "ID Pobočky",
     "BRANCH_NAME":   "Název pobočky",
     "REGION_NAME":      "Region",
@@ -862,6 +863,7 @@ PRODUCT_GROUPS = [
 DATE_COLS_DISPLAY = [
     'DATUM_LAST_INV', 'DATUM_BIGGEST_INV',
     'NEW_FORMAT_SINCE', 'CASHLESS_SINCE',
+    'BRANCH_CLOSED_SINCE',
     'ZACATEK_DATUM', 'KONEC_DATUM',
 ]
 
@@ -9937,7 +9939,7 @@ def write_excel_sheet(ws, df_excel, freeze="D2"):
 COL_GROUPS = [
     # ── 🗄️ Databáze síť ───────────────────────────────────────────────────────
     ("📍 Adresa",              ["Oblast", "Region fixed", "Město", "Obvod / část", "Ulice", "Č. popisné", "Č. orientační", "RUIAN ID", "ORP", "ORP kód", "Krajské město", "Okresní město"], "#f0f4f8"),
-    ("🏢 Budova",              ["Aktuálně otevřeno", "HJ", "Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Jednočlenný provoz", "Pobočka v OC", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
+    ("🏢 Budova",              ["Aktuálně otevřeno", "Stav od", "HJ", "Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Jednočlenný provoz", "Pobočka v OC", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
     ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
     # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
     ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25",
@@ -23125,28 +23127,69 @@ else:
     rating_status['IS_KRAJSKE_MESTO'] = False
     rating_status['IS_OKRESNI_MESTO'] = False
 
-# ── Aktuální stav poboček z DBS xlsx (BRANCH_CLOSED) ────────────────────────
+# ── Aktuální stav poboček z DBS xlsx (BRANCH_CLOSED + BRANCH_BUILDING_NF_SF) ─
 print("📂 Načítám aktuální stav poboček z dbs_branch_network_epb.xlsx...")
 try:
     _dbs_open_path = '../vypocet_ir_2026/zdroje/dbs_branch_network_epb.xlsx'
-    _dbs_open_xl = pd.read_excel(_dbs_open_path, usecols=['BRANCH_CODE', 'BRANCH_CLOSED'])
+    _xl_want = ['BRANCH_CODE', 'BRANCH_CLOSED', 'BRANCH_BUILDING_NF_SF', 'NEW_FORMAT_SINCE']
+    _xl_have = pd.read_excel(_dbs_open_path, nrows=0).columns.tolist()
+    _xl_use  = [c for c in _xl_want if c in _xl_have]
+    _dbs_open_xl = pd.read_excel(_dbs_open_path, usecols=_xl_use)
     _dbs_open_xl['BRANCH_CODE'] = pd.to_numeric(_dbs_open_xl['BRANCH_CODE'], errors='coerce')
     _dbs_open_xl = _dbs_open_xl.dropna(subset=['BRANCH_CODE'])
     _dbs_open_xl['BRANCH_CODE'] = _dbs_open_xl['BRANCH_CODE'].astype(int)
     _dbs_open_xl['BRANCH_CLOSED'] = _dbs_open_xl['BRANCH_CLOSED'].fillna(False).astype(bool)
     _dbs_open_xl = _dbs_open_xl.drop_duplicates('BRANCH_CODE')
-    if 'BRANCH_CLOSED' in rating_status.columns:
-        rating_status = rating_status.drop(columns=['BRANCH_CLOSED'])
-    rating_status = rating_status.merge(
-        _dbs_open_xl[['BRANCH_CODE', 'BRANCH_CLOSED']], on='BRANCH_CODE', how='left'
-    )
+    # Aktualizuj sloupce ze xlsx (BRANCH_CLOSED, BRANCH_BUILDING_NF_SF, NEW_FORMAT_SINCE)
+    _cols_to_update = [c for c in _xl_use if c != 'BRANCH_CODE']
+    for _c in _cols_to_update:
+        if _c in rating_status.columns:
+            rating_status = rating_status.drop(columns=[_c])
+    rating_status = rating_status.merge(_dbs_open_xl[['BRANCH_CODE'] + _cols_to_update], on='BRANCH_CODE', how='left')
     rating_status['BRANCH_CLOSED'] = rating_status['BRANCH_CLOSED'].fillna(False).astype(bool)
     _n_closed = int(rating_status['BRANCH_CLOSED'].sum())
-    print(f"  ✅ BRANCH_CLOSED načten — {_n_closed} zavřených, {len(rating_status) - _n_closed} otevřených")
+    _nf_updated = 'BRANCH_BUILDING_NF_SF' in _cols_to_update
+    print(f"  ✅ BRANCH_CLOSED načten — {_n_closed} zavřených, {len(rating_status) - _n_closed} otevřených"
+          + (" | BRANCH_BUILDING_NF_SF aktualizován" if _nf_updated else ""))
 except Exception as _dbs_open_err:
     print(f"  ⚠️  Nelze načíst dbs xlsx ({_dbs_open_err}) — BRANCH_CLOSED = False pro všechny")
     if 'BRANCH_CLOSED' not in rating_status.columns:
         rating_status['BRANCH_CLOSED'] = False
+
+# ── BRANCH_CLOSED_SINCE: kdy začal aktuální stav (z historického CSV) ─────────
+print("📂 Počítám BRANCH_CLOSED_SINCE z historického CSV...")
+try:
+    _dbs_csv_path = DATA_SOURCES["dbs"]["path"]
+    _hist = pd.read_csv(
+        _dbs_csv_path,
+        usecols=lambda c: c in ('BRANCH_CODE', 'EFFECTIVE_DATE', 'BRANCH_CLOSED'),
+        low_memory=False,
+    )
+    _hist['BRANCH_CODE'] = pd.to_numeric(_hist['BRANCH_CODE'], errors='coerce')
+    _hist = _hist.dropna(subset=['BRANCH_CODE'])
+    _hist['BRANCH_CODE'] = _hist['BRANCH_CODE'].astype(int)
+    _hist['EFFECTIVE_DATE'] = pd.to_datetime(_hist['EFFECTIVE_DATE'], errors='coerce')
+    _hist['BRANCH_CLOSED'] = _hist['BRANCH_CLOSED'].fillna(False).astype(bool)
+    _hist = _hist.dropna(subset=['EFFECTIVE_DATE']).sort_values(['BRANCH_CODE', 'EFFECTIVE_DATE'])
+    # Pro každou pobočku najdi začátek aktuálního nepřerušeného streaku BRANCH_CLOSED
+    _hist['_prev'] = _hist.groupby('BRANCH_CODE')['BRANCH_CLOSED'].shift(1)
+    _hist['_streak_start'] = (_hist['BRANCH_CLOSED'] != _hist['_prev']) | _hist['_prev'].isna()
+    # Ze všech "start" řádků vem jen poslední per branch = začátek současného streaku
+    _since = (
+        _hist[_hist['_streak_start']]
+        .groupby('BRANCH_CODE')['EFFECTIVE_DATE']
+        .last()
+        .reset_index()
+        .rename(columns={'EFFECTIVE_DATE': 'BRANCH_CLOSED_SINCE'})
+    )
+    if 'BRANCH_CLOSED_SINCE' in rating_status.columns:
+        rating_status = rating_status.drop(columns=['BRANCH_CLOSED_SINCE'])
+    rating_status = rating_status.merge(_since, on='BRANCH_CODE', how='left')
+    print(f"  ✅ BRANCH_CLOSED_SINCE vypočten pro {_since['BRANCH_CODE'].nunique()} poboček")
+except Exception as _since_err:
+    print(f"  ⚠️  Nelze vypočítat BRANCH_CLOSED_SINCE ({_since_err})")
+    if 'BRANCH_CLOSED_SINCE' not in rating_status.columns:
+        rating_status['BRANCH_CLOSED_SINCE'] = pd.NaT
 
 def generate_jednoclenny_provoz_report(jp_csv_path, oteviraci_df=None, hist_path=None, hist_df=None, region_lookup=None):
     """
