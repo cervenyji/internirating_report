@@ -83,6 +83,31 @@ OBCHODNI_POZICE = [
     "spec. pro firemní pojištění - senior",
 ]
 
+# Obchodní pozice pro typologii — podmnožina OBCHODNI_POZICE bez premier/privátní
+OBCHODNI_POZICE_RET_TYPLOGIE = [
+    "bankéř klientské péče - junior",
+    "bankéř klientské péče - medior",
+    "firemní bankéř - master",
+    "firemní bankéř - medior",
+    "firemní bankéř - senior",
+    "hypoteční specialista - medior",
+    "hypoteční specialista - senior",
+    "hypoteční specialista vcb - medior",
+    "hypoteční specialista vcb - senior",
+    "investiční specialista - medior",
+    "manaž. segm. erste premier - team leader s portfoliem",
+    "osobní bankéř - junior",
+    "osobní bankéř - master",
+    "osobní bankéř - medior",
+    "osobní bankéř - senior",
+    "pobočkový specialista - hypo",
+    "podpora firemních bankéřů",
+    "pojišťovací specialista - medior",
+    "remote firemní bankéř - medior",
+    "remote premier bankéř - medior",
+    "spec. pro firemní pojištění - senior",
+]
+
 # Bankéři — pouze tyto pozice se počítají jako "Počet bankéřů redim"
 # a slouží jako dělitel u metrik /bankéř. Přidejte nové pozice sem.
 BANKER_POZICE = [
@@ -717,11 +742,13 @@ NOVE_NAZVY = {
     "PLOCHA_NAD_OPTIMALNI_POBOCKU": "Plocha nad optimál",
 
     # ── 🏢 Budova ─────────────────────────────────────────────────
-    "BRANCH_TYPE_NAME":      "Typologie",
-    "BRANCH_FORMAT":          "Formát pobočky (celk. FTE)",
-    "BRANCH_FORMAT_OBCHODNI": "Formát pobočky (obch. FTE)",
-    "FORMAT_2024_(FIX_FS)":  "Realizovaný formát",
-    "BRANCH_BUILDING_NF_SF": "Formát NF/SF",
+    "BRANCH_TYPE_NAME":           "Typologie",
+    "BRANCH_FORMAT":              "Formát pobočky (celk. FTE dle controlling)",
+    "BRANCH_FORMAT_REDIM":        "Formát pobočky (celk. FTE dle redim)",
+    "BRANCH_FORMAT_OBCHODNI":     "Formát pobočky (obch. FTE dle redim)",
+    "BRANCH_FORMAT_OBCHODNI_RET": "Formát pobočky (obch. FTE dle redim jen retail pro typologii)",
+    "FORMAT_2024_(FIX_FS)":       "Realizovaný formát budovy (DBS)",
+    "BRANCH_BUILDING_NF_SF":      "Formát NF/SF",
     "NEW_FORMAT_SINCE":      "Datum NF",
     "JEDNOCLENNY_PROVOZ":    "Jednočlenný provoz",
     "OC_POBOCKA":            "Pobočka v OC",
@@ -759,6 +786,7 @@ NOVE_NAZVY = {
     "_total_spec":         "Celková FTE redim",
     "BANKERS_COUNT":       "Počet bankéřů redim",
     "OBCHODNI_FTE":        "FTE všechny obchodní pozice redim",
+    "OBCHODNI_RET_FTE":    "Celková obchodní FTE jen retail pro typologii",
     "FTE_MMMA":            "FTE MMMA",
     "FTE_SBC":             "FTE SBC",
     "FTE_HC":              "FTE HC",
@@ -8899,6 +8927,11 @@ def prepare_rating_status(df):
             # Obchodní FTE (interní, pro výpočet BRANCH_FORMAT_OBCHODNI)
             _spec_bc['OBCHODNI_FTE'] = _spec_bc[_obch_cols].sum(axis=1) if _obch_cols else 0
 
+            # Obchodní FTE jen retail pro typologii
+            _ret_typl_set = {p.lower().strip() for p in OBCHODNI_POZICE_RET_TYPLOGIE}
+            _ret_typl_cols = [c for c in _spec_cols_g if c.lower().strip() in _ret_typl_set]
+            _spec_bc['OBCHODNI_RET_FTE'] = _spec_bc[_ret_typl_cols].sum(axis=1) if _ret_typl_cols else 0
+
             # Segmentové FTE sloupce
             _seg_defs = [
                 ('FTE_MMMA',   FTE_MMMA_POZICE),
@@ -8986,6 +9019,12 @@ def prepare_rating_status(df):
 
             # Formát pobočky dle obchodních FTE
             rating_status['BRANCH_FORMAT_OBCHODNI'] = rating_status['OBCHODNI_FTE'].apply(_calc_format)
+            # Formát dle celkové FTE redim
+            if '_total_spec' in rating_status.columns:
+                rating_status['BRANCH_FORMAT_REDIM'] = rating_status['_total_spec'].apply(_calc_format)
+            # Formát dle obchodní FTE jen retail pro typologii
+            if 'OBCHODNI_RET_FTE' in rating_status.columns:
+                rating_status['BRANCH_FORMAT_OBCHODNI_RET'] = rating_status['OBCHODNI_RET_FTE'].apply(_calc_format)
     except Exception as _be:
         pass
 
@@ -9168,15 +9207,15 @@ def _apply_common_formatting(d, cols_to_show):
         if _bc in cols_to_show and _bc in d.columns:
             d[_bc] = d[_bc].apply(_fmt_bool)
 
-    # BRANCH_CLOSED → "Aktuálně otevřeno": False=Ano zelená pill, True=Ne červená pill
+    # BRANCH_CLOSED → "Aktuálně otevřeno": False=V provozu zelená pill, True=Uzavřena červená pill
     if 'BRANCH_CLOSED' in cols_to_show and 'BRANCH_CLOSED' in d.columns:
         def _fmt_open(x):
             closed = (str(x).strip().upper() in ('TRUE', '1', 'YES', 'Y')) if not isinstance(x, bool) else bool(x)
             if not closed:
                 return ("<span style='background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;"
-                        "border-radius:10px;padding:2px 8px;font-size:0.75rem;font-weight:700;'>Ano</span>")
+                        "border-radius:10px;padding:2px 8px;font-size:0.75rem;font-weight:700;'>V provozu</span>")
             return ("<span style='background:#fde8e8;color:#9b1c1c;border:1px solid #fca5a5;"
-                    "border-radius:10px;padding:2px 8px;font-size:0.75rem;font-weight:700;'>Ne</span>")
+                    "border-radius:10px;padding:2px 8px;font-size:0.75rem;font-weight:700;'>Uzavřena</span>")
         d['BRANCH_CLOSED'] = d['BRANCH_CLOSED'].apply(_fmt_open)
 
     # IS_KRAJSKE_MESTO / IS_OKRESNI_MESTO — Ano zlatá pill, Ne šedá proškrtnutá
@@ -9419,10 +9458,40 @@ def _apply_common_formatting(d, cols_to_show):
                 if pd.notna(x) and str(x) not in ('', 'nan', 'None') and float(x) > 0 else '—'
             )
 
-    # Formát pobočky dle obchodního FTE — barevný badge stejně jako BRANCH_FORMAT
-    for _fmt_col in ['BRANCH_FORMAT', 'BRANCH_FORMAT_OBCHODNI']:
+    # Formátové sloupce — šedé badges (jako Typologie), bez barvy dle kategorie
+    def _fmt_grey_badge(v):
+        s = str(v or '').strip()
+        if not s or s in ('nan', 'None', '—', ''):
+            return '—'
+        return (f'<span style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;'
+                f'border-radius:5px;padding:1px 7px;font-size:0.72rem;'
+                f'font-weight:600;white-space:nowrap;">{s.title()}</span>')
+    for _fmt_col in ['BRANCH_FORMAT', 'BRANCH_FORMAT_REDIM', 'BRANCH_FORMAT_OBCHODNI', 'BRANCH_FORMAT_OBCHODNI_RET']:
         if _fmt_col in cols_to_show and _fmt_col in d.columns:
-            def _fmt_badge(v, col=_fmt_col):
+            d[_fmt_col] = d[_fmt_col].apply(_fmt_grey_badge)
+
+    # Realizovaný formát budovy (DBS) — barevný badge jen pro NF pobočky, jinak prázdné
+    if 'FORMAT_2024_(FIX_FS)' in cols_to_show and 'FORMAT_2024_(FIX_FS)' in d.columns:
+        _nfsf_series = d['BRANCH_BUILDING_NF_SF'].astype(str).str.strip().str.upper() if 'BRANCH_BUILDING_NF_SF' in d.columns else None
+        def _fmt2024_badge(row_v):
+            v, is_nf = row_v
+            s = str(v or '').lower().strip()
+            if not s or s in ('nan', 'none', '—', ''):
+                return '—'
+            if not is_nf:
+                return '<span style="color:#bbb;font-size:0.72rem;">—</span>'
+            _colors = {'small': '#f59e0b', 'medium economy': '#fb923c',
+                       'medium': '#2770f0', 'flagship': '#0bb440'}
+            c = _colors.get(s, '#aaa')
+            lbl = s.title()
+            return (f'<span style="background:{c}18;color:{c};border:1px solid {c}44;'
+                    f'border-radius:5px;padding:1px 7px;font-size:0.72rem;'
+                    f'font-weight:600;white-space:nowrap;">{lbl}</span>')
+        if _nfsf_series is not None:
+            d['FORMAT_2024_(FIX_FS)'] = list(zip(d['FORMAT_2024_(FIX_FS)'], _nfsf_series == 'NF'))
+            d['FORMAT_2024_(FIX_FS)'] = d['FORMAT_2024_(FIX_FS)'].apply(_fmt2024_badge)
+        else:
+            def _fmt2024_badge_simple(v):
                 s = str(v or '').lower().strip()
                 _colors = {'small': '#f59e0b', 'medium economy': '#fb923c',
                            'medium': '#2770f0', 'flagship': '#0bb440'}
@@ -9431,20 +9500,7 @@ def _apply_common_formatting(d, cols_to_show):
                 return (f'<span style="background:{c}18;color:{c};border:1px solid {c}44;'
                         f'border-radius:5px;padding:1px 7px;font-size:0.72rem;'
                         f'font-weight:600;white-space:nowrap;">{lbl}</span>')
-            d[_fmt_col] = d[_fmt_col].apply(_fmt_badge)
-
-    # Realizovaný formát (FORMAT_2024) — stejné barvy jako BRANCH_FORMAT
-    if 'FORMAT_2024_(FIX_FS)' in cols_to_show and 'FORMAT_2024_(FIX_FS)' in d.columns:
-        def _fmt2024_badge(v):
-            s = str(v or '').lower().strip()
-            _colors = {'small': '#f59e0b', 'medium economy': '#fb923c',
-                       'medium': '#2770f0', 'flagship': '#0bb440'}
-            c = _colors.get(s, '#aaa')
-            lbl = s.title() if s else '—'
-            return (f'<span style="background:{c}18;color:{c};border:1px solid {c}44;'
-                    f'border-radius:5px;padding:1px 7px;font-size:0.72rem;'
-                    f'font-weight:600;white-space:nowrap;">{lbl}</span>')
-        d['FORMAT_2024_(FIX_FS)'] = d['FORMAT_2024_(FIX_FS)'].apply(_fmt2024_badge)
+            d['FORMAT_2024_(FIX_FS)'] = d['FORMAT_2024_(FIX_FS)'].apply(_fmt2024_badge_simple)
 
     # Typologie pobočky (BRANCH_TYPE_NAME) — šedé badges
     if 'BRANCH_TYPE_NAME' in cols_to_show and 'BRANCH_TYPE_NAME' in d.columns:
@@ -9794,6 +9850,15 @@ def prepare_excel_df(target_df, excluded_cols=None):
         if _qhtml in d.columns and _qcol in d.columns:
             d[_qhtml] = pd.to_numeric(d[_qcol], errors='coerce')
 
+    # BRANCH_CLOSED → textová hodnota pro export
+    if 'BRANCH_CLOSED' in d.columns:
+        d['BRANCH_CLOSED'] = d['BRANCH_CLOSED'].apply(
+            lambda x: 'Uzavřena' if (
+                (isinstance(x, bool) and x) or
+                (not isinstance(x, bool) and str(x).strip().upper() in ('TRUE', '1', 'YES', 'Y'))
+            ) else 'V provozu'
+        )
+
     for c in DATE_COLS_DISPLAY:
         if c in d.columns:
             d[c] = d[c].apply(format_date)
@@ -9939,7 +10004,11 @@ def write_excel_sheet(ws, df_excel, freeze="D2"):
 COL_GROUPS = [
     # ── 🗄️ Databáze síť ───────────────────────────────────────────────────────
     ("📍 Adresa",              ["Oblast", "Region fixed", "Město", "Obvod / část", "Ulice", "Č. popisné", "Č. orientační", "RUIAN ID", "ORP", "ORP kód", "Krajské město", "Okresní město"], "#f0f4f8"),
-    ("🏢 Budova",              ["Aktuálně otevřeno", "Stav od", "HJ", "Typologie", "Formát pobočky (celk. FTE)", "Formát pobočky (obch. FTE)", "Realizovaný formát", "Formát NF/SF", "Datum NF", "Jednočlenný provoz", "Pobočka v OC", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
+    ("🏢 Budova",              ["Aktuálně otevřeno", "Stav od", "HJ", "Typologie",
+                                "Formát pobočky (celk. FTE dle controlling)", "Formát pobočky (celk. FTE dle redim)",
+                                "Formát pobočky (obch. FTE dle redim)", "Formát pobočky (obch. FTE dle redim jen retail pro typologii)",
+                                "Realizovaný formát budovy (DBS)",
+                                "Formát NF/SF", "Datum NF", "Jednočlenný provoz", "Pobočka v OC", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
     ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
     # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
     ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25",
@@ -9997,7 +10066,7 @@ COL_GROUPS = [
     ], "#98e2e8"),
     ("👷 FTE",               [
         "Celková FTE controlling", "Celková FTE redim", "Počet bankéřů redim",
-        "FTE všechny obchodní pozice redim",
+        "FTE všechny obchodní pozice redim", "Celková obchodní FTE jen retail pro typologii",
         "FTE MMMA", "FTE SBC", "FTE HC", "FTE EPC", "FTE EPB", "FTE PROVOZ", "FTE RKC",
         "Přítomnost segmentů",
     ], "#7ddbe3"),
@@ -15669,7 +15738,15 @@ details.collapsible-section>summary:hover{{background:#d4e4fb !important;}}
 
         # Export PKL pro další použití
         pkl_filename = f"{output_prefix}_staticky.pkl"
-        df_sorted.to_pickle(pkl_filename)
+        _df_pkl = df_sorted.copy()
+        if 'BRANCH_CLOSED' in _df_pkl.columns:
+            _df_pkl['BRANCH_CLOSED'] = _df_pkl['BRANCH_CLOSED'].apply(
+                lambda x: 'Uzavřena' if (
+                    (isinstance(x, bool) and x) or
+                    (not isinstance(x, bool) and str(x).strip().upper() in ('TRUE', '1', 'YES', 'Y'))
+                ) else 'V provozu'
+            )
+        _df_pkl.to_pickle(pkl_filename)
         print(f"✅ Uložen: {pkl_filename}")
 
     elif mode == 'regional':
