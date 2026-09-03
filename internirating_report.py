@@ -447,7 +447,7 @@ soubory = {
         "hj_merge": True
     },
     "specialiste": {
-        "path": "vypocet_ir_2026/specialiste_officeLocation_REDIM.pkl",
+        "path": "../vypocet_ir_2026/specialiste_officeLocation_REDIM.pkl",
         "validity": "2026-03-01",
         "source_desc": "Obsazení pozic specialistů na pobočkách — per-zaměstnanec s jménem, departmentem a match skóre.",
         "extra_params": {},
@@ -539,6 +539,7 @@ MERGE_COLS = {
     "dbs": {
         "cols": ["BRANCH_CODE", "BRANCH_TYPE_NAME", "BRANCH_BUILDING_NF_SF",
                  "NEW_FORMAT_SINCE", "CASHLESS", "CASHLESS_SINCE",
+                 "FORMAT",
                  "GPS_X", "GPS_Y",
                  "CITY", "CITY_DISTRICT", "STREET", "CISLO_POPISNE",
                  "CISLO_ORIENTACNI", "RUIAN_ID"],
@@ -19669,6 +19670,11 @@ else:
 
 df = dbs_final
 
+# Realizovaný formát budovy (DBS) = sloupec FORMAT z dbs CSV (přebíjí starý FORMAT_2024 z old_ir)
+if 'FORMAT' in df.columns:
+    df['FORMAT_2024_(FIX_FS)'] = df['FORMAT']
+    df = df.drop(columns=['FORMAT'])
+
 # Explicitní přiřazení výnosových sloupců ze správných zdrojů (přes map — bez merge, bez duplikátů)
 # Nové výnosy 2024: old_ir → NEW_BUSINESS_2024_-_OBJEM_VYNOSU
 _nb24_key = next((c for c in old_ir.columns if c in ('BRANCH_ID', 'BRANCH_CODE')), None)
@@ -20040,7 +20046,7 @@ display(HTML(f"""
 # =============================================================================
 
 try:
-    df_specialiste_detail = pd.read_pickle("vypocet_ir_2026/specialiste_officeLocation_REDIM.pkl")
+    df_specialiste_detail = pd.read_pickle("../vypocet_ir_2026/specialiste_officeLocation_REDIM.pkl")
     df_specialiste_detail['branch_code'] = pd.to_numeric(df_specialiste_detail['branch_code'], errors='coerce')
     df_specialiste_detail['score'] = pd.to_numeric(df_specialiste_detail['score'], errors='coerce')
     # Pivot do wide formátu pro výpočty FTE (počet zaměstnanců per pozice per pobočka)
