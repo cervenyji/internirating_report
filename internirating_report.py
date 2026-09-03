@@ -8954,23 +8954,26 @@ def prepare_rating_status(df):
             _spec_bc['SEGMENTY_PRITOMNOST'] = _spec_bc.apply(_seg_prit, axis=1)
 
             _all_new_cols = _new_seg_cols + ['SEGMENTY_PRITOMNOST']
+            _ret_cols = ['OBCHODNI_RET_FTE'] if 'OBCHODNI_RET_FTE' in _spec_bc.columns else []
             _spec_agg = _spec_bc[
-                ['branch_id', 'BANKERS_COUNT', 'OBCHODNI_FTE', '_total_spec'] + _all_new_cols
+                ['branch_id', 'BANKERS_COUNT', 'OBCHODNI_FTE', '_total_spec'] + _all_new_cols + _ret_cols
             ].rename(columns={'branch_id': 'BRANCH_CODE'})
             rating_status['BRANCH_CODE'] = pd.to_numeric(
                 rating_status['BRANCH_CODE'], errors='coerce')
             _spec_agg['BRANCH_CODE'] = pd.to_numeric(
                 _spec_agg['BRANCH_CODE'], errors='coerce')
             # Drop any pre-existing versions to prevent _x/_y suffix on merge
+            _drop_before_merge = ['BANKERS_COUNT', 'OBCHODNI_FTE', '_total_spec'] + _all_new_cols + _ret_cols
             rating_status = rating_status.drop(
-                columns=[c for c in ['BANKERS_COUNT', 'OBCHODNI_FTE', '_total_spec'] + _all_new_cols
-                         if c in rating_status.columns],
+                columns=[c for c in _drop_before_merge if c in rating_status.columns],
                 errors='ignore'
             )
             rating_status = rating_status.merge(_spec_agg, on='BRANCH_CODE', how='left')
             rating_status['BANKERS_COUNT'] = rating_status['BANKERS_COUNT'].fillna(0).astype(int)
             rating_status['OBCHODNI_FTE']  = rating_status['OBCHODNI_FTE'].fillna(0).astype(int)
             rating_status['_total_spec']   = rating_status['_total_spec'].fillna(0).astype(int)
+            if 'OBCHODNI_RET_FTE' in rating_status.columns:
+                rating_status['OBCHODNI_RET_FTE'] = rating_status['OBCHODNI_RET_FTE'].fillna(0).astype(int)
             for _c in _new_seg_cols:
                 rating_status[_c] = rating_status[_c].fillna(0).astype(int)
             rating_status['SEGMENTY_PRITOMNOST'] = rating_status['SEGMENTY_PRITOMNOST'].fillna('')
@@ -10620,7 +10623,7 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
         "CIZINCI","CIZINCI_SLOVENSKO","CIZINCI_UKRAJINA",
         "REVENUES_2021","REVENUES_2022","REVENUES_2023","REVENUES_2024","VYNOSY",
         "NEW_BUSINESS_2024_-_OBJEM_VYNOSU","OBJEM_VYNOSU_CZK",
-        "FTE","BANKERS_COUNT","_total_spec","OBCHODNI_FTE",
+        "FTE","BANKERS_COUNT","_total_spec","OBCHODNI_FTE","OBCHODNI_RET_FTE",
         "FTE_MMMA","FTE_SBC","FTE_HC","FTE_EPC","FTE_EPB","FTE_PROVOZ","FTE_RKC",
         "POCET_SCHUZEK_ONLINE","POCET_SCHUZEK_FYZICKY","POCET_BEZHOT_WALK_IN",
         "POCET_HOT_WALK_IN","POCET_NAVSTEV_CELKEM",
@@ -10963,6 +10966,13 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
            style="background:#f8faff;padding:10px;border:1px solid #dde4f5;
                   border-radius:6px;max-height:240px;overflow-y:auto;">
       </div>
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.85rem;
+                    cursor:pointer;user-select:none;color:#374151;">
+        <input type="checkbox" id="ft-gb-pct-{table_id}" style="accent-color:#2870ED;">
+        <span>📊 Přidat sloupce <strong>% z celku</strong> pro každou agregaci</span>
+      </label>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
       <button id="ft-gb-run-{table_id}" class="ft-btn ft-btn-blue" style="font-weight:600;">
@@ -12172,6 +12182,7 @@ setTimeout(function() {{
   var _gbOrderDiv = document.getElementById('ft-gb-order-{table_id}');
   var _gbOrderEmp = document.getElementById('ft-gb-order-empty-{table_id}');
   var _gbAggsDiv  = document.getElementById('ft-gb-aggs-{table_id}');
+  var _gbPctChk   = document.getElementById('ft-gb-pct-{table_id}');
   var _gbRunBtn   = document.getElementById('ft-gb-run-{table_id}');
   var _gbDlX      = document.getElementById('ft-gb-dl-xlsx-{table_id}');
   var _gbDlT      = document.getElementById('ft-gb-dl-tsv-{table_id}');
@@ -12338,6 +12349,7 @@ setTimeout(function() {{
     _gbBtn.addEventListener('click', function() {{
       _buildGbModal();
       _gbSortState = {{ col: -1, asc: true }};
+      if (_gbPctChk) _gbPctChk.checked = false;
       _gbModal.style.display = '';
       if (_gbResult) {{ _gbResult.style.display = 'none'; _gbResult.innerHTML = ''; }}
       if (_gbDlX)  _gbDlX.style.display  = 'none';
@@ -12389,22 +12401,50 @@ setTimeout(function() {{
           if (isFinite(n) && !isNaN(n)) groups[key].ad[ac.idx].push(n);
         }});
       }});
-      var hdrs = gbCols.map(function(gc) {{ return gc.name; }});
-      hdrs.push('Počet');
-      aggCols.forEach(function(ac) {{ hdrs.push(ac.fn + '(' + ac.name + ')'); }});
-      var drows = gOrder.map(function(key) {{
-        var g = groups[key], r = g.vals.slice();
-        r.push(String(g.count));
+      var _addPct = _gbPctChk && _gbPctChk.checked;
+      // ── spočítej agregované hodnoty ───────────────────────────────────────────
+      var _aggVals = gOrder.map(function(key) {{
+        var g = groups[key], vals = [];
         aggCols.forEach(function(ac) {{
           var vs = g.ad[ac.idx];
-          if (!vs.length) {{ r.push('—'); return; }}
+          if (!vs.length) {{ vals.push(null); return; }}
           var v;
           if      (ac.fn==='SUM')   v = vs.reduce(function(a,b){{return a+b;}},0);
           else if (ac.fn==='AVG')   v = vs.reduce(function(a,b){{return a+b;}},0)/vs.length;
           else if (ac.fn==='COUNT') v = vs.length;
           else if (ac.fn==='MIN')   v = Math.min.apply(null,vs);
           else                      v = Math.max.apply(null,vs);
-          r.push(String(Math.round(v*100)/100));
+          vals.push(Math.round(v*100)/100);
+        }});
+        return vals;
+      }});
+      // ── celkové součty pro % z celku ─────────────────────────────────────────
+      var _totals = aggCols.map(function(ac, ai) {{
+        if (!_addPct) return null;
+        var tot = 0, hasAny = false;
+        _aggVals.forEach(function(row) {{ if (row[ai] !== null) {{ tot += row[ai]; hasAny = true; }} }});
+        return hasAny ? tot : null;
+      }});
+      // ── záhlaví ──────────────────────────────────────────────────────────────
+      var hdrs = gbCols.map(function(gc) {{ return gc.name; }});
+      hdrs.push('Počet');
+      if (_addPct) hdrs.push('% skupin');
+      aggCols.forEach(function(ac, ai) {{
+        hdrs.push(ac.fn + '(' + ac.name + ')');
+        if (_addPct && _totals[ai] !== null) hdrs.push('% z celku (' + ac.name + ')');
+      }});
+      // ── řádky ────────────────────────────────────────────────────────────────
+      var totalCount = visR.length;
+      var drows = gOrder.map(function(key, ki) {{
+        var g = groups[key], r = g.vals.slice();
+        r.push(String(g.count));
+        if (_addPct) r.push(totalCount > 0 ? String(Math.round(g.count/totalCount*1000)/10) + ' %' : '—');
+        aggCols.forEach(function(ac, ai) {{
+          var v = _aggVals[ki][ai];
+          r.push(v === null ? '—' : String(v));
+          if (_addPct && _totals[ai] !== null) {{
+            r.push(v === null ? '—' : String(Math.round(v/_totals[ai]*1000)/10) + ' %');
+          }}
         }});
         return r;
       }});
