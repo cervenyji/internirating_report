@@ -302,27 +302,27 @@ SEKCE_CELKOVY = {
     # ── Vždy viditelné ────────────────────────────────────────────────────────
     "prehled":         True,   # 📋 Celkový přehled pobočkových ratingů
     "obchody":         True,   # 🛒 Přehled obchodů dle produktové skupiny
-    "typologie":       True,   # 🏢 Přehled poboček dle regionu — Typologie / Bezhotovostní / Formát
-    "orp":             True,   # 🗺️ Pokrytí ORP — analýza
-    "mapa":            True,   # 🗺️ Mapa poboček — celá síť (přepínač Strategie / Jednočlenné)
+    "typologie":       False,  # 🏢 Přehled poboček dle regionu — Typologie / Bezhotovostní / Formát
+    "orp":             False,  # 🗺️ Pokrytí ORP — analýza
+    "mapa":            False,  # 🗺️ Mapa poboček — celá síť (přepínač Strategie / Jednočlenné)
     # ── Rozbalovací sekce ─────────────────────────────────────────────────────
-    "oc_analyza":      True,   # 🏬 Analýza poboček v obchodním centru
-    "benchmark":       True,   # 📊 Síťový benchmark
-    "strategie":       True,   # 📋 Strategie poboček — Close · Investice · Cashless
-    "top_vynosy":      True,   # 💰 Nejvyšší nové výnosy
-    "top_rating":      True,   # 🚀⚠️ Top 5: Zlepšení a zhoršení ratingu
-    "vekove_segmenty": True,   # 👥 Věková struktura klientů
-    "top_investice":   True,   # 🔨 Top investice — celá síť
-    "nebezpecna_zona": True,   # 🚨 Pobočky v nebezpečné zóně
-    "scatter_analyza": True,   # 📉 Scatter analýza: Výnosy vs C/I · Prodeje vs PEREX
-    "kohortova":       True,   # 📊 Kohortová analýza výnosů
-    "atm":             True,   # 🏧 Bankomaty — celková síť
-    "index_expozice":  True,   # 📡 Index expozice — top 5
-    "klienti_heatmapa":True,   # 💎 Kde bydlí klienti s nejvyššími výnosy
-    "klienti_profil":  True,   # 👤 Průměrný klient dle segmentu (CP_SEGMENT_ID)
-    "simulace":        True,   # 🏦 Simulace sítě 250 poboček
+    "oc_analyza":      False,  # 🏬 Analýza poboček v obchodním centru
+    "benchmark":       False,  # 📊 Síťový benchmark
+    "strategie":       False,  # 📋 Strategie poboček — Close · Investice · Cashless
+    "top_vynosy":      False,  # 💰 Nejvyšší nové výnosy
+    "top_rating":      False,  # 🚀⚠️ Top 5: Zlepšení a zhoršení ratingu
+    "vekove_segmenty": False,  # 👥 Věková struktura klientů
+    "top_investice":   False,  # 🔨 Top investice — celá síť
+    "nebezpecna_zona": False,  # 🚨 Pobočky v nebezpečné zóně
+    "scatter_analyza": False,  # 📉 Scatter analýza: Výnosy vs C/I · Prodeje vs PEREX
+    "kohortova":       False,  # 📊 Kohortová analýza výnosů
+    "atm":             False,  # 🏧 Bankomaty — celková síť
+    "index_expozice":  False,  # 📡 Index expozice — top 5
+    "klienti_heatmapa":False,  # 💎 Kde bydlí klienti s nejvyššími výnosy
+    "klienti_profil":  False,  # 👤 Průměrný klient dle segmentu (CP_SEGMENT_ID)
+    "simulace":        False,  # 🏦 Simulace sítě 250 poboček
     "specialiste":     True,   # 👷 Přehled obsazení pozic
-    "metriky":         True,   # 📊 Přehled výkonnostních metrik
+    "metriky":         False,  # 📊 Přehled výkonnostních metrik
 }
 
 # ── Sekce v regionálním reportu ───────────────────────────────────────────────
@@ -749,6 +749,7 @@ NOVE_NAZVY = {
     "BRANCH_FORMAT_OBCHODNI":     "Formát pobočky (obch. FTE dle redim)",
     "BRANCH_FORMAT_OBCHODNI_RET": "Formát pobočky (obch. FTE dle redim jen retail pro typologii)",
     "FORMAT_2024_(FIX_FS)":       "Realizovaný formát budovy (DBS)",
+    "FORMAT_2024_FIXED":          "Realizovaný formát budovy fixed (DBS)",
     "BRANCH_BUILDING_NF_SF":      "Formát NF/SF",
     "NEW_FORMAT_SINCE":      "Datum NF",
     "JEDNOCLENNY_PROVOZ":    "Jednočlenný provoz",
@@ -9506,6 +9507,35 @@ def _apply_common_formatting(d, cols_to_show):
                         f'font-weight:600;white-space:nowrap;">{lbl}</span>')
             d['FORMAT_2024_(FIX_FS)'] = d['FORMAT_2024_(FIX_FS)'].apply(_fmt2024_badge_simple)
 
+    # Realizovaný formát budovy fixed (DBS) — barevný badge jen pro NF pobočky
+    if 'FORMAT_2024_FIXED' in cols_to_show and 'FORMAT_2024_FIXED' in d.columns:
+        _nfsf_fx = d['BRANCH_BUILDING_NF_SF'].astype(str).str.strip().str.upper() if 'BRANCH_BUILDING_NF_SF' in d.columns else None
+        _fx_colors = {'small': '#f59e0b', 'medium': '#2770f0', 'flagship': '#0bb440', 'ta': '#7c3aed'}
+        def _fmt_fixed_badge(row_v):
+            v, is_nf = row_v
+            s = str(v or '').lower().strip()
+            if not s or s in ('nan', 'none', '—', ''):
+                return '—'
+            if not is_nf:
+                return '<span style="color:#bbb;font-size:0.72rem;">—</span>'
+            c = _fx_colors.get(s, '#aaa')
+            return (f'<span style="background:{c}18;color:{c};border:1px solid {c}44;'
+                    f'border-radius:5px;padding:1px 7px;font-size:0.72rem;'
+                    f'font-weight:600;white-space:nowrap;">{s.title()}</span>')
+        def _fmt_fixed_badge_simple(v):
+            s = str(v or '').lower().strip()
+            if not s or s in ('nan', 'none', '—', ''):
+                return '—'
+            c = _fx_colors.get(s, '#aaa')
+            return (f'<span style="background:{c}18;color:{c};border:1px solid {c}44;'
+                    f'border-radius:5px;padding:1px 7px;font-size:0.72rem;'
+                    f'font-weight:600;white-space:nowrap;">{s.title()}</span>')
+        if _nfsf_fx is not None:
+            d['FORMAT_2024_FIXED'] = list(zip(d['FORMAT_2024_FIXED'], _nfsf_fx == 'NF'))
+            d['FORMAT_2024_FIXED'] = d['FORMAT_2024_FIXED'].apply(_fmt_fixed_badge)
+        else:
+            d['FORMAT_2024_FIXED'] = d['FORMAT_2024_FIXED'].apply(_fmt_fixed_badge_simple)
+
     # Typologie pobočky (BRANCH_TYPE_NAME) — šedé badges
     if 'BRANCH_TYPE_NAME' in cols_to_show and 'BRANCH_TYPE_NAME' in d.columns:
         def _typ_badge(v):
@@ -10012,6 +10042,7 @@ COL_GROUPS = [
                                 "Formát pobočky (celk. FTE dle controlling)", "Formát pobočky (celk. FTE dle redim)",
                                 "Formát pobočky (obch. FTE dle redim)", "Formát pobočky (obch. FTE dle redim jen retail pro typologii)",
                                 "Realizovaný formát budovy (DBS)",
+                                "Realizovaný formát budovy fixed (DBS)",
                                 "Formát NF/SF", "Datum NF", "Jednočlenný provoz", "Pobočka v OC", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
     ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
     # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
@@ -15525,6 +15556,12 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
     {generate_filterable_table(df_sorted, "main-static-tbl")}
     <div style="margin-bottom:28px;"></div>""")}
 
+    <!-- 1b. Obsazení pozic — hned pod celkovou tabulkou -->
+    {_sc('specialiste', f"""<div style="margin-top:8px;margin-bottom:28px;">{make_collapsible("spec-static", "👷 Přehled obsazení pozic",
+        '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Aktuální obsazení bankéřských a specialistických pozic v pobočkové síti dle regionu. Zaměstnanci s kódem 9997 jsou označeni červeně a nezapočítávají se do celkových součtů.</p>'
+        + generate_specialiste_summary_table(df_sorted["BRANCH_CODE"].dropna().astype(int).tolist(), title=""),
+        default_open=False)}</div>""")}
+
     <!-- 2. Obchody -->
     {_sc('obchody', f"""<div class="section-header">🛒 Přehled obchodů dle produktové skupiny — srovnání 2024 / 2025</div>
     <p style="font-size:0.82rem;color:#666;margin:-6px 0 10px 0;">
@@ -15655,11 +15692,7 @@ def generate_report(rating_status, mode='static', output_prefix="report"):
         '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Simulace optimalizované sítě 300 poboček pro rok 2030 — výnosy, C/I, bankéřská kapacita a přesun klientů ze zavřených poboček.</p>'
         + _inv_impact_300_html, default_open=False))}
 
-    <!-- 18. Obsazení pozic -->
-    {_sc('specialiste', make_collapsible("spec-static", "👷 Přehled obsazení pozic",
-        '<p style="font-size:0.82rem;color:#666;margin:0 0 12px 0;">Aktuální obsazení bankéřských a specialistických pozic v pobočkové síti dle regionu.</p>'
-        + generate_specialiste_summary_table(df_sorted["BRANCH_CODE"].dropna().astype(int).tolist(), title=""),
-        default_open=False))}
+    <!-- 18. Obsazení pozic (přesunuto pod celkovou tabulku — viz 1b výše) -->
 
     <!-- 19. Výkonnostní metriky -->
     {_sc('metriky', make_collapsible("metrics-static", "📊 Přehled výkonnostních metrik",
@@ -19675,6 +19708,24 @@ if 'FORMAT' in df.columns:
     df['FORMAT_2024_(FIX_FS)'] = df['FORMAT']
     df = df.drop(columns=['FORMAT'])
 
+# Realizovaný formát budovy fixed — zjednodušená klasifikace (Flagship/Medium/Small/TA)
+def _simplify_dbs_format(v):
+    s = str(v or '').strip().lower()
+    if not s or s in ('nan', 'none', '—', ''):
+        return None
+    if s.startswith('flagship'):
+        return 'Flagship'
+    if s.startswith('medium'):
+        return 'Medium'
+    if s.startswith('small'):
+        return 'Small'
+    if s.strip() == 'ta':
+        return 'TA'
+    return None
+
+if 'FORMAT_2024_(FIX_FS)' in df.columns:
+    df['FORMAT_2024_FIXED'] = df['FORMAT_2024_(FIX_FS)'].apply(_simplify_dbs_format)
+
 # Explicitní přiřazení výnosových sloupců ze správných zdrojů (přes map — bez merge, bez duplikátů)
 # Nové výnosy 2024: old_ir → NEW_BUSINESS_2024_-_OBJEM_VYNOSU
 _nb24_key = next((c for c in old_ir.columns if c in ('BRANCH_ID', 'BRANCH_CODE')), None)
@@ -20400,13 +20451,15 @@ def generate_metrics_overview(df_input, title="📊 Přehled výkonnostních met
 def generate_specialiste_summary_table(branch_codes_list, title="👥 Přehled obsazení pozic — region", single_branch_code=None):
     """
     Interaktivní výběr pobočky + tabulka zaměstnanců: pozice, jméno, department, skóre.
-    Pokud je zadán single_branch_code, vykreslí tabulku rovnou bez selectu.
+    Zaměstnanci s jobCode 9997 jsou označeni červeně a nezapočítávají se do součtů.
+    Zobrazuje celkový součet per pozici a per department.
     """
     _detail = globals().get('df_specialiste_detail')
     if _detail is None or _detail.empty:
         return ""
 
     import uuid as _uuid, json as _json
+    from collections import Counter as _Counter
     wid = "spec_" + _uuid.uuid4().hex[:8]
 
     branch_codes_list = [int(b) for b in branch_codes_list if pd.notna(b)]
@@ -20417,24 +20470,37 @@ def generate_specialiste_summary_table(branch_codes_list, title="👥 Přehled o
     subset['branch_code'] = subset['branch_code'].astype(int)
     subset = subset.sort_values(['branch_code', 'jobTitleFixed', 'displayName'])
 
-    # Sestav branches_data: {bid: {name, employees: [{pozice, jmeno, department, score}], total}}
     branches_data = {}
     for bid, grp in subset.groupby('branch_code'):
         bname = str(grp['branch_name'].iloc[0]) if 'branch_name' in grp.columns else str(bid)
         employees = []
         for _, row in grp.iterrows():
             sc = row.get('score', None)
+            jc = str(row.get('jobCode', '') or '').strip()
             employees.append({
                 "pozice":     str(row.get('jobTitleFixed', '')),
                 "jmeno":      str(row.get('displayName', '')),
                 "department": str(row.get('department', '')),
                 "score":      round(float(sc), 1) if pd.notna(sc) else None,
+                "is9997":     jc == '9997',
             })
-        branches_data[int(bid)] = {"name": bname, "employees": employees, "total": len(employees)}
+        valid = [e for e in employees if not e['is9997']]
+        pos_counts  = _Counter(e['pozice'] for e in valid)
+        dept_counts = _Counter(e['department'] for e in valid)
+        branches_data[int(bid)] = {
+            "name":       bname,
+            "employees":  employees,
+            "pos_totals": [{"label": k, "count": v}
+                           for k, v in sorted(pos_counts.items())],
+            "dept_totals":[{"label": k, "count": v}
+                           for k, v in sorted(dept_counts.items(), key=lambda x: -x[1])],
+            "total":      len(valid),
+        }
 
     HDR_COLOR = "#2770f0"
     HDR_DARK  = "#1a4db5"
     SUB_COLOR = "#e8edf8"
+    RED9997   = "#dc2626"
 
     def _score_color(sc):
         if sc is None: return "#999"
@@ -20442,6 +20508,112 @@ def generate_specialiste_summary_table(branch_codes_list, title="👥 Přehled o
 
     def _score_str(sc):
         return f"{sc:.1f} %" if sc is not None else "—"
+
+    def _emp_rows_html(employees):
+        rows = ""
+        for i, e in enumerate(employees):
+            if e['is9997']:
+                bg = "#fff1f2"
+                style_td = f"color:{RED9997};font-size:0.82rem;"
+                score_td = f"padding:5px 10px;border-bottom:1px solid #fecaca;text-align:center;font-weight:600;color:{RED9997};"
+            else:
+                bg = "#ffffff" if i % 2 == 0 else "#f4f7ff"
+                style_td = "font-size:0.82rem;"
+                score_td = f"padding:5px 10px;border-bottom:1px solid #e8ecf5;text-align:center;font-weight:600;color:{_score_color(e['score'])};"
+            badge9997 = f' <span style="font-size:0.68rem;background:{RED9997};color:#fff;border-radius:3px;padding:0 4px;vertical-align:middle;">9997</span>' if e['is9997'] else ''
+            rows += (
+                f'<tr style="background:{bg};">'
+                f'<td style="padding:5px 10px;border-bottom:1px solid #e8ecf5;{style_td}">{e["pozice"]}</td>'
+                f'<td style="padding:5px 10px;border-bottom:1px solid #e8ecf5;{style_td}font-weight:600;">{e["jmeno"]}{badge9997}</td>'
+                f'<td style="padding:5px 10px;border-bottom:1px solid #e8ecf5;{style_td}color:#555;">{e["department"]}</td>'
+                f'<td style="{score_td}">{_score_str(e["score"])}</td>'
+                f'</tr>'
+            )
+        return rows
+
+    def _pos_rows_html(pos_totals):
+        rows = ""
+        for i, p in enumerate(pos_totals):
+            bg = "#ffffff" if i % 2 == 0 else "#f4f7ff"
+            rows += (f'<tr style="background:{bg};">'
+                     f'<td style="padding:5px 12px;border-bottom:1px solid #e8ecf5;font-size:0.82rem;">{p["label"]}</td>'
+                     f'<td style="padding:5px 12px;border-bottom:1px solid #e8ecf5;text-align:center;font-weight:700;color:{HDR_COLOR};">{p["count"]}</td>'
+                     f'</tr>')
+        return rows
+
+    def _dept_rows_html(dept_totals):
+        rows = ""
+        for i, d in enumerate(dept_totals):
+            bg = "#ffffff" if i % 2 == 0 else "#f4f7ff"
+            rows += (f'<tr style="background:{bg};">'
+                     f'<td style="padding:5px 12px;border-bottom:1px solid #e8ecf5;font-size:0.82rem;">{d["label"]}</td>'
+                     f'<td style="padding:5px 12px;border-bottom:1px solid #e8ecf5;text-align:center;font-weight:700;color:{HDR_COLOR};">{d["count"]}</td>'
+                     f'</tr>')
+        return rows
+
+    def _summary_tables_html(b):
+        pos_html = _pos_rows_html(b['pos_totals'])
+        dept_html = _dept_rows_html(b['dept_totals'])
+        return f"""
+<div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:16px;">
+  <div style="flex:1;min-width:240px;">
+    <div style="font-size:0.79rem;font-weight:700;color:#374151;text-transform:uppercase;
+                letter-spacing:0.5px;margin-bottom:6px;padding-left:4px;">Součet per pozici (bez 9997)</div>
+    <table style="width:100%;border-collapse:collapse;border-radius:6px;overflow:hidden;
+                  box-shadow:0 1px 4px rgba(0,0,0,.08);">
+      <thead><tr style="background:{HDR_COLOR};">
+        <th style="padding:5px 12px;color:#fff;text-align:left;font-size:0.79rem;">Pozice</th>
+        <th style="padding:5px 12px;color:#fff;text-align:center;font-size:0.79rem;width:60px;">Počet</th>
+      </tr></thead>
+      <tbody>{pos_html}</tbody>
+    </table>
+  </div>
+  <div style="flex:1;min-width:240px;">
+    <div style="font-size:0.79rem;font-weight:700;color:#374151;text-transform:uppercase;
+                letter-spacing:0.5px;margin-bottom:6px;padding-left:4px;">Součet per department (bez 9997)</div>
+    <table style="width:100%;border-collapse:collapse;border-radius:6px;overflow:hidden;
+                  box-shadow:0 1px 4px rgba(0,0,0,.08);">
+      <thead><tr style="background:{HDR_COLOR};">
+        <th style="padding:5px 12px;color:#fff;text-align:left;font-size:0.79rem;">Department</th>
+        <th style="padding:5px 12px;color:#fff;text-align:center;font-size:0.79rem;width:60px;">Počet</th>
+      </tr></thead>
+      <tbody>{dept_html}</tbody>
+    </table>
+  </div>
+</div>"""
+
+    def _main_table_html(b):
+        rows = _emp_rows_html(b['employees'])
+        n9997 = sum(1 for e in b['employees'] if e['is9997'])
+        note9997 = (f' <span style="font-size:0.79rem;color:{RED9997};font-weight:600;">'
+                    f'· {n9997}× kód 9997 (nezapočítáno)</span>') if n9997 else ''
+        return f"""
+<div style="overflow-x:auto;">
+<table style="width:100%;border-collapse:collapse;font-size:0.84rem;
+              border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.10);">
+  <thead>
+    <tr style="background:{HDR_COLOR};">
+      <th colspan="4" style="padding:9px 16px;color:#fff;text-align:left;
+             font-size:0.90rem;font-weight:bold;letter-spacing:0.2px;">👥 {b['name']}</th>
+    </tr>
+    <tr style="background:{SUB_COLOR};">
+      <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Pozice</th>
+      <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Jméno</th>
+      <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Department</th>
+      <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:center;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;width:75px;">Skóre</th>
+    </tr>
+  </thead>
+  <tbody>{rows}</tbody>
+  <tfoot>
+    <tr style="background:{HDR_DARK};">
+      <td colspan="3" style="padding:8px 14px;font-weight:bold;color:#fff;font-size:0.86rem;">
+        ∑ Celkem pracovníků{note9997}
+      </td>
+      <td style="padding:8px 14px;text-align:center;font-weight:bold;color:#fff;font-size:0.92rem;">{b['total']}</td>
+    </tr>
+  </tfoot>
+</table>
+</div>"""
 
     # ── Přímé vykreslení pro jednu pobočku ────────────────────────────────────
     if single_branch_code is not None:
@@ -20455,49 +20627,11 @@ def generate_specialiste_summary_table(branch_codes_list, title="👥 Přehled o
     Pro tuto pobočku nejsou evidováni žádní specialisté.
   </p>
 </div>"""
-
-        rows_html = ""
-        for i, e in enumerate(b["employees"]):
-            bg = "#ffffff" if i % 2 == 0 else "#f4f7ff"
-            sc = e["score"]
-            rows_html += (
-                f"<tr style='background:{bg};'>"
-                f"<td style='padding:6px 14px;border-bottom:1px solid #e8ecf5;'>{e['pozice']}</td>"
-                f"<td style='padding:6px 14px;border-bottom:1px solid #e8ecf5;font-weight:600;'>{e['jmeno']}</td>"
-                f"<td style='padding:6px 14px;border-bottom:1px solid #e8ecf5;font-size:0.80rem;color:#555;'>{e['department']}</td>"
-                f"<td style='padding:6px 14px;border-bottom:1px solid #e8ecf5;text-align:center;"
-                f"font-weight:600;color:{_score_color(sc)};'>{_score_str(sc)}</td>"
-                f"</tr>"
-            )
-
         return f"""
 <div style="margin:18px 0 14px 0;">
   <div class="section-header">{title}</div>
-  <div style="overflow-x:auto;">
-  <table style="width:100%;border-collapse:collapse;font-size:0.84rem;
-                border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.10);">
-    <thead>
-      <tr style="background:{HDR_COLOR};">
-        <th colspan="4"
-            style="padding:9px 16px;color:#fff;text-align:left;
-                   font-size:0.90rem;font-weight:bold;letter-spacing:0.2px;">👥 {b['name']}</th>
-      </tr>
-      <tr style="background:{SUB_COLOR};">
-        <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Pozice</th>
-        <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Jméno</th>
-        <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Department</th>
-        <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:center;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;width:75px;">Skóre</th>
-      </tr>
-    </thead>
-    <tbody>{rows_html}</tbody>
-    <tfoot>
-      <tr style="background:{HDR_DARK};">
-        <td colspan="3" style="padding:8px 14px;font-weight:bold;color:#fff;font-size:0.86rem;">∑ Celkem pracovníků</td>
-        <td style="padding:8px 14px;text-align:center;font-weight:bold;color:#fff;font-size:0.92rem;">{b['total']}</td>
-      </tr>
-    </tfoot>
-  </table>
-  </div>
+  {_main_table_html(b)}
+  {_summary_tables_html(b)}
 </div>"""
 
     # ── Interaktivní select ────────────────────────────────────────────────────
@@ -20510,7 +20644,7 @@ def generate_specialiste_summary_table(branch_codes_list, title="👥 Přehled o
 
     return f"""
 <div style="margin:18px 0 14px 0;">
-  <div class="section-header">{title}</div>
+  {"<div class='section-header'>" + title + "</div>" if title else ""}
 
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;
               margin:10px 0 12px 0;padding:10px 14px;
@@ -20529,31 +20663,9 @@ def generate_specialiste_summary_table(branch_codes_list, title="👥 Přehled o
                  color:{HDR_COLOR};font-weight:600;"></span>
   </div>
 
-  <div id="{wid}_card" style="display:none;overflow-x:auto;">
-    <table style="width:100%;border-collapse:collapse;font-size:0.84rem;
-                  border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.10);">
-      <thead>
-        <tr style="background:{HDR_COLOR};">
-          <th colspan="4" id="{wid}_card_hdr"
-              style="padding:9px 16px;color:#fff;text-align:left;
-                     font-size:0.90rem;font-weight:bold;letter-spacing:0.2px;"></th>
-        </tr>
-        <tr style="background:{SUB_COLOR};">
-          <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Pozice</th>
-          <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Jméno</th>
-          <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Department</th>
-          <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:center;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;width:75px;">Skóre</th>
-        </tr>
-      </thead>
-      <tbody id="{wid}_rows"></tbody>
-      <tfoot>
-        <tr style="background:{HDR_DARK};">
-          <td colspan="3" style="padding:8px 14px;font-weight:bold;color:#fff;font-size:0.86rem;">∑ Celkem pracovníků</td>
-          <td id="{wid}_total"
-              style="padding:8px 14px;text-align:center;font-weight:bold;color:#fff;font-size:0.92rem;"></td>
-        </tr>
-      </tfoot>
-    </table>
+  <div id="{wid}_card" style="display:none;">
+    <div id="{wid}_main_tbl" style="overflow-x:auto;"></div>
+    <div id="{wid}_summaries" style="margin-top:0;"></div>
   </div>
 
   <div id="{wid}_empty"
@@ -20568,19 +20680,81 @@ def generate_specialiste_summary_table(branch_codes_list, title="👥 Přehled o
   var data  = {data_js};
   var sel   = document.getElementById('{wid}_sel');
   var card  = document.getElementById('{wid}_card');
-  var hdr   = document.getElementById('{wid}_card_hdr');
-  var tbody = document.getElementById('{wid}_rows');
-  var tfoot = document.getElementById('{wid}_total');
+  var mainT = document.getElementById('{wid}_main_tbl');
+  var sumDiv= document.getElementById('{wid}_summaries');
   var badge = document.getElementById('{wid}_badge');
   var empty = document.getElementById('{wid}_empty');
+  var RED   = '{RED9997}';
+  var HDR   = '{HDR_COLOR}';
+  var HDRD  = '{HDR_DARK}';
+  var SUB   = '{SUB_COLOR}';
   if (!sel) return;
 
   function scoreColor(sc) {{
     if (sc === null) return '#999';
     return sc >= 90 ? '#1b5e20' : sc < 70 ? '#e65100' : '#1565C0';
   }}
-  function scoreStr(sc) {{
-    return sc !== null ? sc.toFixed(1) + ' %' : '—';
+  function scoreStr(sc) {{ return sc !== null ? sc.toFixed(1) + ' %' : '—'; }}
+
+  function renderMain(b) {{
+    var n9997 = b.employees.filter(function(e){{ return e.is9997; }}).length;
+    var note  = n9997 ? ' <span style="font-size:0.79rem;color:' + RED + ';font-weight:600;">· ' + n9997 + '× kód 9997 (nezapočítáno)</span>' : '';
+    var rows  = b.employees.map(function(e, i) {{
+      var bg  = e.is9997 ? '#fff1f2' : (i % 2 === 0 ? '#ffffff' : '#f4f7ff');
+      var sc  = e.score;
+      var scColor = e.is9997 ? RED : scoreColor(sc);
+      var badge9997 = e.is9997 ? ' <span style="font-size:0.68rem;background:' + RED + ';color:#fff;border-radius:3px;padding:0 4px;vertical-align:middle;">9997</span>' : '';
+      var tdStyle = e.is9997 ? 'color:' + RED + ';font-size:0.82rem;' : 'font-size:0.82rem;';
+      return '<tr style="background:' + bg + ';">'
+        + '<td style="padding:5px 10px;border-bottom:1px solid #e8ecf5;' + tdStyle + '">' + e.pozice + '</td>'
+        + '<td style="padding:5px 10px;border-bottom:1px solid #e8ecf5;' + tdStyle + 'font-weight:600;">' + e.jmeno + badge9997 + '</td>'
+        + '<td style="padding:5px 10px;border-bottom:1px solid #e8ecf5;' + tdStyle + 'color:#555;">' + e.department + '</td>'
+        + '<td style="padding:5px 10px;border-bottom:1px solid #e8ecf5;text-align:center;font-weight:600;color:' + scColor + ';">' + scoreStr(sc) + '</td>'
+        + '</tr>';
+    }}).join('');
+    return '<table style="width:100%;border-collapse:collapse;font-size:0.84rem;'
+      + 'border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.10);">'
+      + '<thead><tr style="background:' + HDR + ';">'
+      + '<th colspan="4" style="padding:9px 16px;color:#fff;text-align:left;font-size:0.90rem;font-weight:bold;">👥 ' + b.name + '</th>'
+      + '</tr><tr style="background:' + SUB + ';">'
+      + '<th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Pozice</th>'
+      + '<th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Jméno</th>'
+      + '<th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Department</th>'
+      + '<th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:center;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;width:75px;">Skóre</th>'
+      + '</tr></thead>'
+      + '<tbody>' + rows + '</tbody>'
+      + '<tfoot><tr style="background:' + HDRD + ';">'
+      + '<td colspan="3" style="padding:8px 14px;font-weight:bold;color:#fff;font-size:0.86rem;">∑ Celkem pracovníků' + note + '</td>'
+      + '<td style="padding:8px 14px;text-align:center;font-weight:bold;color:#fff;font-size:0.92rem;">' + b.total + '</td>'
+      + '</tr></tfoot></table>';
+  }}
+
+  function renderSummary(b) {{
+    function tblRows(items) {{
+      return items.map(function(it, i) {{
+        var bg = i % 2 === 0 ? '#fff' : '#f4f7ff';
+        return '<tr style="background:' + bg + ';">'
+          + '<td style="padding:5px 12px;border-bottom:1px solid #e8ecf5;font-size:0.82rem;">' + it.label + '</td>'
+          + '<td style="padding:5px 12px;border-bottom:1px solid #e8ecf5;text-align:center;font-weight:700;color:' + HDR + ';">' + it.count + '</td>'
+          + '</tr>';
+      }}).join('');
+    }}
+    var thStyle = 'padding:5px 12px;color:#fff;font-size:0.79rem;';
+    function tbl(rows) {{
+      return '<table style="width:100%;border-collapse:collapse;border-radius:6px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);">'
+        + '<thead><tr style="background:' + HDR + ';">'
+        + '<th style="' + thStyle + 'text-align:left;">Pozice / Department</th>'
+        + '<th style="' + thStyle + 'text-align:center;width:60px;">Počet</th>'
+        + '</tr></thead><tbody>' + rows + '</tbody></table>';
+    }}
+    return '<div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:16px;">'
+      + '<div style="flex:1;min-width:240px;">'
+      + '<div style="font-size:0.79rem;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;padding-left:4px;">Součet per pozici (bez 9997)</div>'
+      + tbl(tblRows(b.pos_totals))
+      + '</div><div style="flex:1;min-width:240px;">'
+      + '<div style="font-size:0.79rem;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;padding-left:4px;">Součet per department (bez 9997)</div>'
+      + tbl(tblRows(b.dept_totals))
+      + '</div></div>';
   }}
 
   sel.addEventListener('change', function() {{
@@ -20594,25 +20768,15 @@ def generate_specialiste_summary_table(branch_codes_list, title="👥 Přehled o
       empty.style.display = 'block';
       return;
     }}
-    hdr.textContent = '👥 ' + b.name;
-    tbody.innerHTML = b.employees.map(function(e, i) {{
-      var bg = i % 2 === 0 ? '#ffffff' : '#f4f7ff';
-      var sc = e.score;
-      return '<tr style="background:' + bg + ';">'
-        + '<td style="padding:6px 14px;border-bottom:1px solid #e8ecf5;">' + e.pozice + '</td>'
-        + '<td style="padding:6px 14px;border-bottom:1px solid #e8ecf5;font-weight:600;">' + e.jmeno + '</td>'
-        + '<td style="padding:6px 14px;border-bottom:1px solid #e8ecf5;font-size:0.80rem;color:#555;">' + e.department + '</td>'
-        + '<td style="padding:6px 14px;border-bottom:1px solid #e8ecf5;text-align:center;'
-        + 'font-weight:600;color:' + scoreColor(sc) + ';">' + scoreStr(sc) + '</td>'
-        + '</tr>';
-    }}).join('');
-    tfoot.textContent  = b.total;
+    mainT.innerHTML = renderMain(b);
+    sumDiv.innerHTML = renderSummary(b);
     badge.textContent  = b.total + ' pracovníků';
     badge.style.display = 'inline-block';
     card.style.display  = 'block';
   }});
 }})();
 </script>"""
+
 
 def generate_branch_reports(rating_status, output_dir="report_pobocky", hotovostni_trn=None, hotovostni_trn_detail=None, export_atm=None, kapacita_atm=None, visits=None, parties_full=None, spadovky=None, oteviraci_doba_detail=None):
     """
