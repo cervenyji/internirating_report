@@ -10037,21 +10037,21 @@ def write_excel_sheet(ws, df_excel, freeze="D2"):
 # Skupiny sloupců pro přepínání v hlavní tabulce regionu
 COL_GROUPS = [
     # ── 🗄️ Databáze síť ───────────────────────────────────────────────────────
-    ("📍 Adresa",              ["Oblast", "Region fixed", "Město", "Obvod / část", "Ulice", "Č. popisné", "Č. orientační", "RUIAN ID", "ORP", "ORP kód", "Krajské město", "Okresní město"], "#f0f4f8"),
+    ("📍 Adresa",              ["Oblast", "Region fixed", "Město", "Obvod / část", "Ulice", "Č. popisné", "Č. orientační", "RUIAN ID", "ORP", "ORP kód", "Krajské město", "Okresní město"], "#DEE5EA"),  # Stone 15%
     ("🏢 Budova",              ["Aktuálně otevřeno", "Stav od", "HJ", "Typologie",
                                 "Formát pobočky (celk. FTE dle controlling)", "Formát pobočky (celk. FTE dle redim)",
                                 "Formát pobočky (obch. FTE dle redim)", "Formát pobočky (obch. FTE dle redim jen retail pro typologii)",
                                 "Realizovaný formát budovy (DBS)",
                                 "Realizovaný formát budovy fixed (DBS)",
-                                "Formát NF/SF", "Datum NF", "Jednočlenný provoz", "Pobočka v OC", "Bezhotovostní", "Datum bezhotovostní"], "#e0ecf5"),
-    ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#cfe3f0"),
+                                "Formát NF/SF", "Datum NF", "Jednočlenný provoz", "Pobočka v OC", "Bezhotovostní", "Datum bezhotovostní"], "#C9D8E2"),  # Stone 25%
+    ("🕐 Otevírací doba",      ["Týdenní ot. hodiny", "Víkendová pobočka", "Polední pauza", "Počet dní otevřené pokladny / rok"], "#D9F1F1"),  # Teal 15%
     # ── ⭐ Ratingy ────────────────────────────────────────────────────────────
     ("⭐ Interní rating",      ["Rating 23", "Rating 24", "Rating 25",
                                "Trend ratingu 23–25", "Rating 25 kvintil",
-                               "Změna ratingu 25/24", "Změna ratingu perc 25/24", "⚠️ Nebezpečná zóna"], "#fff8e1"),
+                               "Změna ratingu 25/24", "Změna ratingu perc 25/24", "⚠️ Nebezpečná zóna"], "#FFE7E0"),  # Orange 15%
     ("🎯 Performance zóny",   ["Rating 24 skóre", "Performance zone 24",
-                               "Rating 25 skóre", "Performance zone 25"], "#fff6e0"),
-    ("🕰️ Interní rating (metodika 2022)", ["Rating 22", "Rating 22 kvintil", "Rating 22 skóre"], "#fef9e7"),
+                               "Rating 25 skóre", "Performance zone 25"], "#FFDDD4"),  # Orange 20%
+    ("🕰️ Interní rating (metodika 2022)", ["Rating 22", "Rating 22 kvintil", "Rating 22 skóre"], "#FFEEE9"),  # Orange 10%
     ("📈 Business rating",     [
         "Výnos/bankéř", "Výnos/bankéř kvintil",
         "Noví klienti/bankéř", "Noví klienti/bankéř kvintil",
@@ -10059,8 +10059,8 @@ COL_GROUPS = [
         "Schůzky/bankéř", "Schůzky/bankéř kvintil",
         "PEREX", "PEREX kvintil",
         "Business pořadí", "Business rating kvintil",
-    ], "#fff3c4"),
-    ("🏦 Hotovostní rating",   ["Cash rating pořadí", "Vypočítaná strategie", "Cash rating kvintil", "Trn. počet celkem", "Trn. objem celkem", "Denní trn. průměr"], "#ffeaa0"),
+    ], "#DFEAFC"),  # Bright Blue 15%
+    ("🏦 Hotovostní rating",   ["Cash rating pořadí", "Vypočítaná strategie", "Cash rating kvintil", "Trn. počet celkem", "Trn. objem celkem", "Denní trn. průměr"], "#C8E8E9"),  # Teal 22%
     ("🏅 Sdružené ratingy",   [
         "Rating 25 kvintil",
         "C/I kvintil",
@@ -10073,20 +10073,20 @@ COL_GROUPS = [
         "PEREX kvintil",
         "Cash rating kvintil",
         "Nájemné kvintil",
-    ], "#ffd870"),
-    ("📡 Index expozice",      ["Index expozice", "Index expozice kvintil"], "#ffc840"),
+    ], "#D9EDE7"),  # Forest 15%
+    ("📡 Index expozice",      ["Index expozice", "Index expozice kvintil"], "#DBF4E2"),  # Apple 15%
     # ── 📈 Performance ────────────────────────────────────────────────────────
-    ("📊 C/I",                 ["C/I ratio 21", "C/I ratio 22", "C/I ratio 23", "C/I ratio 24", "C/I ratio 25", "Trend C/I 21–25", "C/I kvintil", "Změna C/I 25/24"], "#e0f7fa"),
+    ("📊 C/I",                 ["C/I ratio 21", "C/I ratio 22", "C/I ratio 23", "C/I ratio 24", "C/I ratio 25", "Trend C/I 21–25", "C/I kvintil", "Změna C/I 25/24"], "#D4E5FA"),  # Bright Blue 20%
     ("💰 Výnosy",              ["Výnosy 21", "Výnosy 22", "Výnosy 23", "Výnosy 24", "Výnosy 25",
                                 "Trend výnosů 21–25",
-                                "Nové výnosy 24", "Nové výnosy 25", "Nové výnosy kvintil", "Změna nových výnosů 25/24"], "#ccf2f7"),
+                                "Nové výnosy 24", "Nové výnosy 25", "Nové výnosy kvintil", "Změna nových výnosů 25/24"], "#C5E4E5"),  # Teal 25%
     ("💵 Transakční data",     [
         "% převoditelnosti",
         "Cash IN převod. Kč", "Cash IN nepřevod. Kč",
         "Cash IN převod. počet", "Cash IN nepřevod. počet",
         "Cash OUT převod. Kč", "Cash OUT nepřevod. Kč",
         "Cash OUT převod. počet", "Cash OUT nepřevod. počet",
-    ], "#b2eaf0"),
+    ], "#B8DFDF"),  # Teal 30%
     ("🛍️ Prodeje",             [
         "Prodeje celkem 2025",
         "Prodeje Účty 2025",        "Účty kvintil",
@@ -10098,49 +10098,49 @@ COL_GROUPS = [
         "Prodeje Revol. úvěry 2025","Revol. úvěry kvintil",
         "Prodeje Úvěry 2025",       "Úvěry kvintil",
         "Prodeje Penze 2025",       "Penze kvintil",
-    ], "#98e2e8"),
+    ], "#CAF0D5"),  # Apple 20%
     ("👷 FTE",               [
         "Celková FTE controlling", "Celková FTE redim", "Počet bankéřů redim",
         "FTE všechny obchodní pozice redim", "Celková obchodní FTE jen retail pro typologii",
         "FTE MMMA", "FTE SBC", "FTE HC", "FTE EPC", "FTE EPB", "FTE PROVOZ", "FTE RKC",
         "Přítomnost segmentů",
-    ], "#7ddbe3"),
+    ], "#C0E8DF"),  # Forest 20%
     # ── 🎯 Strategie ──────────────────────────────────────────────────────────
     ("🗺️ Strategie BNS",      ["Strategie BNS", "Strategie BNS dle IR 25",
                                "Pool FHC", "Pool NF",
-                               "Rok uzavření", "Rok investice NF", "Rok investice FHC", "Rok plánované investice"], "#fff3e0"),
+                               "Rok uzavření", "Rok investice NF", "Rok investice FHC", "Rok plánované investice"], "#FCE4EB"),  # Pink 15%
     ("🏗️ Modely",             ["Simulace 250", "Simulace 280", "Simulace 300",
-                               "Rating 2030 (sim.)", "Kvintil 2030 (sim.)"], "#f3e8ff"),
-    ("💵 Strategie hotovosti", ["Rok cashless přechodu", "Status cashless", "Bezhotovostní", "Datum bezhotovostní"], "#ffe8c8"),
+                               "Rating 2030 (sim.)", "Kvintil 2030 (sim.)"], "#EADDEB"),  # Aubergine 15%
+    ("💵 Strategie hotovosti", ["Rok cashless přechodu", "Status cashless", "Bezhotovostní", "Datum bezhotovostní"], "#FFD9CE"),  # Orange 25%
     # ── 👥 Klient a návštěvy ─────────────────────────────────────────────────
     ("👥 Klienti",             ["Klienti EOY 2021", "Klienti EOY 2022", "Klienti EOY 2023",
                                 "Klienti EOY 2024", "Klienti EOY 2025", "Trend klientů 21–25",
                                 "Primární klienti", "Aktivní klienti",
                                 "Poměr klientů", "Primární / celkem", "Aktivní / celkem",
-                                "Cizinci celkem", "Cizinci SK", "Cizinci UA"], "#fce4ec"),
+                                "Cizinci celkem", "Cizinci SK", "Cizinci UA"], "#F9D4E4"),  # Pink 20%
     ("🚶 Návštěvy",            [
         "Poměr návštěv",
         "Online schůzky", "Fyzické schůzky", "Bezhot. walkin", "Hot. walkin", "Celkové návštěvy",
         "Návštěvy/bankéř", "Online schůzky/bankéř", "Fyzické schůzky/bankéř",
         "Bezhot. walkin/bankéř", "Hot. walkin/bankéř",
         "Návštěvy / ot. hod.",
-    ], "#f8d2e0"),
+    ], "#F5C4DC"),  # Pink 25%
     ("🔀 Spádová oblast",     [
         "Spádová pobočka 1", "Spád. návštěvy 1", "Spád. podíl 1", "Vzdálenost km 1", "Odhad přesunu % 1",
         "Spádová pobočka 2", "Spád. návštěvy 2", "Spád. podíl 2", "Vzdálenost km 2", "Odhad přesunu % 2",
         "Spádová pobočka 3", "Spád. návštěvy 3", "Spád. podíl 3", "Vzdálenost km 3", "Odhad přesunu % 3",
-    ], "#f3bcd0"),
+    ], "#E3CCE7"),  # Aubergine 20%
     # ── 🏠 Majetek ────────────────────────────────────────────────────────────
-    ("🏠 Nájemné",             ["Vlastnictví", "Roční nájemné", "Nájemné kvintil", "Začátek smlouvy", "Konec smlouvy", "Výpovědní lhůta"], "#f3e5f5"),
-    ("🔨 Investice",           ["Poslední investice", "Datum posl. inv.", "Výše posl. inv.", "Nejvyšší investice", "Datum nejv. inv.", "Výše nejv. inv.", "Celkem zainvestováno"], "#e9d5f0"),
+    ("🏠 Nájemné",             ["Vlastnictví", "Roční nájemné", "Nájemné kvintil", "Začátek smlouvy", "Konec smlouvy", "Výpovědní lhůta"], "#DBBFE3"),  # Aubergine 25%
+    ("🔨 Investice",           ["Poslední investice", "Datum posl. inv.", "Výše posl. inv.", "Nejvyšší investice", "Datum nejv. inv.", "Výše nejv. inv.", "Celkem zainvestováno"], "#D3B3DF"),  # Aubergine 30%
     ("📐 Alokační report",     [
         "Pouze D5", "WPL max 2026", "WPL využito 2026",
         "Celk. plocha pobočky", "Plocha pouze D5", "Plocha nad optimál",
-    ], "#ddc5ea"),
+    ], "#BECDD8"),  # Stone 30%
     # ── 🔧 Ostatní ────────────────────────────────────────────────────────────
     ("🏧 ATM",                ["Počet ATM", "ATM přehled", "ATM volná kap. %",
                                 "ATM výběry průměr/měs.", "ATM vklady průměr/měs.",
-                                "ATM výběry po převodu/měs.", "ATM vklady po převodu/měs."], "#e3f2fd"),
+                                "ATM výběry po převodu/měs.", "ATM vklady po převodu/měs."], "#B4D9F8"),  # Bright Blue 30%
 ]
 
 # Meta pro každou skupinu: akcentová barva a podskupina pro přepínač
@@ -10734,13 +10734,13 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
     font-size:0.88rem; width:280px; outline:none;
     box-shadow:inset 0 1px 3px rgba(0,0,0,.08);
   }}
-  #wrapper-{table_id} .ft-input:focus {{ border-color:#2770f0; }}
+  #wrapper-{table_id} .ft-input:focus {{ border-color:#2870ED; }}
   #wrapper-{table_id} .ft-btn {{
     padding:6px 14px; border:1px solid #ccc; border-radius:6px;
     background:#f5f5f5; font-size:0.85rem; cursor:pointer;
   }}
-  #wrapper-{table_id} .ft-btn-blue {{ border:none; background:#2770f0; color:white; }}
-  #wrapper-{table_id} .ft-btn-red  {{ border:none; background:#e64343; color:white; }}
+  #wrapper-{table_id} .ft-btn-blue {{ border:none; background:#2870ED; color:white; }}
+  #wrapper-{table_id} .ft-btn-red  {{ border:none; background:#EB4C79; color:white; }}
   #wrapper-{table_id} .ft-count {{ font-size:0.82rem; color:#888; }}
   #wrapper-{table_id} .ft-label {{ font-size:0.85rem; color:#555; font-weight:600; }}
   #wrapper-{table_id} .col-toggle-bar {{
@@ -10777,7 +10777,7 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
   }}
   /* ── Column picker ── */
   #col-picker-panel-{table_id} input[type=checkbox] {{
-    cursor:pointer; accent-color:#2770f0;
+    cursor:pointer; accent-color:#2870ED;
   }}
   #col-picker-panel-{table_id} .cp-group-hdr {{
     font-size:0.72rem; font-weight:700; color:#8899bb; text-transform:uppercase;
@@ -10810,8 +10810,8 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;gap:8px;flex-wrap:wrap;">
     <div style="font-size:0.82rem;color:#555;font-weight:600;">📂 Zobrazit skupiny sloupců:</div>
     <button id="ft-expand-{table_id}" title="Rozšířit tabulku na celou šířku obrazovky"
-            style="padding:5px 12px;border:1px solid #2770f0;border-radius:6px;
-                   background:#eef4ff;color:#2770f0;font-size:0.82rem;font-weight:600;
+            style="padding:5px 12px;border:1px solid #2870ED;border-radius:6px;
+                   background:#eef4ff;color:#2870ED;font-size:0.82rem;font-weight:600;
                    cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;">
       ⤢ Rozšířit
     </button>
@@ -10999,11 +10999,18 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
                   border-radius:6px;max-height:240px;overflow-y:auto;">
       </div>
     </div>
-    <div style="margin-bottom:12px;">
+    <div style="margin-bottom:8px;">
       <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.85rem;
                     cursor:pointer;user-select:none;color:#374151;">
         <input type="checkbox" id="ft-gb-pct-{table_id}" style="accent-color:#2870ED;">
         <span>📊 Přidat sloupce <strong>% z celku</strong> pro každou agregaci</span>
+      </label>
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.85rem;
+                    cursor:pointer;user-select:none;color:#374151;">
+        <input type="checkbox" id="ft-gb-sum-{table_id}" style="accent-color:#028661;">
+        <span>∑ Přidat <strong>součtový řádek</strong> na konec výsledku</span>
       </label>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
@@ -11326,7 +11333,9 @@ setTimeout(function() {{
       var td = r.querySelectorAll("td")[idx];
       if (td) {{
         var v = td.textContent.trim();
-        if (v && v !== "—") colValues[idx].add(v);
+        var _vl = v.toLowerCase();
+        var _vs = v.replace(/[—–‒\-\s]/g,"");
+        if (v && v !== "—" && _vl !== "nan" && _vl !== "none" && _vs !== "") colValues[idx].add(v);
       }}
     }});
   }});
@@ -12215,6 +12224,7 @@ setTimeout(function() {{
   var _gbOrderEmp = document.getElementById('ft-gb-order-empty-{table_id}');
   var _gbAggsDiv  = document.getElementById('ft-gb-aggs-{table_id}');
   var _gbPctChk   = document.getElementById('ft-gb-pct-{table_id}');
+  var _gbSumChk   = document.getElementById('ft-gb-sum-{table_id}');
   var _gbRunBtn   = document.getElementById('ft-gb-run-{table_id}');
   var _gbDlX      = document.getElementById('ft-gb-dl-xlsx-{table_id}');
   var _gbDlT      = document.getElementById('ft-gb-dl-tsv-{table_id}');
@@ -12359,13 +12369,41 @@ setTimeout(function() {{
               String(c||'').replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</td>';
           }}).join('') + '</tr>';
     }}).join('');
+    // ── součtový řádek ───────────────────────────────────────────────────────
+    var _sumRow = '';
+    if (_gbSumChk && _gbSumChk.checked && drows.length > 0) {{
+      var _nCols = hdrs.length;
+      var _sumCells = hdrs.map(function(h, ci) {{
+        if (ci < gbLen) return ci === 0 ? '∑ Celkem' : '';
+        // Collect numeric values from all rows in this column
+        var _nums = [];
+        drows.forEach(function(r) {{
+          var v = parseFloat(String(r[ci]||'').replace(/\s/g,'').replace(',','.').replace(/%/,'').trim());
+          if (isFinite(v)) _nums.push(v);
+        }});
+        if (!_nums.length) return '—';
+        var hdr = hdrs[ci] || '';
+        if (hdr.indexOf('AVG') === 0 || hdr.indexOf('% z celku') === 0 || hdr.indexOf('% skupin') === 0) {{
+          var avg = _nums.reduce(function(a,b){{return a+b;}},0) / _nums.length;
+          return String(Math.round(avg*100)/100);
+        }}
+        var tot = _nums.reduce(function(a,b){{return a+b;}},0);
+        return String(Math.round(tot*100)/100);
+      }});
+      _sumRow = '<tr style="background:#028661;color:white;font-weight:700;">' +
+        _sumCells.map(function(c, ci) {{
+          return '<td style="padding:5px 10px;border:1px solid rgba(255,255,255,.25);white-space:nowrap;text-align:' +
+            (ci < gbLen ? 'left' : 'right') + ';">' +
+            String(c).replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</td>';
+        }}).join('') + '</tr>';
+    }}
     _gbResult.innerHTML =
       '<div style="font-size:0.81rem;color:#666;margin-bottom:8px;">' +
         _gbData.totalGroups + ' skupin &nbsp;·&nbsp; ' + _gbData.totalRows +
         ' řádků &nbsp;·&nbsp; <span style="opacity:.7;">klikněte na záhlaví pro seřazení</span></div>' +
       '<table style="border-collapse:collapse;font-size:0.83rem;min-width:100%;width:100%;">' +
       '<thead><tr style="background:#2870ED;color:white;">' + th2 + '</tr></thead>' +
-      '<tbody>' + tb2 + '</tbody></table>';
+      '<tbody>' + tb2 + _sumRow + '</tbody></table>';
     _gbResult.style.display = '';
     _gbResult.querySelectorAll('th[data-gbsi]').forEach(function(th) {{
       th.addEventListener('click', function() {{
@@ -12382,6 +12420,7 @@ setTimeout(function() {{
       _buildGbModal();
       _gbSortState = {{ col: -1, asc: true }};
       if (_gbPctChk) _gbPctChk.checked = false;
+      if (_gbSumChk) _gbSumChk.checked = false;
       _gbModal.style.display = '';
       if (_gbResult) {{ _gbResult.style.display = 'none'; _gbResult.innerHTML = ''; }}
       if (_gbDlX)  _gbDlX.style.display  = 'none';
