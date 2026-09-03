@@ -447,9 +447,9 @@ soubory = {
         "hj_merge": True
     },
     "specialiste": {
-        "path": "export_specialiste.pkl",
+        "path": "vypocet_ir_2026/specialiste_officeLocation_REDIM.pkl",
         "validity": "2026-03-01",
-        "source_desc": "Obsazení pozic specialistů na pobočkách — počty pracovníků dle pracovní pozice.",
+        "source_desc": "Obsazení pozic specialistů na pobočkách — per-zaměstnanec s jménem, departmentem a match skóre.",
         "extra_params": {},
         "no_merge": True   # načítáme zvlášť, nemergeujeme do df
     },
@@ -20040,23 +20040,31 @@ display(HTML(f"""
 # =============================================================================
 
 try:
-    df_specialiste = pd.read_pickle("export_specialiste.pkl")
-    # Normalize id column names to lowercase so merge always works
-    _col_renames = {}
-    for _oc, _nc in [('BRANCH_ID','branch_id'), ('BRANCH_NAME','branch_name'),
-                     ('GPS_X','gps_x'), ('GPS_Y','gps_y'),
-                     ('EVIDENCNI_STAV','evidencni_stav'), ('Evidenční stav','evidencni_stav')]:
-        if _oc in df_specialiste.columns:
-            _col_renames[_oc] = _nc
-    if _col_renames:
-        df_specialiste = df_specialiste.rename(columns=_col_renames)
-    # Pozicové sloupce = vše kromě identifikátorů
-    _spec_id_cols = {"branch_id", "branch_name", "gps_x", "gps_y", "evidencni_stav"}
-    SPEC_POZICE_COLS = [c for c in df_specialiste.columns if c not in _spec_id_cols]
-    df_specialiste["branch_id"] = pd.to_numeric(df_specialiste["branch_id"], errors="coerce")
-    print(f"✅ Specialisté načteni: {len(df_specialiste)} poboček, {len(SPEC_POZICE_COLS)} pozic")
+    df_specialiste_detail = pd.read_pickle("vypocet_ir_2026/specialiste_officeLocation_REDIM.pkl")
+    df_specialiste_detail['branch_code'] = pd.to_numeric(df_specialiste_detail['branch_code'], errors='coerce')
+    df_specialiste_detail['score'] = pd.to_numeric(df_specialiste_detail['score'], errors='coerce')
+    # Pivot do wide formátu pro výpočty FTE (počet zaměstnanců per pozice per pobočka)
+    _pivot = df_specialiste_detail.pivot_table(
+        index='branch_code',
+        columns='jobTitleFixed',
+        values='employeeID',
+        aggfunc='count',
+        fill_value=0,
+    ).reset_index()
+    _pivot.columns.name = None
+    _pivot = _pivot.rename(columns={'branch_code': 'branch_id'})
+    _branch_info = (
+        df_specialiste_detail[['branch_code', 'branch_name', 'gps_x', 'gps_y']]
+        .drop_duplicates('branch_code')
+        .rename(columns={'branch_code': 'branch_id'})
+    )
+    df_specialiste = _pivot.merge(_branch_info, on='branch_id', how='left')
+    SPEC_POZICE_COLS = [c for c in _pivot.columns if c != 'branch_id']
+    print(f"✅ Specialisté načteni: {len(df_specialiste)} poboček, {len(SPEC_POZICE_COLS)} pozic, "
+          f"{df_specialiste_detail['employeeID'].nunique()} zaměstnanců")
 except Exception as _e:
     df_specialiste = None
+    df_specialiste_detail = None
     SPEC_POZICE_COLS = []
     print(f"⚠️ Specialisté nenačteni: {_e}")
 
@@ -20113,38 +20121,43 @@ except Exception as _e:
 def generate_specialiste_table(branch_codes, title="👥 Obsazení pozic"):
     """
     Vygeneruje HTML tabulku specialistů pro zadané branch_codes (list nebo single int).
-    Zobrazí jen pozice, kde je alespoň 1 pracovník u některé z poboček.
+    Zobrazí jméno, pozici, department a match skóre každého zaměstnance.
     """
-    if df_specialiste is None or df_specialiste.empty:
+    _detail = globals().get('df_specialiste_detail')
+    if _detail is None or _detail.empty:
         return ""
 
     if not isinstance(branch_codes, (list, tuple)):
         branch_codes = [branch_codes]
     branch_codes = [int(b) for b in branch_codes if pd.notna(b)]
 
-    subset = df_specialiste[df_specialiste["branch_id"].isin(branch_codes)].copy()
+    subset = _detail[_detail['branch_code'].isin(branch_codes)].copy()
     if subset.empty:
         return ""
 
-    # Jen pozice s alespoň 1 pracovníkem
-    active_cols = [c for c in SPEC_POZICE_COLS if pd.to_numeric(subset[c], errors="coerce").fillna(0).sum() > 0]
-    if not active_cols:
-        return ""
+    subset = subset.sort_values(['jobTitleFixed', 'displayName'])
 
     rows_html = ""
-    for _, row in subset.iterrows():
-        for pozice in active_cols:
-            val = pd.to_numeric(row.get(pozice, 0), errors="coerce")
-            if pd.isna(val) or val == 0:
-                continue
-            val = int(val)
-            dots = "●" * min(val, 8) + ("…" if val > 8 else "")
-            rows_html += f"""
-            <tr>
-              <td style="padding:4px 10px;border:1px solid #e0e0e0;font-size:0.82rem;color:#333;">{pozice}</td>
-              <td style="padding:4px 10px;border:1px solid #e0e0e0;text-align:center;font-weight:bold;font-size:0.85rem;">{val}</td>
-              <td style="padding:4px 10px;border:1px solid #e0e0e0;color:#1976d2;letter-spacing:2px;font-size:0.9rem;">{dots}</td>
-            </tr>"""
+    for i, (_, row) in enumerate(subset.iterrows()):
+        bg = "#ffffff" if i % 2 == 0 else "#f4f7ff"
+        score_val = row.get('score', None)
+        if pd.notna(score_val):
+            score_str = f"{score_val:.1f} %"
+            score_color = "#1b5e20" if score_val >= 90 else "#e65100" if score_val < 70 else "#1565C0"
+        else:
+            score_str, score_color = "—", "#999"
+        rows_html += (
+            f'<tr style="background:{bg};">'
+            f'<td style="padding:5px 10px;border-bottom:1px solid #e8ecf5;font-size:0.82rem;">'
+            f'{row.get("jobTitleFixed","")}</td>'
+            f'<td style="padding:5px 10px;border-bottom:1px solid #e8ecf5;font-size:0.82rem;'
+            f'font-weight:600;">{row.get("displayName","")}</td>'
+            f'<td style="padding:5px 10px;border-bottom:1px solid #e8ecf5;font-size:0.80rem;'
+            f'color:#555;">{row.get("department","")}</td>'
+            f'<td style="padding:5px 10px;border-bottom:1px solid #e8ecf5;text-align:center;'
+            f'font-size:0.82rem;font-weight:600;color:{score_color};">{score_str}</td>'
+            f'</tr>'
+        )
 
     if not rows_html:
         return ""
@@ -20156,8 +20169,9 @@ def generate_specialiste_table(branch_codes, title="👥 Obsazení pozic"):
         <thead>
           <tr style="background:#1565C0;">
             <th style="padding:6px 10px;border:1px solid #1565C0;color:#fff;text-align:left;">Pozice</th>
-            <th style="padding:6px 10px;border:1px solid #1565C0;color:#fff;text-align:center;width:60px;">Počet</th>
-            <th style="padding:6px 10px;border:1px solid #1565C0;color:#fff;text-align:left;">Vizualizace</th>
+            <th style="padding:6px 10px;border:1px solid #1565C0;color:#fff;text-align:left;">Jméno</th>
+            <th style="padding:6px 10px;border:1px solid #1565C0;color:#fff;text-align:left;">Department</th>
+            <th style="padding:6px 10px;border:1px solid #1565C0;color:#fff;text-align:center;width:75px;">Skóre</th>
           </tr>
         </thead>
         <tbody>{rows_html}
@@ -20379,43 +20393,55 @@ def generate_metrics_overview(df_input, title="📊 Přehled výkonnostních met
 
 def generate_specialiste_summary_table(branch_codes_list, title="👥 Přehled obsazení pozic — region", single_branch_code=None):
     """
-    Interaktivní výběr pobočky + tabulka pozic ve stylu obchody tabulky.
+    Interaktivní výběr pobočky + tabulka zaměstnanců: pozice, jméno, department, skóre.
     Pokud je zadán single_branch_code, vykreslí tabulku rovnou bez selectu.
     """
-    if df_specialiste is None or df_specialiste.empty:
+    _detail = globals().get('df_specialiste_detail')
+    if _detail is None or _detail.empty:
         return ""
 
     import uuid as _uuid, json as _json
     wid = "spec_" + _uuid.uuid4().hex[:8]
 
     branch_codes_list = [int(b) for b in branch_codes_list if pd.notna(b)]
-    subset = df_specialiste[df_specialiste["branch_id"].isin(branch_codes_list)].copy()
+    subset = _detail[_detail['branch_code'].isin(branch_codes_list)].copy()
     if subset.empty:
         return ""
 
-    subset["branch_id"] = subset["branch_id"].astype(int)
+    subset['branch_code'] = subset['branch_code'].astype(int)
+    subset = subset.sort_values(['branch_code', 'jobTitleFixed', 'displayName'])
 
+    # Sestav branches_data: {bid: {name, employees: [{pozice, jmeno, department, score}], total}}
     branches_data = {}
-    for _, row in subset.iterrows():
-        bid   = int(row["branch_id"])
-        bname = str(row.get("branch_name", bid)) if pd.notna(row.get("branch_name")) else str(bid)
-        pozice, total = [], 0
-        for c in SPEC_POZICE_COLS:
-            val = int(pd.to_numeric(row.get(c, 0), errors="coerce") or 0)
-            if val > 0:
-                pozice.append({"label": c, "val": val})
-                total += val
-        branches_data[bid] = {"name": bname, "pozice": pozice, "total": total}
+    for bid, grp in subset.groupby('branch_code'):
+        bname = str(grp['branch_name'].iloc[0]) if 'branch_name' in grp.columns else str(bid)
+        employees = []
+        for _, row in grp.iterrows():
+            sc = row.get('score', None)
+            employees.append({
+                "pozice":     str(row.get('jobTitleFixed', '')),
+                "jmeno":      str(row.get('displayName', '')),
+                "department": str(row.get('department', '')),
+                "score":      round(float(sc), 1) if pd.notna(sc) else None,
+            })
+        branches_data[int(bid)] = {"name": bname, "employees": employees, "total": len(employees)}
 
-    HDR_COLOR  = "#2770f0"
-    HDR_DARK   = "#1a4db5"
-    SUB_COLOR  = "#e8edf8"
+    HDR_COLOR = "#2770f0"
+    HDR_DARK  = "#1a4db5"
+    SUB_COLOR = "#e8edf8"
 
-    # ── Režim: přímé vykreslení pro jednu pobočku ─────────────────────────────
+    def _score_color(sc):
+        if sc is None: return "#999"
+        return "#1b5e20" if sc >= 90 else "#e65100" if sc < 70 else "#1565C0"
+
+    def _score_str(sc):
+        return f"{sc:.1f} %" if sc is not None else "—"
+
+    # ── Přímé vykreslení pro jednu pobočku ────────────────────────────────────
     if single_branch_code is not None:
         bid = int(single_branch_code)
         b   = branches_data.get(bid)
-        if not b or not b["pozice"]:
+        if not b or not b["employees"]:
             return f"""
 <div style="margin:18px 0 14px 0;">
   <div class="section-header">{title}</div>
@@ -20425,47 +20451,50 @@ def generate_specialiste_summary_table(branch_codes_list, title="👥 Přehled o
 </div>"""
 
         rows_html = ""
-        for i, p in enumerate(b["pozice"]):
+        for i, e in enumerate(b["employees"]):
             bg = "#ffffff" if i % 2 == 0 else "#f4f7ff"
+            sc = e["score"]
             rows_html += (
                 f"<tr style='background:{bg};'>"
-                f"<td style='padding:6px 14px;border-bottom:1px solid #e8ecf5;'>{p['label']}</td>"
+                f"<td style='padding:6px 14px;border-bottom:1px solid #e8ecf5;'>{e['pozice']}</td>"
+                f"<td style='padding:6px 14px;border-bottom:1px solid #e8ecf5;font-weight:600;'>{e['jmeno']}</td>"
+                f"<td style='padding:6px 14px;border-bottom:1px solid #e8ecf5;font-size:0.80rem;color:#555;'>{e['department']}</td>"
                 f"<td style='padding:6px 14px;border-bottom:1px solid #e8ecf5;text-align:center;"
-                f"font-weight:bold;color:{HDR_COLOR};'>{p['val']}</td>"
+                f"font-weight:600;color:{_score_color(sc)};'>{_score_str(sc)}</td>"
                 f"</tr>"
             )
 
         return f"""
 <div style="margin:18px 0 14px 0;">
   <div class="section-header">{title}</div>
-  <table style="width:100%;max-width:500px;border-collapse:collapse;font-size:0.84rem;
+  <div style="overflow-x:auto;">
+  <table style="width:100%;border-collapse:collapse;font-size:0.84rem;
                 border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.10);">
     <thead>
       <tr style="background:{HDR_COLOR};">
-        <th colspan="2"
+        <th colspan="4"
             style="padding:9px 16px;color:#fff;text-align:left;
                    font-size:0.90rem;font-weight:bold;letter-spacing:0.2px;">👥 {b['name']}</th>
       </tr>
       <tr style="background:{SUB_COLOR};">
-        <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;
-                   color:#444;font-size:0.80rem;font-weight:600;letter-spacing:0.3px;
-                   text-transform:uppercase;">Pozice</th>
-        <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:center;
-                   color:#444;font-size:0.80rem;font-weight:600;letter-spacing:0.3px;
-                   text-transform:uppercase;width:80px;">Počet</th>
+        <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Pozice</th>
+        <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Jméno</th>
+        <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Department</th>
+        <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:center;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;width:75px;">Skóre</th>
       </tr>
     </thead>
     <tbody>{rows_html}</tbody>
     <tfoot>
       <tr style="background:{HDR_DARK};">
-        <td style="padding:8px 14px;font-weight:bold;color:#fff;font-size:0.86rem;">∑ Celkem pracovníků</td>
+        <td colspan="3" style="padding:8px 14px;font-weight:bold;color:#fff;font-size:0.86rem;">∑ Celkem pracovníků</td>
         <td style="padding:8px 14px;text-align:center;font-weight:bold;color:#fff;font-size:0.92rem;">{b['total']}</td>
       </tr>
     </tfoot>
   </table>
+  </div>
 </div>"""
 
-    # ── Režim: interaktivní select (původní chování) ───────────────────────────
+    # ── Interaktivní select ────────────────────────────────────────────────────
     ordered = sorted(branches_data.items(), key=lambda x: x[1]["name"])
     options_html = "\n".join(
         f'<option value="{bid}">{info["name"]}</option>'
@@ -20473,15 +20502,10 @@ def generate_specialiste_summary_table(branch_codes_list, title="👥 Přehled o
     )
     data_js = _json.dumps(branches_data, ensure_ascii=False)
 
-    HDR_COLOR  = "#2770f0"   # stejná modrá jako hlavní tabulka
-    HDR_DARK   = "#1a4db5"
-    SUB_COLOR  = "#e8edf8"
-
     return f"""
 <div style="margin:18px 0 14px 0;">
   <div class="section-header">{title}</div>
 
-  <!-- Výběr pobočky -->
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;
               margin:10px 0 12px 0;padding:10px 14px;
               background:#f0f4ff;border:1px solid #d0d8f0;border-radius:8px;">
@@ -20499,34 +20523,28 @@ def generate_specialiste_summary_table(branch_codes_list, title="👥 Přehled o
                  color:{HDR_COLOR};font-weight:600;"></span>
   </div>
 
-  <!-- Karta s výsledky -->
-  <div id="{wid}_card" style="display:none;">
-    <table style="width:100%;max-width:500px;border-collapse:collapse;font-size:0.84rem;
+  <div id="{wid}_card" style="display:none;overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:0.84rem;
                   border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.10);">
       <thead>
         <tr style="background:{HDR_COLOR};">
-          <th colspan="2" id="{wid}_card_hdr"
+          <th colspan="4" id="{wid}_card_hdr"
               style="padding:9px 16px;color:#fff;text-align:left;
                      font-size:0.90rem;font-weight:bold;letter-spacing:0.2px;"></th>
         </tr>
         <tr style="background:{SUB_COLOR};">
-          <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;
-                     text-align:left;color:#444;font-size:0.80rem;font-weight:600;
-                     letter-spacing:0.3px;text-transform:uppercase;">Pozice</th>
-          <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;
-                     text-align:center;color:#444;font-size:0.80rem;font-weight:600;
-                     letter-spacing:0.3px;text-transform:uppercase;width:80px;">Počet</th>
+          <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Pozice</th>
+          <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Jméno</th>
+          <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:left;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;">Department</th>
+          <th style="padding:6px 14px;border-bottom:2px solid #c5cae9;text-align:center;color:#444;font-size:0.79rem;font-weight:600;text-transform:uppercase;width:75px;">Skóre</th>
         </tr>
       </thead>
       <tbody id="{wid}_rows"></tbody>
       <tfoot>
         <tr style="background:{HDR_DARK};">
-          <td style="padding:8px 14px;font-weight:bold;color:#fff;font-size:0.86rem;">
-            ∑ Celkem pracovníků
-          </td>
+          <td colspan="3" style="padding:8px 14px;font-weight:bold;color:#fff;font-size:0.86rem;">∑ Celkem pracovníků</td>
           <td id="{wid}_total"
-              style="padding:8px 14px;text-align:center;font-weight:bold;
-                     color:#fff;font-size:0.92rem;"></td>
+              style="padding:8px 14px;text-align:center;font-weight:bold;color:#fff;font-size:0.92rem;"></td>
         </tr>
       </tfoot>
     </table>
@@ -20551,6 +20569,14 @@ def generate_specialiste_summary_table(branch_codes_list, title="👥 Přehled o
   var empty = document.getElementById('{wid}_empty');
   if (!sel) return;
 
+  function scoreColor(sc) {{
+    if (sc === null) return '#999';
+    return sc >= 90 ? '#1b5e20' : sc < 70 ? '#e65100' : '#1565C0';
+  }}
+  function scoreStr(sc) {{
+    return sc !== null ? sc.toFixed(1) + ' %' : '—';
+  }}
+
   sel.addEventListener('change', function() {{
     var bid = this.value;
     card.style.display  = 'none';
@@ -20558,21 +20584,24 @@ def generate_specialiste_summary_table(branch_codes_list, title="👥 Přehled o
     badge.style.display = 'none';
     if (!bid || !data[bid]) return;
     var b = data[bid];
-    if (!b.pozice || b.pozice.length === 0) {{
+    if (!b.employees || b.employees.length === 0) {{
       empty.style.display = 'block';
       return;
     }}
     hdr.textContent = '👥 ' + b.name;
-    tbody.innerHTML = b.pozice.map(function(p, i) {{
+    tbody.innerHTML = b.employees.map(function(e, i) {{
       var bg = i % 2 === 0 ? '#ffffff' : '#f4f7ff';
+      var sc = e.score;
       return '<tr style="background:' + bg + ';">'
-        + '<td style="padding:6px 14px;border-bottom:1px solid #e8ecf5;">' + p.label + '</td>'
+        + '<td style="padding:6px 14px;border-bottom:1px solid #e8ecf5;">' + e.pozice + '</td>'
+        + '<td style="padding:6px 14px;border-bottom:1px solid #e8ecf5;font-weight:600;">' + e.jmeno + '</td>'
+        + '<td style="padding:6px 14px;border-bottom:1px solid #e8ecf5;font-size:0.80rem;color:#555;">' + e.department + '</td>'
         + '<td style="padding:6px 14px;border-bottom:1px solid #e8ecf5;text-align:center;'
-        + 'font-weight:bold;color:{HDR_COLOR};">' + p.val + '</td>'
+        + 'font-weight:600;color:' + scoreColor(sc) + ';">' + scoreStr(sc) + '</td>'
         + '</tr>';
     }}).join('');
     tfoot.textContent  = b.total;
-    badge.textContent  = b.pozice.length + ' pozic · ' + b.total + ' pracovníků';
+    badge.textContent  = b.total + ' pracovníků';
     badge.style.display = 'inline-block';
     card.style.display  = 'block';
   }});
