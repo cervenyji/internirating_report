@@ -10802,6 +10802,23 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
   #wrapper-{table_id}.tbl-expanded .tbl-scroll-wrap {{
     max-height: calc(100vh - 220px);
   }}
+  /* ── State modal ── */
+  #ft-states-modal-{table_id} {{
+    display: none; position: fixed; top:0; left:0; right:0; bottom:0;
+    background: rgba(0,0,0,.52); z-index: 10000;
+    align-items: center; justify-content: center;
+  }}
+  #ft-states-modal-{table_id}.ft-sm-open {{ display: flex; }}
+  /* ── Column drag-and-drop ── */
+  #wrapper-{table_id} .cp-drag-handle {{
+    cursor: grab; color: #bbb; font-size: 0.85rem; user-select: none;
+    padding: 0 4px 0 1px; flex-shrink: 0; line-height: 1;
+  }}
+  #wrapper-{table_id} .cp-drag-handle:active {{ cursor: grabbing; }}
+  #wrapper-{table_id} .cp-drag-handle:hover {{ color: #555; }}
+  #wrapper-{table_id} .cp-col-lbl.ft-dragging {{ opacity: 0.35; background: #dbeafe !important; }}
+  #wrapper-{table_id} .cp-col-lbl.ft-drag-top {{ box-shadow: inset 0 2px 0 0 #2870ED; }}
+  #wrapper-{table_id} .cp-col-lbl.ft-drag-bot {{ box-shadow: inset 0 -2px 0 0 #2870ED; }}
 </style>
 
 <div id="wrapper-{table_id}">
@@ -10809,12 +10826,20 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
   <!-- Skupinové přepínače sloupců -->
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;gap:8px;flex-wrap:wrap;">
     <div style="font-size:0.82rem;color:#555;font-weight:600;">📂 Zobrazit skupiny sloupců:</div>
-    <button id="ft-expand-{table_id}" title="Rozšířit tabulku na celou šířku obrazovky"
-            style="padding:5px 12px;border:1px solid #2870ED;border-radius:6px;
-                   background:#eef4ff;color:#2870ED;font-size:0.82rem;font-weight:600;
-                   cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;">
-      ⤢ Rozšířit
-    </button>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <button id="ft-states-btn-{table_id}" title="Uložit a obnovit stavy tabulky (vybrané sloupce, filtry, pořadí)"
+              style="padding:5px 12px;border:1px solid #028661;border-radius:6px;
+                     background:#e8f5ef;color:#028661;font-size:0.82rem;font-weight:600;
+                     cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;">
+        💾 Stavy
+      </button>
+      <button id="ft-expand-{table_id}" title="Rozšířit tabulku na celou šířku obrazovky"
+              style="padding:5px 12px;border:1px solid #2870ED;border-radius:6px;
+                     background:#eef4ff;color:#2870ED;font-size:0.82rem;font-weight:600;
+                     cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;">
+        ⤢ Rozšířit
+      </button>
+    </div>
   </div>
   <div class="col-toggle-bar" id="col-toggles-{table_id}">
     <button class="col-toggle-all" id="col-all-{table_id}">✔ Vše</button>
@@ -11033,6 +11058,41 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
     </div>
     <div id="ft-gb-result-{table_id}"
          style="display:none;overflow-x:auto;max-height:400px;overflow-y:auto;"></div>
+  </div>
+</div>
+
+<!-- State management modal -->
+<div id="ft-states-modal-{table_id}">
+  <div style="background:white;border-radius:12px;padding:24px;max-width:580px;width:92%;
+               max-height:82vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.32);position:relative;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 style="margin:0;font-size:1rem;color:#1a3a6b;">💾 Uložené stavy tabulky</h3>
+      <button id="ft-sm-close-{table_id}"
+              style="border:none;background:none;font-size:1.3rem;cursor:pointer;color:#888;
+                     padding:0 4px;line-height:1;">✕</button>
+    </div>
+    <div style="font-size:0.78rem;color:#999;margin-bottom:12px;line-height:1.5;">
+      Stav zahrnuje: aktivní skupiny sloupců, individuální výběr sloupců, textový filtr,
+      rozšířené filtry, pořadí sloupců. Stavy se ukládají v prohlížeči (localStorage) pro tento soubor.
+    </div>
+    <div id="ft-sm-list-{table_id}" style="margin-bottom:16px;min-height:48px;"></div>
+    <div style="border-top:1px solid #e8ecf5;padding-top:14px;">
+      <div id="ft-sm-form-{table_id}" style="display:none;margin-bottom:10px;">
+        <input id="ft-sm-name-{table_id}" placeholder="Název stavu *"
+               style="padding:7px 10px;border:1px solid #ccc;border-radius:6px;font-size:0.85rem;
+                      width:100%;box-sizing:border-box;margin-bottom:7px;outline:none;font-family:inherit;">
+        <textarea id="ft-sm-desc-{table_id}" placeholder="Krátký popis (volitelný)..."
+                  style="padding:7px 10px;border:1px solid #ccc;border-radius:6px;font-size:0.85rem;
+                         width:100%;box-sizing:border-box;height:54px;resize:vertical;
+                         margin-bottom:9px;outline:none;font-family:inherit;"></textarea>
+        <div style="display:flex;gap:8px;">
+          <button id="ft-sm-ok-{table_id}" class="ft-btn ft-btn-blue" style="font-weight:600;">💾 Uložit</button>
+          <button id="ft-sm-cancel-{table_id}" class="ft-btn">Zrušit</button>
+        </div>
+      </div>
+      <button id="ft-sm-new-{table_id}" class="ft-btn ft-btn-blue"
+              style="font-weight:600;font-size:0.85rem;">+ Uložit aktuální stav</button>
+    </div>
   </div>
 </div>
 
@@ -11985,7 +12045,14 @@ setTimeout(function() {{
     groupColIdxs.forEach(function(g) {{
       var hdr = document.createElement("div");
       hdr.className = "cp-group-hdr";
-      hdr.textContent = g.label;
+      hdr.style.cssText += ";display:flex;align-items:center;gap:6px;";
+      var hdrTxt = document.createElement("span");
+      hdrTxt.textContent = g.label;
+      var hdrHint = document.createElement("span");
+      hdrHint.style.cssText = "font-size:0.65rem;color:#b0bec5;font-weight:400;font-style:italic;letter-spacing:0;text-transform:none;";
+      hdrHint.textContent = "⣿ přetáhni sloupce pro změnu pořadí";
+      hdr.appendChild(hdrTxt);
+      hdr.appendChild(hdrHint);
       colPickerList.appendChild(hdr);
       g.idxs.forEach(function(idx) {{
         var th = headerCells[idx - 1];
@@ -11994,6 +12061,14 @@ setTimeout(function() {{
         var lbl = document.createElement("label");
         lbl.className = "cp-col-lbl";
         lbl.setAttribute("data-col-name", colName.toLowerCase());
+        lbl.setAttribute("data-drag-idx", idx);
+        lbl.setAttribute("data-drag-group", g.label);
+        lbl.setAttribute("draggable", "true");
+        // Drag handle
+        var handle = document.createElement("span");
+        handle.className = "cp-drag-handle";
+        handle.textContent = "⣿";
+        handle.title = "Přetáhni pro změnu pořadí v rámci skupiny";
         var cb = document.createElement("input");
         cb.type = "checkbox";
         cb.checked = pickerChecked[idx] !== false;
@@ -12003,10 +12078,54 @@ setTimeout(function() {{
           colPickerMode = true;
           if (colPickerBadge) colPickerBadge.style.display = "inline";
           applyColVisibility();
-          // sync group toggle checkboxes appearance
         }});
+        lbl.appendChild(handle);
         lbl.appendChild(cb);
         lbl.appendChild(document.createTextNode(" " + colName));
+        // ── Drag events ──────────────────────────────────────────────────────
+        lbl.addEventListener("dragstart", function(e) {{
+          _dragSrcIdx   = parseInt(lbl.getAttribute("data-drag-idx"));
+          _dragSrcGroup = lbl.getAttribute("data-drag-group");
+          lbl.classList.add("ft-dragging");
+          e.dataTransfer.effectAllowed = "move";
+        }});
+        lbl.addEventListener("dragend", function() {{
+          lbl.classList.remove("ft-dragging");
+          Array.from(colPickerList.querySelectorAll(".cp-col-lbl")).forEach(function(l) {{
+            l.classList.remove("ft-drag-top","ft-drag-bot");
+          }});
+          _dragSrcIdx = null; _dragSrcGroup = null;
+        }});
+        lbl.addEventListener("dragover", function(e) {{
+          if (!_dragSrcIdx || lbl.getAttribute("data-drag-group") !== _dragSrcGroup) return;
+          if (parseInt(lbl.getAttribute("data-drag-idx")) === _dragSrcIdx) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          var rect = lbl.getBoundingClientRect();
+          var mid  = rect.top + rect.height / 2;
+          Array.from(colPickerList.querySelectorAll(".cp-col-lbl")).forEach(function(l) {{
+            l.classList.remove("ft-drag-top","ft-drag-bot");
+          }});
+          lbl.classList.add(e.clientY < mid ? "ft-drag-top" : "ft-drag-bot");
+        }});
+        lbl.addEventListener("dragleave", function() {{
+          lbl.classList.remove("ft-drag-top","ft-drag-bot");
+        }});
+        lbl.addEventListener("drop", function(e) {{
+          e.preventDefault();
+          lbl.classList.remove("ft-drag-top","ft-drag-bot");
+          var tgtIdx = parseInt(lbl.getAttribute("data-drag-idx"));
+          if (!_dragSrcIdx || _dragSrcIdx === tgtIdx) return;
+          if (lbl.getAttribute("data-drag-group") !== _dragSrcGroup) return;
+          var rect    = lbl.getBoundingClientRect();
+          var before  = e.clientY < rect.top + rect.height / 2;
+          var srcLbl  = colPickerList.querySelector("[data-drag-idx='" + _dragSrcIdx + "']");
+          if (srcLbl) {{
+            if (before) colPickerList.insertBefore(srcLbl, lbl);
+            else        lbl.parentNode.insertBefore(srcLbl, lbl.nextSibling);
+          }}
+          _moveTableCol(_dragSrcIdx, tgtIdx, before);
+        }});
         colPickerList.appendChild(lbl);
       }});
     }});
@@ -12533,6 +12652,261 @@ setTimeout(function() {{
   if (_gbDlT)  {{ _gbDlT.addEventListener('click',  function() {{ if(_gbData) _tsvDownload(_gbData,'seskupeni-export.tsv'); }}); }}
   if (_gbCopy) {{ _gbCopy.addEventListener('click', function() {{ if(_gbData) _copyData(_gbData, _gbCopy); }}); }}
   // ─── End Export & Group-by ───────────────────────────────────────────────────
+
+  // ─── Column drag-and-drop reorder ────────────────────────────────────────────
+  var _dragSrcIdx   = null;
+  var _dragSrcGroup = null;
+  function _moveTableCol(srcIdx, tgtIdx, insertBefore) {{
+    // Move TH in thead
+    var theadRow2 = tbl.querySelector('thead tr');
+    if (theadRow2) {{
+      var srcTh2 = theadRow2.querySelector('th[data-col-idx="' + srcIdx + '"]');
+      var tgtTh2 = theadRow2.querySelector('th[data-col-idx="' + tgtIdx + '"]');
+      if (srcTh2 && tgtTh2) {{
+        if (insertBefore) theadRow2.insertBefore(srcTh2, tgtTh2);
+        else              tgtTh2.parentNode.insertBefore(srcTh2, tgtTh2.nextSibling);
+      }}
+    }}
+    // Move TDs in every tbody + tfoot row
+    Array.from(tbl.querySelectorAll('tbody tr, tfoot tr')).forEach(function(row) {{
+      var srcTd2 = row.querySelector('td[data-col-idx="' + srcIdx + '"]');
+      var tgtTd2 = row.querySelector('td[data-col-idx="' + tgtIdx + '"]');
+      if (srcTd2 && tgtTd2) {{
+        if (insertBefore) row.insertBefore(srcTd2, tgtTd2);
+        else              tgtTd2.parentNode.insertBefore(srcTd2, tgtTd2.nextSibling);
+      }}
+    }});
+    // Update groupColIdxs order for state capture
+    for (var _gi = 0; _gi < groupColIdxs.length; _gi++) {{
+      var _grp = groupColIdxs[_gi];
+      var _si  = _grp.idxs.indexOf(srcIdx);
+      if (_si < 0) continue;
+      var _ti = _grp.idxs.indexOf(tgtIdx);
+      if (_ti < 0) break;
+      _grp.idxs.splice(_si, 1);
+      var _newTi = _grp.idxs.indexOf(tgtIdx);
+      _grp.idxs.splice(insertBefore ? _newTi : _newTi + 1, 0, srcIdx);
+      break;
+    }}
+    applyGroupColors();
+    updateSummary();
+  }}
+  // ─── End Column drag-and-drop ─────────────────────────────────────────────────
+
+  // ─── State save / restore (localStorage) ─────────────────────────────────────
+  var _smKey    = 'ft_states_{table_id}';
+  var _smModal  = document.getElementById('ft-states-modal-{table_id}');
+  var _smBtn    = document.getElementById('ft-states-btn-{table_id}');
+  var _smClose  = document.getElementById('ft-sm-close-{table_id}');
+  var _smList   = document.getElementById('ft-sm-list-{table_id}');
+  var _smForm   = document.getElementById('ft-sm-form-{table_id}');
+  var _smNameI  = document.getElementById('ft-sm-name-{table_id}');
+  var _smDescI  = document.getElementById('ft-sm-desc-{table_id}');
+  var _smNewBtn = document.getElementById('ft-sm-new-{table_id}');
+  var _smOkBtn  = document.getElementById('ft-sm-ok-{table_id}');
+  var _smCanBtn = document.getElementById('ft-sm-cancel-{table_id}');
+
+  function _smLoadAll() {{
+    try {{ return JSON.parse(localStorage.getItem(_smKey) || '[]'); }} catch(e) {{ return []; }}
+  }}
+  function _smSaveAll(sts) {{
+    try {{ localStorage.setItem(_smKey, JSON.stringify(sts)); }} catch(e) {{
+      alert('Nelze uložit do localStorage. Otevřete soubor přes lokální server nebo povolte site data.');
+    }}
+  }}
+  function _smCapture() {{
+    // Group toggle state
+    var ga = {{}}; Object.keys(groupActive).forEach(function(k) {{ ga[k] = groupActive[k]; }});
+    // Individual picker
+    var pc = {{}}; Object.keys(pickerChecked).forEach(function(k) {{ pc[k] = pickerChecked[k]; }});
+    // Column order from current DOM
+    var colOrder = Array.from(tbl.querySelectorAll('thead th[data-col-idx]'))
+      .map(function(th) {{ return parseInt(th.getAttribute('data-col-idx')); }});
+    // Multi-filters
+    var mff = mfFilters.map(function(f) {{ return {{idx: f.idx, values: Array.from(f.values)}}; }});
+    return {{
+      groupActive: ga, colPickerMode: colPickerMode, pickerChecked: pc,
+      filterText: input ? input.value : '',
+      showNoRating: showNoRating, onlyOpenActive: onlyOpenActive,
+      mfFilters: mff, colOrder: colOrder,
+    }};
+  }}
+  function _smApply(st) {{
+    if (!st) return;
+    // 1. Restore column order first (DOM positions)
+    if (st.colOrder && st.colOrder.length) {{
+      var _tr2 = tbl.querySelector('thead tr');
+      st.colOrder.forEach(function(cidx) {{
+        if (_tr2) {{
+          var _th = _tr2.querySelector('th[data-col-idx="' + cidx + '"]');
+          if (_th) _tr2.appendChild(_th);
+        }}
+        Array.from(tbl.querySelectorAll('tbody tr, tfoot tr')).forEach(function(row) {{
+          var _td = row.querySelector('td[data-col-idx="' + cidx + '"]');
+          if (_td) row.appendChild(_td);
+        }});
+      }});
+      // Sync groupColIdxs order
+      var _ordMap = {{}};
+      st.colOrder.forEach(function(cidx, pos) {{ _ordMap[cidx] = pos; }});
+      groupColIdxs.forEach(function(g) {{
+        g.idxs.sort(function(a, b) {{
+          var ap = _ordMap[a] !== undefined ? _ordMap[a] : 9999;
+          var bp = _ordMap[b] !== undefined ? _ordMap[b] : 9999;
+          return ap - bp;
+        }});
+      }});
+      // Sync column picker DOM order
+      if (colPickerList && st.colOrder.length) {{
+        st.colOrder.forEach(function(cidx) {{
+          var lblEl = colPickerList.querySelector('[data-drag-idx="' + cidx + '"]');
+          if (lblEl) colPickerList.appendChild(lblEl);
+        }});
+      }}
+      applyGroupColors();
+    }}
+    // 2. Group toggles
+    if (st.groupActive) {{
+      Object.keys(st.groupActive).forEach(function(k) {{ groupActive[k] = !!st.groupActive[k]; }});
+      toggleBar.querySelectorAll('.col-toggle-btn').forEach(function(btn) {{
+        var cb = btn.querySelector('input[type=checkbox]');
+        groupColIdxs.forEach(function(g) {{
+          if (btn.textContent.trim().indexOf(g.label) >= 0 && st.groupActive[g.label] !== undefined) {{
+            var on = !!st.groupActive[g.label];
+            if (cb) cb.checked = on;
+            btn.className = 'col-toggle-btn' + (on ? '' : ' inactive');
+          }}
+        }});
+      }});
+    }}
+    // 3. Picker mode + individual columns
+    colPickerMode = !!st.colPickerMode;
+    if (st.pickerChecked) {{
+      Object.keys(st.pickerChecked).forEach(function(k) {{ pickerChecked[parseInt(k)] = st.pickerChecked[k]; }});
+      if (colPickerList) {{
+        Array.from(colPickerList.querySelectorAll('input[data-cp-idx]')).forEach(function(cb) {{
+          var idx = parseInt(cb.getAttribute('data-cp-idx'));
+          cb.checked = st.pickerChecked[idx] !== false;
+        }});
+      }}
+    }}
+    if (colPickerBadge) colPickerBadge.style.display = colPickerMode ? 'inline' : 'none';
+    // 4. Text filter
+    if (input && st.filterText !== undefined) input.value = st.filterText;
+    // 5. Show-no-rating / only-open flags + update buttons
+    showNoRating   = !!st.showNoRating;
+    onlyOpenActive = !!st.onlyOpenActive;
+    if (typeof _updateNoRatingBtn === 'function') _updateNoRatingBtn();
+    if (typeof _updateOnlyOpenBtn === 'function') _updateOnlyOpenBtn();
+    // 6. Multi-filters
+    mfFilters.length = 0;
+    if (mfRowsDiv) mfRowsDiv.innerHTML = '';
+    (st.mfFilters || []).forEach(function(f) {{
+      var fo = {{idx: f.idx, values: new Set(f.values)}};
+      mfFilters.push(fo);
+      buildMfRow(fo);
+    }});
+    // 7. Apply all
+    applyColVisibility();
+    doFilter();
+    applyMultiFilter();
+  }}
+  function _smRenderList() {{
+    if (!_smList) return;
+    var sts = _smLoadAll();
+    if (!sts.length) {{
+      _smList.innerHTML = '<p style="color:#aaa;font-size:0.85rem;font-style:italic;margin:4px 0;">Zatím žádné uložené stavy.</p>';
+      return;
+    }}
+    _smList.innerHTML = '';
+    sts.forEach(function(s, i) {{
+      var item = document.createElement('div');
+      item.style.cssText = 'border:1px solid #dde4f5;border-radius:8px;padding:10px 12px;' +
+        'margin-bottom:8px;background:#f8faff;display:flex;align-items:flex-start;gap:10px;';
+      var info = document.createElement('div');
+      info.style.cssText = 'flex:1;min-width:0;';
+      var nm = document.createElement('div');
+      nm.style.cssText = 'font-weight:700;font-size:0.88rem;color:#1a3a6b;';
+      nm.textContent = s.name;
+      var dc = document.createElement('div');
+      dc.style.cssText = 'font-size:0.8rem;color:#555;margin-top:2px;word-break:break-word;';
+      dc.textContent = s.desc || '';
+      var ts = document.createElement('div');
+      ts.style.cssText = 'font-size:0.73rem;color:#aaa;margin-top:3px;';
+      ts.textContent = s.ts || '';
+      info.appendChild(nm);
+      if (s.desc) info.appendChild(dc);
+      info.appendChild(ts);
+      var btns = document.createElement('div');
+      btns.style.cssText = 'display:flex;gap:6px;flex-shrink:0;align-items:center;';
+      var lB = document.createElement('button');
+      lB.textContent = '↩ Načíst';
+      lB.style.cssText = 'padding:5px 11px;border:1px solid #028661;border-radius:6px;' +
+        'background:#e8f5ef;color:#028661;font-size:0.8rem;cursor:pointer;font-weight:600;white-space:nowrap;';
+      var dB = document.createElement('button');
+      dB.textContent = '✖';
+      dB.title = 'Smazat stav';
+      dB.style.cssText = 'padding:5px 9px;border:1px solid #EB4C79;border-radius:6px;' +
+        'background:#fde8ef;color:#EB4C79;font-size:0.8rem;cursor:pointer;';
+      (function(si2, ss) {{
+        lB.addEventListener('click', function() {{
+          _smApply(ss.state);
+          if (_smModal) _smModal.classList.remove('ft-sm-open');
+        }});
+        dB.addEventListener('click', function() {{
+          if (!confirm('Smazat stav „' + ss.name + '"?')) return;
+          var all = _smLoadAll(); all.splice(si2, 1); _smSaveAll(all); _smRenderList();
+        }});
+      }})(i, s);
+      btns.appendChild(lB); btns.appendChild(dB);
+      item.appendChild(info); item.appendChild(btns);
+      _smList.appendChild(item);
+    }});
+  }}
+  if (_smBtn && _smModal) {{
+    _smBtn.addEventListener('click', function() {{
+      _smRenderList();
+      if (_smForm) _smForm.style.display = 'none';
+      if (_smNewBtn) _smNewBtn.style.display = '';
+      _smModal.classList.add('ft-sm-open');
+    }});
+  }}
+  if (_smClose) _smClose.addEventListener('click', function() {{ if (_smModal) _smModal.classList.remove('ft-sm-open'); }});
+  if (_smModal) _smModal.addEventListener('click', function(e) {{ if (e.target === _smModal) _smModal.classList.remove('ft-sm-open'); }});
+  if (_smNewBtn && _smForm) {{
+    _smNewBtn.addEventListener('click', function() {{
+      _smForm.style.display = ''; _smNewBtn.style.display = 'none';
+      if (_smNameI) {{ _smNameI.value = ''; _smNameI.style.borderColor = ''; _smNameI.focus(); }}
+      if (_smDescI) _smDescI.value = '';
+    }});
+  }}
+  if (_smCanBtn && _smForm) {{
+    _smCanBtn.addEventListener('click', function() {{ _smForm.style.display = 'none'; if (_smNewBtn) _smNewBtn.style.display = ''; }});
+  }}
+  if (_smOkBtn) {{
+    _smOkBtn.addEventListener('click', function() {{
+      var name = _smNameI ? _smNameI.value.trim() : '';
+      if (!name) {{ if (_smNameI) {{ _smNameI.style.borderColor = '#EB4C79'; _smNameI.focus(); }} return; }}
+      if (_smNameI) _smNameI.style.borderColor = '';
+      var all = _smLoadAll();
+      var now = new Date();
+      function _p2(n) {{ return String(n).padStart(2,'0'); }}
+      var ts2 = now.getFullYear() + '-' + _p2(now.getMonth()+1) + '-' + _p2(now.getDate()) +
+                ' ' + _p2(now.getHours()) + ':' + _p2(now.getMinutes());
+      all.unshift({{
+        id:    Date.now() + '_' + Math.random().toString(36).slice(2,7),
+        name:  name,
+        desc:  _smDescI ? _smDescI.value.trim() : '',
+        ts:    ts2,
+        state: _smCapture(),
+      }});
+      _smSaveAll(all);
+      _smRenderList();
+      if (_smForm)   _smForm.style.display = 'none';
+      if (_smNewBtn) _smNewBtn.style.display = '';
+    }});
+  }}
+  // ─── End State save / restore ────────────────────────────────────────────────
 
 }}, 0);
 </script>
