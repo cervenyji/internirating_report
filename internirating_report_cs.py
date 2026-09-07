@@ -347,7 +347,11 @@ if __name__ == "__main__":
     # Připoj generate_filterable_table a generate_specialiste_summary_table
     # z hlavního modulu – spustíme import s potlačením vedlejších efektů
     _orig_dir = os.getcwd()
-    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    try:
+        _script_dir = os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        # __file__ not defined (e.g. Jupyter) – use cwd
+        _script_dir = os.getcwd()
     if _script_dir not in sys.path:
         sys.path.insert(0, _script_dir)
 
