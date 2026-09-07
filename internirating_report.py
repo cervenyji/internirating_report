@@ -11429,8 +11429,11 @@ setTimeout(function() {{
 
   function _mfIsActive(f) {{
     if (!f.idx) return false;
-    if (f.type === 'numeric') return !!(f.numOp && (f.numOp === 'between' ?
-      (f.numV1 !== '' && f.numV2 !== '') : f.numV1 !== ''));
+    if (f.type === 'numeric') {{
+      if (f.numMode === 'values') return !!(f.values && f.values.size > 0);
+      return !!(f.numOp && (f.numOp === 'between' ?
+        (f.numV1 !== '' && f.numV2 !== '') : f.numV1 !== ''));
+    }}
     if (f.type === 'date') return !!(f.dateValues && f.dateValues.size > 0);
     return !!(f.values && f.values.size > 0);
   }}
@@ -11442,6 +11445,7 @@ setTimeout(function() {{
   function _mfTest(f, cellText) {{
     var t = cellText.trim();
     if (f.type === 'numeric') {{
+      if (f.numMode === 'values') return !!(f.values && f.values.has(t));
       var cv = _mfParseNum(t);
       if (isNaN(cv)) return false;
       var v1 = _mfParseNum(f.numV1), v2 = _mfParseNum(f.numV2);
@@ -11547,38 +11551,129 @@ setTimeout(function() {{
     // ── Numeric controls ──────────────────────────────────────────
     function buildNumericCtrl() {{
       ctrlWrap.innerHTML = '';
-      if (!filterObj.numOp) filterObj.numOp = '>';
-      if (filterObj.numV1 === undefined) filterObj.numV1 = '';
-      if (filterObj.numV2 === undefined) filterObj.numV2 = '';
-      var opSel = document.createElement("select");
-      opSel.style.cssText = "padding:5px 8px;border:1px solid #ccc;border-radius:6px;font-size:0.84rem;background:#fff;";
-      [['>', '>'], ['>=', '≥'], ['<', '<'], ['<=', '≤'], ['=', '='], ['between', 'mezi']].forEach(function(op) {{
-        var o = document.createElement("option");
-        o.value = op[0]; o.textContent = op[1];
-        if (filterObj.numOp === op[0]) o.selected = true;
-        opSel.appendChild(o);
-      }});
-      var inp1 = document.createElement("input");
-      inp1.type = "number"; inp1.step = "any"; inp1.placeholder = "Hodnota";
-      inp1.value = filterObj.numV1;
-      inp1.style.cssText = "padding:5px 8px;border:1px solid #ccc;border-radius:6px;font-size:0.84rem;width:90px;";
-      var sep = document.createElement("span");
-      sep.textContent = "a"; sep.style.cssText = "font-size:0.82rem;color:#555;";
-      var inp2 = document.createElement("input");
-      inp2.type = "number"; inp2.step = "any"; inp2.placeholder = "Max";
-      inp2.value = filterObj.numV2;
-      inp2.style.cssText = inp1.style.cssText;
-      function updBetween() {{
-        var b = opSel.value === 'between';
-        sep.style.display = b ? '' : 'none';
-        inp2.style.display = b ? '' : 'none';
+      var _nIdx   = parseInt(sel.value);
+      var _nUniq  = colValues[_nIdx] ? colValues[_nIdx].size : 999;
+      var _canPick = _nUniq <= 15;
+      // Defaults
+      if (!filterObj.numOp)              filterObj.numOp  = '>';
+      if (filterObj.numV1 === undefined) filterObj.numV1  = '';
+      if (filterObj.numV2 === undefined) filterObj.numV2  = '';
+      if (!filterObj.values)             filterObj.values = new Set();
+      if (!filterObj.numMode)            filterObj.numMode = _canPick ? 'values' : 'range';
+
+      // ── Mode toggle (only when ≤15 unique values) ────────────────
+      if (_canPick) {{
+        var modeBar = document.createElement("div");
+        modeBar.style.cssText = "display:flex;gap:0;margin-bottom:7px;border:1px solid #ccc;border-radius:6px;overflow:hidden;align-self:flex-start;";
+        ['values','range'].forEach(function(m) {{
+          var mb = document.createElement("button");
+          mb.textContent = m === 'values' ? '☑ Hodnoty' : '↕ Rozsah';
+          mb.style.cssText = "flex:1;padding:4px 10px;border:none;font-size:0.78rem;cursor:pointer;" +
+            (filterObj.numMode === m ?
+              "background:#2870ED;color:#fff;font-weight:700;" :
+              "background:#f0f4ff;color:#444;");
+          mb.addEventListener("click", function() {{
+            if (filterObj.numMode === m) return;
+            filterObj.numMode = m;
+            if (m === 'values') {{ filterObj.numOp = '>'; filterObj.numV1 = ''; filterObj.numV2 = ''; }}
+            else                {{ filterObj.values = new Set(); }}
+            buildNumericCtrl(); applyMultiFilter();
+          }});
+          modeBar.appendChild(mb);
+        }});
+        ctrlWrap.appendChild(modeBar);
       }}
-      opSel.addEventListener("change", function() {{ filterObj.numOp = opSel.value; updBetween(); applyMultiFilter(); }});
-      inp1.addEventListener("input",  function() {{ filterObj.numV1 = inp1.value; applyMultiFilter(); }});
-      inp2.addEventListener("input",  function() {{ filterObj.numV2 = inp2.value; applyMultiFilter(); }});
-      ctrlWrap.appendChild(opSel); ctrlWrap.appendChild(inp1);
-      ctrlWrap.appendChild(sep);   ctrlWrap.appendChild(inp2);
-      updBetween();
+
+      if (filterObj.numMode === 'values' && _canPick) {{
+        // ── Checkbox dropdown ────────────────────────────────────────
+        var prevSel2  = filterObj.values;
+        filterObj.values = new Set();
+        var nDropWrap  = document.createElement("div"); nDropWrap.style.cssText = "position:relative;";
+        var nDropBtn   = document.createElement("button");
+        nDropBtn.style.cssText = "padding:5px 12px;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;" +
+          "font-size:0.84rem;cursor:pointer;white-space:nowrap;min-width:160px;text-align:left;";
+        var nDropPanel = document.createElement("div");
+        nDropPanel.style.cssText = "display:none;position:absolute;top:100%;left:0;z-index:999;" +
+          "background:#fff;border:1px solid #ccd;border-radius:8px;padding:8px 10px;" +
+          "max-height:260px;overflow-y:auto;min-width:180px;box-shadow:0 4px 14px rgba(0,0,0,.12);";
+        nDropWrap.appendChild(nDropBtn); nDropWrap.appendChild(nDropPanel);
+        function updNBtn() {{
+          var n = filterObj.values.size;
+          if (!n) {{
+            nDropBtn.textContent = "— Vyberte hodnoty (vše) —";
+            nDropBtn.style.background = "#f5f5f5"; nDropBtn.style.borderColor = "#ccc"; nDropBtn.style.color = "#333";
+          }} else {{
+            nDropBtn.textContent = n + " " + (n===1?"hodnota vybrána":n<5?"hodnoty vybrány":"hodnot vybráno") + " ▾";
+            nDropBtn.style.background = "#dbeafe"; nDropBtn.style.borderColor = "#2870ED";
+            nDropBtn.style.color = "#1d4ed8"; nDropBtn.style.fontWeight = "600";
+          }}
+        }}
+        var nSorted = Array.from(colValues[_nIdx] || []).sort(function(a,b) {{
+          var na=_mfParseNum(a), nb=_mfParseNum(b);
+          return (!isNaN(na)&&!isNaN(nb)) ? na-nb : a.localeCompare(b,'cs');
+        }});
+        var ncRow = document.createElement("div");
+        ncRow.style.cssText = "display:flex;gap:6px;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #eee;";
+        var nbAll  = document.createElement("button"); nbAll.textContent  = "✔ Vše";
+        nbAll.style.cssText  = "font-size:0.75rem;padding:2px 8px;border:1px solid #aaa;border-radius:4px;background:#f5f5f5;cursor:pointer;";
+        var nbNone = document.createElement("button"); nbNone.textContent = "✕ Nic";
+        nbNone.style.cssText = nbAll.style.cssText;
+        ncRow.appendChild(nbAll); ncRow.appendChild(nbNone);
+        nDropPanel.appendChild(ncRow);
+        var ncbs = [];
+        nSorted.forEach(function(v) {{
+          var lbl = document.createElement("label");
+          lbl.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 0;font-size:0.82rem;cursor:pointer;white-space:nowrap;";
+          var cb = document.createElement("input"); cb.type = "checkbox"; cb.style.cursor = "pointer";
+          cb.checked = prevSel2.has(v);
+          if (cb.checked) filterObj.values.add(v);
+          cb.addEventListener("change", function() {{
+            if (cb.checked) filterObj.values.add(v); else filterObj.values.delete(v);
+            updNBtn(); applyMultiFilter();
+          }});
+          ncbs.push({{cb:cb, v:v}});
+          lbl.appendChild(cb); lbl.appendChild(document.createTextNode(v));
+          nDropPanel.appendChild(lbl);
+        }});
+        nbAll.addEventListener("click",  function(e) {{ e.preventDefault(); ncbs.forEach(function(o) {{ o.cb.checked = true;  filterObj.values.add(o.v); }}); updNBtn(); applyMultiFilter(); }});
+        nbNone.addEventListener("click", function(e) {{ e.preventDefault(); ncbs.forEach(function(o) {{ o.cb.checked = false; }}); filterObj.values = new Set(); updNBtn(); applyMultiFilter(); }});
+        nDropBtn.addEventListener("click", function(e) {{ e.stopPropagation(); nDropPanel.style.display = nDropPanel.style.display === "none" ? "block" : "none"; }});
+        nDropPanel.addEventListener("click", function(e) {{ e.stopPropagation(); }});
+        document.addEventListener("click", function() {{ nDropPanel.style.display = "none"; }});
+        ctrlWrap.appendChild(nDropWrap);
+        updNBtn();
+      }} else {{
+        // ── Range mode ───────────────────────────────────────────────
+        var opSel = document.createElement("select");
+        opSel.style.cssText = "padding:5px 8px;border:1px solid #ccc;border-radius:6px;font-size:0.84rem;background:#fff;";
+        [['>', '>'], ['>=', '≥'], ['<', '<'], ['<=', '≤'], ['=', '='], ['between', 'mezi']].forEach(function(op) {{
+          var o = document.createElement("option");
+          o.value = op[0]; o.textContent = op[1];
+          if (filterObj.numOp === op[0]) o.selected = true;
+          opSel.appendChild(o);
+        }});
+        var inp1 = document.createElement("input");
+        inp1.type = "number"; inp1.step = "any"; inp1.placeholder = "Hodnota";
+        inp1.value = filterObj.numV1;
+        inp1.style.cssText = "padding:5px 8px;border:1px solid #ccc;border-radius:6px;font-size:0.84rem;width:90px;";
+        var sep = document.createElement("span");
+        sep.textContent = "a"; sep.style.cssText = "font-size:0.82rem;color:#555;";
+        var inp2 = document.createElement("input");
+        inp2.type = "number"; inp2.step = "any"; inp2.placeholder = "Max";
+        inp2.value = filterObj.numV2;
+        inp2.style.cssText = inp1.style.cssText;
+        function updBetween() {{
+          var b = opSel.value === 'between';
+          sep.style.display = b ? '' : 'none';
+          inp2.style.display = b ? '' : 'none';
+        }}
+        opSel.addEventListener("change", function() {{ filterObj.numOp = opSel.value; updBetween(); applyMultiFilter(); }});
+        inp1.addEventListener("input",  function() {{ filterObj.numV1 = inp1.value; applyMultiFilter(); }});
+        inp2.addEventListener("input",  function() {{ filterObj.numV2 = inp2.value; applyMultiFilter(); }});
+        ctrlWrap.appendChild(opSel); ctrlWrap.appendChild(inp1);
+        ctrlWrap.appendChild(sep);   ctrlWrap.appendChild(inp2);
+        updBetween();
+      }}
     }}
 
     // ── Date controls ─────────────────────────────────────────────
@@ -12935,8 +13030,11 @@ setTimeout(function() {{
       .map(function(th) {{ return parseInt(th.getAttribute('data-col-idx')); }});
     var mff = mfFilters.map(function(f) {{
       var fo = {{idx: f.idx, type: f.type || 'text'}};
-      if (f.type === 'numeric') {{ fo.numOp = f.numOp; fo.numV1 = f.numV1; fo.numV2 = f.numV2; }}
-      else if (f.type === 'date') {{ fo.dateMode = f.dateMode; fo.dateValues = Array.from(f.dateValues || []); }}
+      if (f.type === 'numeric') {{
+        fo.numMode = f.numMode || 'range';
+        fo.numOp = f.numOp; fo.numV1 = f.numV1; fo.numV2 = f.numV2;
+        if (f.numMode === 'values') fo.values = Array.from(f.values || []);
+      }} else if (f.type === 'date') {{ fo.dateMode = f.dateMode; fo.dateValues = Array.from(f.dateValues || []); }}
       else {{ fo.values = Array.from(f.values || []); }}
       return fo;
     }});
@@ -13018,7 +13116,9 @@ setTimeout(function() {{
     (st.mfFilters || []).forEach(function(f) {{
       var fo;
       if (f.type === 'numeric') {{
-        fo = {{idx: f.idx, type: 'numeric', numOp: f.numOp||'>', numV1: f.numV1||'', numV2: f.numV2||''}};
+        fo = {{idx: f.idx, type: 'numeric', numMode: f.numMode||'range',
+               numOp: f.numOp||'>', numV1: f.numV1||'', numV2: f.numV2||'',
+               values: new Set(f.values||[])}};
       }} else if (f.type === 'date') {{
         fo = {{idx: f.idx, type: 'date', dateMode: f.dateMode||'year', dateValues: new Set(f.dateValues||[])}};
       }} else {{
