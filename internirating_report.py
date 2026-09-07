@@ -25709,3 +25709,18 @@ try:
         print(f"  ⚠ CSV nenalezen: {_jp_csv_path}")
 except Exception as _ejp:
     print(f"  ⚠ Jednočlenný provoz report: {_ejp}")
+
+# CS brand report – jen hlavní tabulka + obsazení pozic
+try:
+    from internirating_report_cs import generate_cs_brand_report as _gen_cs
+    print("  🎨 Generuji CS brand report...")
+    _gen_cs(
+        df_sorted=df_sorted,
+        dbs_date=DBS_DATE,
+        output_prefix="report_rating_2026",
+        fn_filterable_table=generate_filterable_table,
+        fn_specialiste_summary=generate_specialiste_summary_table,
+        df_specialiste_detail=globals().get('df_specialiste_detail'),
+    )
+except Exception as _ecs:
+    print(f"  ⚠ CS brand report: {_ecs}")
