@@ -11445,7 +11445,13 @@ setTimeout(function() {{
   function _mfTest(f, cellText) {{
     var t = cellText.trim();
     if (f.type === 'numeric') {{
-      if (f.numMode === 'values') return !!(f.values && f.values.has(t));
+      if (f.numMode === 'values') {{
+        if (!f.values) return true;
+        var _numEmpty = !t || t === "—" || t.toLowerCase() === "nan" || t.toLowerCase() === "none" ||
+                        t.replace(/[—–‒\-\s]/g,"") === "";
+        if (_numEmpty) return f.values.has(_MF_EMPTY);
+        return f.values.has(t);
+      }}
       var cv = _mfParseNum(t);
       if (isNaN(cv)) return false;
       var v1 = _mfParseNum(f.numV1), v2 = _mfParseNum(f.numV2);
@@ -11621,6 +11627,22 @@ setTimeout(function() {{
         ncRow.appendChild(nbAll); ncRow.appendChild(nbNone);
         nDropPanel.appendChild(ncRow);
         var ncbs = [];
+        // (Prázdné) option
+        if (colHasEmpty[_nIdx]) {{
+          var neLbl = document.createElement("label");
+          neLbl.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 0;font-size:0.82rem;" +
+            "cursor:pointer;white-space:nowrap;border-bottom:1px solid #eee;margin-bottom:4px;padding-bottom:5px;color:#888;font-style:italic;";
+          var neCb = document.createElement("input"); neCb.type = "checkbox"; neCb.style.cursor = "pointer";
+          neCb.checked = prevSel2.has(_MF_EMPTY);
+          if (neCb.checked) filterObj.values.add(_MF_EMPTY);
+          neCb.addEventListener("change", function() {{
+            if (neCb.checked) filterObj.values.add(_MF_EMPTY); else filterObj.values.delete(_MF_EMPTY);
+            updNBtn(); applyMultiFilter();
+          }});
+          ncbs.push({{cb:neCb, v:_MF_EMPTY}});
+          neLbl.appendChild(neCb); neLbl.appendChild(document.createTextNode("(Prázdné)"));
+          nDropPanel.appendChild(neLbl);
+        }}
         nSorted.forEach(function(v) {{
           var lbl = document.createElement("label");
           lbl.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 0;font-size:0.82rem;cursor:pointer;white-space:nowrap;";
