@@ -11073,7 +11073,7 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
     </div>
     <div style="font-size:0.78rem;color:#999;margin-bottom:12px;line-height:1.5;">
       Stav zahrnuje: aktivní skupiny sloupců, individuální výběr sloupců, textový filtr,
-      rozšířené filtry, pořadí sloupců. Stavy se ukládají v prohlížeči (localStorage) pro tento soubor.
+      rozšířené filtry, pořadí sloupců. Stavy jsou v paměti — exportujte do souboru pro trvalé uložení.
     </div>
     <div id="ft-sm-list-{table_id}" style="margin-bottom:16px;min-height:48px;"></div>
     <div style="border-top:1px solid #e8ecf5;padding-top:14px;">
@@ -11090,8 +11090,16 @@ def generate_filterable_table(target_df, table_id, excluded_cols=None):
           <button id="ft-sm-cancel-{table_id}" class="ft-btn">Zrušit</button>
         </div>
       </div>
-      <button id="ft-sm-new-{table_id}" class="ft-btn ft-btn-blue"
-              style="font-weight:600;font-size:0.85rem;">+ Uložit aktuální stav</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <button id="ft-sm-new-{table_id}" class="ft-btn ft-btn-blue"
+                style="font-weight:600;font-size:0.85rem;">+ Uložit aktuální stav</button>
+        <button id="ft-sm-export-{table_id}" class="ft-btn"
+                style="font-size:0.85rem;">📤 Exportovat soubor</button>
+        <label id="ft-sm-import-lbl-{table_id}" class="ft-btn"
+               style="font-size:0.85rem;cursor:pointer;display:inline-flex;align-items:center;">📂 Načíst soubor
+          <input id="ft-sm-import-{table_id}" type="file" accept=".json" style="display:none;">
+        </label>
+      </div>
     </div>
   </div>
 </div>
@@ -11400,32 +11408,82 @@ setTimeout(function() {{
     }});
   }});
 
-  var mfFilters = [];   // pole {{idx, values: Set}} aktivních filtrů
+  // Detect column types: 'date' | 'numeric' | 'text'
+  var _dtPat  = /^\d{{1,2}}\.\d{{1,2}}\.\d{{4}}$/;
+  var _numPat = /^-?\d[\d\s]*(?:[.,]\d+)?(?:\s*[^\s\d].*)?$/;
+  var colTypes = {{}};
+  Object.keys(colValues).forEach(function(idx) {{
+    var vals = Array.from(colValues[idx]);
+    if (!vals.length) {{ colTypes[idx] = 'text'; return; }}
+    var nDate = vals.filter(function(v) {{ return _dtPat.test(v.trim()); }}).length;
+    if (nDate / vals.length >= 0.5) {{ colTypes[idx] = 'date'; return; }}
+    var nNum  = vals.filter(function(v) {{ return _numPat.test(v.trim()); }}).length;
+    colTypes[idx] = (nNum / vals.length >= 0.6) ? 'numeric' : 'text';
+  }});
+
+  var mfFilters = [];   // {{idx, type, values|numOp+V1+V2|dateMode+dateValues}}
+
+  function _mfIsActive(f) {{
+    if (!f.idx) return false;
+    if (f.type === 'numeric') return !!(f.numOp && (f.numOp === 'between' ?
+      (f.numV1 !== '' && f.numV2 !== '') : f.numV1 !== ''));
+    if (f.type === 'date') return !!(f.dateValues && f.dateValues.size > 0);
+    return !!(f.values && f.values.size > 0);
+  }}
+  function _mfParseNum(v) {{
+    var m = String(v).trim().match(/^(-?\d[\d\s]*(?:[.,]\d+)?)/);
+    if (!m) return NaN;
+    return parseFloat(m[1].replace(/\s/g,'').replace(',','.'));
+  }}
+  function _mfTest(f, cellText) {{
+    var t = cellText.trim();
+    if (f.type === 'numeric') {{
+      var cv = _mfParseNum(t);
+      if (isNaN(cv)) return false;
+      var v1 = _mfParseNum(f.numV1), v2 = _mfParseNum(f.numV2);
+      switch(f.numOp) {{
+        case '>':  return cv > v1;
+        case '>=': return cv >= v1;
+        case '<':  return cv < v1;
+        case '<=': return cv <= v1;
+        case '=':  return cv === v1;
+        case 'between': return !isNaN(v1) && !isNaN(v2) && cv >= v1 && cv <= v2;
+        default: return true;
+      }}
+    }}
+    if (f.type === 'date') {{
+      if (!f.dateValues || !f.dateValues.size) return true;
+      var dm = t.match(/^(\d{{1,2}})\.(\d{{1,2}})\.(\d{{4}})$/);
+      if (!dm) return false;
+      var key = f.dateMode === 'month' ? (dm[3] + '-' + dm[2].padStart(2,'0')) : dm[3];
+      return f.dateValues.has(key);
+    }}
+    return !!(f.values && f.values.has(t));
+  }}
 
   function applyMultiFilter() {{
-    var active = mfFilters.filter(function(f) {{ return f.values && f.values.size > 0; }});
+    var active = mfFilters.filter(_mfIsActive);
     var _obF = (window._obRegFilter || {{}})["{table_id}"] || "__all__";
     rows.forEach(function(r) {{
       if (r.style.display === "none" && active.length === 0) return;
-      var cells     = r.querySelectorAll("td");
-      var codeRaw   = cells[1] ? cells[1].textContent.trim() : "";
-      var codeNum   = parseInt(codeRaw, 10);
-      var name      = cells[2] ? cells[2].textContent.toLowerCase() : "";
-      var q         = input.value.toLowerCase().trim();
-      var isNoRat   = noRatingCodes.has(codeNum);
+      var cells   = r.querySelectorAll("td");
+      var codeRaw = cells[1] ? cells[1].textContent.trim() : "";
+      var codeNum = parseInt(codeRaw, 10);
+      var name    = cells[2] ? cells[2].textContent.toLowerCase() : "";
+      var q       = input.value.toLowerCase().trim();
+      var isNoRat = noRatingCodes.has(codeNum);
       if (isNoRat && !showNoRating) {{ r.style.display = "none"; return; }}
       if (onlyOpenActive && closedCodes.has(codeNum)) {{ r.style.display = "none"; return; }}
       if (_obF !== "__all__") {{
         var trOb = r.getAttribute("data-ob-reg") || "";
         if (!trOb || trOb !== _obF) {{ r.style.display = "none"; return; }}
       }}
-      var basicOk   = (!q || codeRaw.toLowerCase().includes(q) || name.includes(q));
+      var basicOk = (!q || codeRaw.toLowerCase().includes(q) || name.includes(q));
       if (!basicOk) {{ r.style.display = "none"; return; }}
-      // Multi-filtr: AND mezi sloupci, OR uvnitř sloupce (hodnoty v Set)
       var multiOk = active.every(function(f) {{
         var td = r.querySelectorAll("td")[f.idx];
         if (!td) return false;
-        return f.values.has(td.textContent.trim());
+        return _mfTest(f, td.textContent);
       }});
       r.style.display = multiOk ? "" : "none";
     }});
@@ -11446,146 +11504,30 @@ setTimeout(function() {{
   function buildMfRow(filterObj) {{
     var rowDiv = document.createElement("div");
     rowDiv.style.cssText = "margin-bottom:8px;";
-
     var controlRow = document.createElement("div");
-    controlRow.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;";
+    controlRow.style.cssText = "display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;";
 
-    // Select — výběr sloupce
+    // Column select
     var sel = document.createElement("select");
     sel.style.cssText = "padding:5px 8px;border:1px solid #ccc;border-radius:6px;font-size:0.84rem;" +
-                        "max-width:220px;background:#fff;cursor:pointer;";
+      "max-width:220px;background:#fff;cursor:pointer;";
     sel.innerHTML = '<option value="">— Vyberte sloupec —</option>';
     colNames.forEach(function(cn) {{
       var opt = document.createElement("option");
-      opt.value = cn.idx;
-      opt.textContent = cn.label;
+      opt.value = cn.idx; opt.textContent = cn.label;
       if (filterObj.idx === cn.idx) opt.selected = true;
       sel.appendChild(opt);
     }});
 
-    // ── Checkbox-dropdown pro výběr více hodnot ──────────────────
-    var dropWrap = document.createElement("div");
-    dropWrap.style.cssText = "position:relative;";
+    // Container for type-specific controls
+    var ctrlWrap = document.createElement("div");
+    ctrlWrap.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;";
 
-    var dropBtn = document.createElement("button");
-    dropBtn.style.cssText = "padding:5px 12px;border:1px solid #ccc;border-radius:6px;" +
-                            "background:#f5f5f5;font-size:0.84rem;cursor:pointer;white-space:nowrap;" +
-                            "min-width:180px;text-align:left;";
-    dropBtn.textContent = "— Vyberte hodnoty —";
-
-    var dropPanel = document.createElement("div");
-    dropPanel.style.cssText = "display:none;position:absolute;top:100%;left:0;z-index:999;" +
-                              "background:#fff;border:1px solid #ccd;border-radius:8px;" +
-                              "padding:8px 10px;max-height:240px;overflow-y:auto;" +
-                              "min-width:220px;box-shadow:0 4px 14px rgba(0,0,0,.12);";
-
-    dropWrap.appendChild(dropBtn);
-    dropWrap.appendChild(dropPanel);
-
-    function updateDropBtn() {{
-      var n = filterObj.values.size;
-      if (n === 0) {{
-        dropBtn.textContent  = "— Vyberte hodnoty (vše) —";
-        dropBtn.style.background   = "#f5f5f5";
-        dropBtn.style.borderColor  = "#ccc";
-        dropBtn.style.color        = "#333";
-      }} else {{
-        dropBtn.textContent  = n + " " + (n === 1 ? "hodnota vybrána" : n < 5 ? "hodnoty vybrány" : "hodnot vybráno") + " ▾";
-        dropBtn.style.background   = "#dbeafe";
-        dropBtn.style.borderColor  = "#2770f0";
-        dropBtn.style.color        = "#1d4ed8";
-        dropBtn.style.fontWeight   = "600";
-      }}
-    }}
-
-    function rebuildPanel() {{
-      dropPanel.innerHTML = "";
-      filterObj.values = new Set();
-      var idx = parseInt(sel.value);
-      if (isNaN(idx) || !colValues[idx] || colValues[idx].size === 0) {{
-        dropPanel.innerHTML = "<div style='color:#aaa;font-size:0.8rem;padding:4px 0;'>Žádné hodnoty</div>";
-        updateDropBtn();
-        return;
-      }}
-      var sorted = Array.from(colValues[idx]).sort(function(a, b) {{
-        var na = parseFloat(a), nb = parseFloat(b);
-        if (!isNaN(na) && !isNaN(nb)) return na - nb;
-        return a.localeCompare(b, "cs");
-      }});
-
-      // Řádek "Vybrat vše / Zrušit vše"
-      var ctrlRow = document.createElement("div");
-      ctrlRow.style.cssText = "display:flex;gap:6px;margin-bottom:6px;padding-bottom:6px;" +
-                               "border-bottom:1px solid #eee;";
-      var btnAll  = document.createElement("button");
-      btnAll.textContent = "✔ Vše";
-      btnAll.style.cssText = "font-size:0.75rem;padding:2px 8px;border:1px solid #aaa;" +
-                             "border-radius:4px;background:#f5f5f5;cursor:pointer;";
-      var btnNone = document.createElement("button");
-      btnNone.textContent = "✕ Nic";
-      btnNone.style.cssText = btnAll.style.cssText;
-      ctrlRow.appendChild(btnAll);
-      ctrlRow.appendChild(btnNone);
-      dropPanel.appendChild(ctrlRow);
-
-      var cbs = [];
-      sorted.forEach(function(v) {{
-        var lbl = document.createElement("label");
-        lbl.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 0;" +
-                            "font-size:0.82rem;cursor:pointer;white-space:nowrap;";
-        var cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.style.cursor = "pointer";
-        cb.addEventListener("change", function() {{
-          if (cb.checked) filterObj.values.add(v);
-          else            filterObj.values.delete(v);
-          updateDropBtn();
-          applyMultiFilter();
-        }});
-        cbs.push({{cb: cb, v: v}});
-        lbl.appendChild(cb);
-        lbl.appendChild(document.createTextNode(v));
-        dropPanel.appendChild(lbl);
-      }});
-
-      btnAll.addEventListener("click", function(e) {{
-        e.preventDefault();
-        cbs.forEach(function(o) {{ o.cb.checked = true; filterObj.values.add(o.v); }});
-        updateDropBtn(); applyMultiFilter();
-      }});
-      btnNone.addEventListener("click", function(e) {{
-        e.preventDefault();
-        cbs.forEach(function(o) {{ o.cb.checked = false; }});
-        filterObj.values = new Set();
-        updateDropBtn(); applyMultiFilter();
-      }});
-
-      updateDropBtn();
-    }}
-
-    // Otevření/zavření dropdownu
-    dropBtn.addEventListener("click", function(e) {{
-      e.stopPropagation();
-      dropPanel.style.display = dropPanel.style.display === "none" ? "block" : "none";
-    }});
-    dropPanel.addEventListener("click", function(e) {{ e.stopPropagation(); }});
-    document.addEventListener("click", function() {{ dropPanel.style.display = "none"; }});
-
-    sel.addEventListener("change", function() {{
-      filterObj.idx = parseInt(sel.value) || 0;
-      rebuildPanel();
-      applyMultiFilter();
-    }});
-
-    // Inicializuj panel pokud je sloupec předvybraný
-    if (filterObj.idx) rebuildPanel();
-
-    // Tlačítko smazat tento řádek
+    // Delete button
     var del = document.createElement("button");
-    del.textContent = "✖";
-    del.title = "Odebrat filtr";
+    del.textContent = "✖"; del.title = "Odebrat filtr";
     del.style.cssText = "padding:4px 8px;border:1px solid #e64343;background:#fff0f0;color:#e64343;" +
-                        "border-radius:6px;cursor:pointer;font-size:0.82rem;flex-shrink:0;";
+      "border-radius:6px;cursor:pointer;font-size:0.82rem;flex-shrink:0;";
     del.addEventListener("click", function() {{
       var fi = mfFilters.indexOf(filterObj);
       if (fi >= 0) mfFilters.splice(fi, 1);
@@ -11593,15 +11535,242 @@ setTimeout(function() {{
       applyMultiFilter();
     }});
 
-    controlRow.appendChild(sel);
-    controlRow.appendChild(dropWrap);
-    controlRow.appendChild(del);
+    // ── Numeric controls ──────────────────────────────────────────
+    function buildNumericCtrl() {{
+      ctrlWrap.innerHTML = '';
+      if (!filterObj.numOp) filterObj.numOp = '>';
+      if (filterObj.numV1 === undefined) filterObj.numV1 = '';
+      if (filterObj.numV2 === undefined) filterObj.numV2 = '';
+      var opSel = document.createElement("select");
+      opSel.style.cssText = "padding:5px 8px;border:1px solid #ccc;border-radius:6px;font-size:0.84rem;background:#fff;";
+      [['>', '>'], ['>=', '≥'], ['<', '<'], ['<=', '≤'], ['=', '='], ['between', 'mezi']].forEach(function(op) {{
+        var o = document.createElement("option");
+        o.value = op[0]; o.textContent = op[1];
+        if (filterObj.numOp === op[0]) o.selected = true;
+        opSel.appendChild(o);
+      }});
+      var inp1 = document.createElement("input");
+      inp1.type = "number"; inp1.step = "any"; inp1.placeholder = "Hodnota";
+      inp1.value = filterObj.numV1;
+      inp1.style.cssText = "padding:5px 8px;border:1px solid #ccc;border-radius:6px;font-size:0.84rem;width:90px;";
+      var sep = document.createElement("span");
+      sep.textContent = "a"; sep.style.cssText = "font-size:0.82rem;color:#555;";
+      var inp2 = document.createElement("input");
+      inp2.type = "number"; inp2.step = "any"; inp2.placeholder = "Max";
+      inp2.value = filterObj.numV2;
+      inp2.style.cssText = inp1.style.cssText;
+      function updBetween() {{
+        var b = opSel.value === 'between';
+        sep.style.display = b ? '' : 'none';
+        inp2.style.display = b ? '' : 'none';
+      }}
+      opSel.addEventListener("change", function() {{ filterObj.numOp = opSel.value; updBetween(); applyMultiFilter(); }});
+      inp1.addEventListener("input",  function() {{ filterObj.numV1 = inp1.value; applyMultiFilter(); }});
+      inp2.addEventListener("input",  function() {{ filterObj.numV2 = inp2.value; applyMultiFilter(); }});
+      ctrlWrap.appendChild(opSel); ctrlWrap.appendChild(inp1);
+      ctrlWrap.appendChild(sep);   ctrlWrap.appendChild(inp2);
+      updBetween();
+    }}
+
+    // ── Date controls ─────────────────────────────────────────────
+    function buildDateCtrl() {{
+      ctrlWrap.innerHTML = '';
+      if (!filterObj.dateMode)   filterObj.dateMode   = 'year';
+      if (!filterObj.dateValues) filterObj.dateValues = new Set();
+      var modeSel = document.createElement("select");
+      modeSel.style.cssText = "padding:5px 8px;border:1px solid #ccc;border-radius:6px;font-size:0.84rem;background:#fff;";
+      [['year','Rok'],['month','Rok-Měsíc']].forEach(function(m) {{
+        var o = document.createElement("option"); o.value = m[0]; o.textContent = m[1];
+        if (filterObj.dateMode === m[0]) o.selected = true;
+        modeSel.appendChild(o);
+      }});
+      var dDropWrap  = document.createElement("div"); dDropWrap.style.cssText = "position:relative;";
+      var dDropBtn   = document.createElement("button");
+      dDropBtn.style.cssText = "padding:5px 12px;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;" +
+        "font-size:0.84rem;cursor:pointer;white-space:nowrap;min-width:160px;text-align:left;";
+      var dDropPanel = document.createElement("div");
+      dDropPanel.style.cssText = "display:none;position:absolute;top:100%;left:0;z-index:999;" +
+        "background:#fff;border:1px solid #ccd;border-radius:8px;padding:8px 10px;" +
+        "max-height:240px;overflow-y:auto;min-width:180px;box-shadow:0 4px 14px rgba(0,0,0,.12);";
+      dDropWrap.appendChild(dDropBtn); dDropWrap.appendChild(dDropPanel);
+      function updDateBtn() {{
+        var n = filterObj.dateValues.size;
+        if (!n) {{
+          dDropBtn.textContent = "— Vyberte " + (filterObj.dateMode === 'month' ? 'měsíce' : 'roky') + " —";
+          dDropBtn.style.background = "#f5f5f5"; dDropBtn.style.borderColor = "#ccc"; dDropBtn.style.color = "#333";
+        }} else {{
+          dDropBtn.textContent = n + " vybráno ▾";
+          dDropBtn.style.background = "#dbeafe"; dDropBtn.style.borderColor = "#2870ED";
+          dDropBtn.style.color = "#1d4ed8"; dDropBtn.style.fontWeight = "600";
+        }}
+      }}
+      function getDateKeys(sidx, mode) {{
+        var keys = new Set();
+        Array.from(colValues[sidx] || []).forEach(function(v) {{
+          var dm2 = v.trim().match(/^(\d{{1,2}})\.(\d{{1,2}})\.(\d{{4}})$/);
+          if (!dm2) return;
+          keys.add(mode === 'month' ? (dm2[3] + '-' + dm2[2].padStart(2,'0')) : dm2[3]);
+        }});
+        return Array.from(keys).sort();
+      }}
+      function rebuildDatePanel() {{
+        dDropPanel.innerHTML = '';
+        var sidx = parseInt(sel.value);
+        var prevSel = filterObj.dateValues || new Set();
+        filterObj.dateValues = new Set();
+        var keys = getDateKeys(sidx, filterObj.dateMode);
+        if (!keys.length) {{ dDropPanel.innerHTML = "<div style='color:#aaa;font-size:0.8rem;'>Žádné hodnoty</div>"; updDateBtn(); return; }}
+        keys.forEach(function(k) {{
+          var lbl = document.createElement("label");
+          lbl.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 0;font-size:0.82rem;cursor:pointer;";
+          var cb = document.createElement("input"); cb.type = "checkbox"; cb.style.cursor = "pointer";
+          cb.checked = prevSel.has(k);
+          if (cb.checked) filterObj.dateValues.add(k);
+          cb.addEventListener("change", function() {{
+            if (cb.checked) filterObj.dateValues.add(k); else filterObj.dateValues.delete(k);
+            updDateBtn(); applyMultiFilter();
+          }});
+          lbl.appendChild(cb); lbl.appendChild(document.createTextNode(k));
+          dDropPanel.appendChild(lbl);
+        }});
+        updDateBtn();
+      }}
+      modeSel.addEventListener("change", function() {{ filterObj.dateMode = modeSel.value; rebuildDatePanel(); applyMultiFilter(); }});
+      dDropBtn.addEventListener("click", function(e) {{
+        e.stopPropagation();
+        dDropPanel.style.display = dDropPanel.style.display === "none" ? "block" : "none";
+      }});
+      dDropPanel.addEventListener("click", function(e) {{ e.stopPropagation(); }});
+      document.addEventListener("click", function() {{ dDropPanel.style.display = "none"; }});
+      if (filterObj.idx) rebuildDatePanel();
+      ctrlWrap.appendChild(modeSel); ctrlWrap.appendChild(dDropWrap);
+      updDateBtn();
+    }}
+
+    // ── Text (checkbox dropdown + search) ─────────────────────────
+    function buildTextCtrl() {{
+      ctrlWrap.innerHTML = '';
+      if (!filterObj.values) filterObj.values = new Set();
+      var dropWrap  = document.createElement("div"); dropWrap.style.cssText = "position:relative;";
+      var dropBtn   = document.createElement("button");
+      dropBtn.style.cssText = "padding:5px 12px;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;" +
+        "font-size:0.84rem;cursor:pointer;white-space:nowrap;min-width:180px;text-align:left;";
+      var dropPanel = document.createElement("div");
+      dropPanel.style.cssText = "display:none;position:absolute;top:100%;left:0;z-index:999;" +
+        "background:#fff;border:1px solid #ccd;border-radius:8px;padding:8px 10px;" +
+        "max-height:280px;overflow-y:auto;min-width:220px;box-shadow:0 4px 14px rgba(0,0,0,.12);";
+      dropWrap.appendChild(dropBtn); dropWrap.appendChild(dropPanel);
+      function updDropBtn() {{
+        var n = filterObj.values.size;
+        if (!n) {{
+          dropBtn.textContent = "— Vyberte hodnoty (vše) —";
+          dropBtn.style.background = "#f5f5f5"; dropBtn.style.borderColor = "#ccc"; dropBtn.style.color = "#333";
+        }} else {{
+          dropBtn.textContent = n + " " + (n===1?"hodnota vybrána":n<5?"hodnoty vybrány":"hodnot vybráno") + " ▾";
+          dropBtn.style.background = "#dbeafe"; dropBtn.style.borderColor = "#2870ED";
+          dropBtn.style.color = "#1d4ed8"; dropBtn.style.fontWeight = "600";
+        }}
+      }}
+      function rebuildPanel() {{
+        dropPanel.innerHTML = '';
+        var idx = parseInt(sel.value);
+        var prevSel = filterObj.values || new Set();
+        filterObj.values = new Set();
+        if (isNaN(idx) || !colValues[idx] || !colValues[idx].size) {{
+          dropPanel.innerHTML = "<div style='color:#aaa;font-size:0.8rem;padding:4px 0;'>Žádné hodnoty</div>";
+          updDropBtn(); return;
+        }}
+        var sorted = Array.from(colValues[idx]).sort(function(a,b) {{
+          var na=_mfParseNum(a), nb=_mfParseNum(b);
+          return (!isNaN(na)&&!isNaN(nb)) ? na-nb : a.localeCompare(b,'cs');
+        }});
+        // Search input
+        var srchIn = document.createElement("input");
+        srchIn.type = "text"; srchIn.placeholder = "🔍 Hledat...";
+        srchIn.style.cssText = "width:100%;box-sizing:border-box;padding:5px 8px;margin-bottom:7px;" +
+          "border:1px solid #ccc;border-radius:6px;font-size:0.82rem;outline:none;";
+        // Vše / Nic row
+        var ctrlRow2 = document.createElement("div");
+        ctrlRow2.style.cssText = "display:flex;gap:6px;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #eee;";
+        var btnAll  = document.createElement("button"); btnAll.textContent  = "✔ Vše";
+        btnAll.style.cssText  = "font-size:0.75rem;padding:2px 8px;border:1px solid #aaa;border-radius:4px;background:#f5f5f5;cursor:pointer;";
+        var btnNone = document.createElement("button"); btnNone.textContent = "✕ Nic";
+        btnNone.style.cssText = btnAll.style.cssText;
+        ctrlRow2.appendChild(btnAll); ctrlRow2.appendChild(btnNone);
+        var listDiv = document.createElement("div");
+        var cbs = [];
+        sorted.forEach(function(v) {{
+          var lbl = document.createElement("label");
+          lbl.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 0;font-size:0.82rem;cursor:pointer;white-space:nowrap;";
+          var cb = document.createElement("input"); cb.type = "checkbox"; cb.style.cursor = "pointer";
+          cb.checked = prevSel.has(v);
+          if (cb.checked) filterObj.values.add(v);
+          cb.addEventListener("change", function() {{
+            if (cb.checked) filterObj.values.add(v); else filterObj.values.delete(v);
+            updDropBtn(); applyMultiFilter();
+          }});
+          cbs.push({{cb:cb, v:v, lbl:lbl}});
+          lbl.appendChild(cb); lbl.appendChild(document.createTextNode(v));
+          listDiv.appendChild(lbl);
+        }});
+        srchIn.addEventListener("input", function() {{
+          var q2 = srchIn.value.toLowerCase();
+          cbs.forEach(function(o) {{ o.lbl.style.display = (!q2 || o.v.toLowerCase().includes(q2)) ? '' : 'none'; }});
+        }});
+        btnAll.addEventListener("click", function(e) {{
+          e.preventDefault();
+          cbs.forEach(function(o) {{ if (o.lbl.style.display !== 'none') {{ o.cb.checked = true; filterObj.values.add(o.v); }} }});
+          updDropBtn(); applyMultiFilter();
+        }});
+        btnNone.addEventListener("click", function(e) {{
+          e.preventDefault();
+          cbs.forEach(function(o) {{ o.cb.checked = false; }});
+          filterObj.values = new Set(); updDropBtn(); applyMultiFilter();
+        }});
+        dropPanel.appendChild(srchIn); dropPanel.appendChild(ctrlRow2); dropPanel.appendChild(listDiv);
+        updDropBtn();
+      }}
+      dropBtn.addEventListener("click", function(e) {{
+        e.stopPropagation();
+        dropPanel.style.display = dropPanel.style.display === "none" ? "block" : "none";
+      }});
+      dropPanel.addEventListener("click", function(e) {{ e.stopPropagation(); }});
+      document.addEventListener("click", function() {{ dropPanel.style.display = "none"; }});
+      if (filterObj.idx) rebuildPanel();
+      ctrlWrap.appendChild(dropWrap);
+      updDropBtn();
+    }}
+
+    // ── Switch control type on column select ──────────────────────
+    function setupControls() {{
+      var idx = parseInt(sel.value);
+      var tp  = filterObj.type || colTypes[idx] || 'text';
+      filterObj.type = tp;
+      ctrlWrap.innerHTML = '';
+      if (tp === 'numeric') buildNumericCtrl();
+      else if (tp === 'date') buildDateCtrl();
+      else buildTextCtrl();
+    }}
+
+    sel.addEventListener("change", function() {{
+      filterObj.idx  = parseInt(sel.value) || 0;
+      filterObj.type = colTypes[filterObj.idx] || 'text';
+      // reset filter data
+      filterObj.values = new Set(); filterObj.numOp = '>'; filterObj.numV1 = ''; filterObj.numV2 = '';
+      filterObj.dateMode = 'year'; filterObj.dateValues = new Set();
+      setupControls(); applyMultiFilter();
+    }});
+
+    if (filterObj.idx) setupControls();
+
+    controlRow.appendChild(sel); controlRow.appendChild(ctrlWrap); controlRow.appendChild(del);
     rowDiv.appendChild(controlRow);
     mfRowsDiv.appendChild(rowDiv);
   }}
 
   mfAddBtn.addEventListener("click", function() {{
-    var filterObj = {{idx: 0, values: new Set()}};
+    var filterObj = {{idx: 0, type: 'text', values: new Set(), numOp: '>', numV1: '', numV2: '',
+                      dateMode: 'year', dateValues: new Set()}};
     mfFilters.push(filterObj);
     buildMfRow(filterObj);
   }});
@@ -12219,20 +12388,33 @@ setTimeout(function() {{
 
   // ─── Export & Group-by ───────────────────────────────────────────────────────
   function _getExportData() {{
-    var _vh = [], _vi = [];
+    var _vh = [], _vi = [], _vt = [];
     headerCells.forEach(function(th) {{
       if (th.style.display !== 'none') {{
-        _vh.push(th.textContent.replace(/[↕↑↓]/g,'').replace(/[↕↑↓]/g,'').trim());
-        _vi.push(th.getAttribute('data-col-idx'));
+        _vh.push(th.textContent.replace(/[↕↑↓]/g,'').trim());
+        var cidx = th.getAttribute('data-col-idx');
+        _vi.push(cidx);
+        _vt.push(colTypes[cidx] || 'text');
       }}
     }});
     var _vr = rows.filter(function(r) {{ return r.style.display !== 'none'; }});
     return {{
       headers: _vh,
+      colTypes: _vt,
       rows: _vr.map(function(row) {{
-        return _vi.map(function(cidx) {{
-          var td = row.querySelector('td[data-col-idx="' + cidx + '"]');
-          return td ? td.textContent.trim() : '';
+        return _vi.map(function(cidx, ci) {{
+          var td  = row.querySelector('td[data-col-idx="' + cidx + '"]');
+          var txt = td ? td.textContent.trim() : '';
+          var tp  = _vt[ci];
+          if (tp === 'numeric') {{
+            var n = _mfParseNum(txt);
+            return isNaN(n) ? txt : n;
+          }}
+          if (tp === 'date') {{
+            var dm = txt.match(/^(\d{{1,2}})\.(\d{{1,2}})\.(\d{{4}})$/);
+            if (dm) return new Date(parseInt(dm[3]), parseInt(dm[2])-1, parseInt(dm[1]));
+          }}
+          return txt;
         }});
       }})
     }};
@@ -12250,7 +12432,16 @@ setTimeout(function() {{
   function _xlsxDownload(data, filename) {{
     _loadXLSX(function() {{
       var wb = XLSX.utils.book_new();
-      var ws = XLSX.utils.aoa_to_sheet([data.headers].concat(data.rows));
+      var ws = XLSX.utils.aoa_to_sheet([data.headers].concat(data.rows), {{cellDates: true}});
+      // Apply date number format to date columns
+      (data.colTypes || []).forEach(function(tp, ci) {{
+        if (tp !== 'date') return;
+        var colLetter = XLSX.utils.encode_col(ci);
+        (data.rows || []).forEach(function(_, ri) {{
+          var addr = colLetter + (ri + 2);
+          if (ws[addr]) ws[addr].z = 'D.M.YYYY';
+        }});
+      }});
       XLSX.utils.book_append_sheet(wb, ws, 'Export');
       XLSX.writeFile(wb, filename);
     }});
@@ -12693,37 +12884,36 @@ setTimeout(function() {{
   }}
   // ─── End Column drag-and-drop ─────────────────────────────────────────────────
 
-  // ─── State save / restore (localStorage) ─────────────────────────────────────
-  var _smKey    = 'ft_states_{table_id}';
-  var _smModal  = document.getElementById('ft-states-modal-{table_id}');
-  var _smBtn    = document.getElementById('ft-states-btn-{table_id}');
-  var _smClose  = document.getElementById('ft-sm-close-{table_id}');
-  var _smList   = document.getElementById('ft-sm-list-{table_id}');
-  var _smForm   = document.getElementById('ft-sm-form-{table_id}');
-  var _smNameI  = document.getElementById('ft-sm-name-{table_id}');
-  var _smDescI  = document.getElementById('ft-sm-desc-{table_id}');
-  var _smNewBtn = document.getElementById('ft-sm-new-{table_id}');
-  var _smOkBtn  = document.getElementById('ft-sm-ok-{table_id}');
-  var _smCanBtn = document.getElementById('ft-sm-cancel-{table_id}');
+  // ─── State save / restore (file-based) ──────────────────────────────────────
+  var _smStates = [];   // in-memory list of saved states
+  var _smModal   = document.getElementById('ft-states-modal-{table_id}');
+  var _smBtn     = document.getElementById('ft-states-btn-{table_id}');
+  var _smClose   = document.getElementById('ft-sm-close-{table_id}');
+  var _smList    = document.getElementById('ft-sm-list-{table_id}');
+  var _smForm    = document.getElementById('ft-sm-form-{table_id}');
+  var _smNameI   = document.getElementById('ft-sm-name-{table_id}');
+  var _smDescI   = document.getElementById('ft-sm-desc-{table_id}');
+  var _smNewBtn  = document.getElementById('ft-sm-new-{table_id}');
+  var _smOkBtn   = document.getElementById('ft-sm-ok-{table_id}');
+  var _smCanBtn  = document.getElementById('ft-sm-cancel-{table_id}');
+  var _smExportBtn = document.getElementById('ft-sm-export-{table_id}');
+  var _smImportI   = document.getElementById('ft-sm-import-{table_id}');
 
-  function _smLoadAll() {{
-    try {{ return JSON.parse(localStorage.getItem(_smKey) || '[]'); }} catch(e) {{ return []; }}
-  }}
-  function _smSaveAll(sts) {{
-    try {{ localStorage.setItem(_smKey, JSON.stringify(sts)); }} catch(e) {{
-      alert('Nelze uložit do localStorage. Otevřete soubor přes lokální server nebo povolte site data.');
-    }}
-  }}
+  function _smLoadAll() {{ return _smStates; }}
+  function _smSaveAll(sts) {{ _smStates = sts; }}
+
   function _smCapture() {{
-    // Group toggle state
     var ga = {{}}; Object.keys(groupActive).forEach(function(k) {{ ga[k] = groupActive[k]; }});
-    // Individual picker
     var pc = {{}}; Object.keys(pickerChecked).forEach(function(k) {{ pc[k] = pickerChecked[k]; }});
-    // Column order from current DOM
     var colOrder = Array.from(tbl.querySelectorAll('thead th[data-col-idx]'))
       .map(function(th) {{ return parseInt(th.getAttribute('data-col-idx')); }});
-    // Multi-filters
-    var mff = mfFilters.map(function(f) {{ return {{idx: f.idx, values: Array.from(f.values)}}; }});
+    var mff = mfFilters.map(function(f) {{
+      var fo = {{idx: f.idx, type: f.type || 'text'}};
+      if (f.type === 'numeric') {{ fo.numOp = f.numOp; fo.numV1 = f.numV1; fo.numV2 = f.numV2; }}
+      else if (f.type === 'date') {{ fo.dateMode = f.dateMode; fo.dateValues = Array.from(f.dateValues || []); }}
+      else {{ fo.values = Array.from(f.values || []); }}
+      return fo;
+    }});
     return {{
       groupActive: ga, colPickerMode: colPickerMode, pickerChecked: pc,
       filterText: input ? input.value : '',
@@ -12733,7 +12923,7 @@ setTimeout(function() {{
   }}
   function _smApply(st) {{
     if (!st) return;
-    // 1. Restore column order first (DOM positions)
+    // 1. Restore column order
     if (st.colOrder && st.colOrder.length) {{
       var _tr2 = tbl.querySelector('thead tr');
       st.colOrder.forEach(function(cidx) {{
@@ -12746,7 +12936,6 @@ setTimeout(function() {{
           if (_td) row.appendChild(_td);
         }});
       }});
-      // Sync groupColIdxs order
       var _ordMap = {{}};
       st.colOrder.forEach(function(cidx, pos) {{ _ordMap[cidx] = pos; }});
       groupColIdxs.forEach(function(g) {{
@@ -12756,7 +12945,6 @@ setTimeout(function() {{
           return ap - bp;
         }});
       }});
-      // Sync column picker DOM order
       if (colPickerList && st.colOrder.length) {{
         st.colOrder.forEach(function(cidx) {{
           var lblEl = colPickerList.querySelector('[data-drag-idx="' + cidx + '"]');
@@ -12793,16 +12981,23 @@ setTimeout(function() {{
     if (colPickerBadge) colPickerBadge.style.display = colPickerMode ? 'inline' : 'none';
     // 4. Text filter
     if (input && st.filterText !== undefined) input.value = st.filterText;
-    // 5. Show-no-rating / only-open flags + update buttons
+    // 5. Flags
     showNoRating   = !!st.showNoRating;
     onlyOpenActive = !!st.onlyOpenActive;
     if (typeof _updateNoRatingBtn === 'function') _updateNoRatingBtn();
     if (typeof _updateOnlyOpenBtn === 'function') _updateOnlyOpenBtn();
-    // 6. Multi-filters
+    // 6. Multi-filters (with type support)
     mfFilters.length = 0;
     if (mfRowsDiv) mfRowsDiv.innerHTML = '';
     (st.mfFilters || []).forEach(function(f) {{
-      var fo = {{idx: f.idx, values: new Set(f.values)}};
+      var fo;
+      if (f.type === 'numeric') {{
+        fo = {{idx: f.idx, type: 'numeric', numOp: f.numOp||'>', numV1: f.numV1||'', numV2: f.numV2||''}};
+      }} else if (f.type === 'date') {{
+        fo = {{idx: f.idx, type: 'date', dateMode: f.dateMode||'year', dateValues: new Set(f.dateValues||[])}};
+      }} else {{
+        fo = {{idx: f.idx, type: 'text', values: new Set(f.values||[])}};
+      }}
       mfFilters.push(fo);
       buildMfRow(fo);
     }});
@@ -12815,7 +13010,7 @@ setTimeout(function() {{
     if (!_smList) return;
     var sts = _smLoadAll();
     if (!sts.length) {{
-      _smList.innerHTML = '<p style="color:#aaa;font-size:0.85rem;font-style:italic;margin:4px 0;">Zatím žádné uložené stavy.</p>';
+      _smList.innerHTML = '<p style="color:#aaa;font-size:0.85rem;font-style:italic;margin:4px 0;">Zatím žádné uložené stavy. Uložte stav nebo načtěte soubor.</p>';
       return;
     }}
     _smList.innerHTML = '';
@@ -12823,29 +13018,21 @@ setTimeout(function() {{
       var item = document.createElement('div');
       item.style.cssText = 'border:1px solid #dde4f5;border-radius:8px;padding:10px 12px;' +
         'margin-bottom:8px;background:#f8faff;display:flex;align-items:flex-start;gap:10px;';
-      var info = document.createElement('div');
-      info.style.cssText = 'flex:1;min-width:0;';
+      var info = document.createElement('div'); info.style.cssText = 'flex:1;min-width:0;';
       var nm = document.createElement('div');
-      nm.style.cssText = 'font-weight:700;font-size:0.88rem;color:#1a3a6b;';
-      nm.textContent = s.name;
+      nm.style.cssText = 'font-weight:700;font-size:0.88rem;color:#1a3a6b;'; nm.textContent = s.name;
       var dc = document.createElement('div');
-      dc.style.cssText = 'font-size:0.8rem;color:#555;margin-top:2px;word-break:break-word;';
-      dc.textContent = s.desc || '';
+      dc.style.cssText = 'font-size:0.8rem;color:#555;margin-top:2px;word-break:break-word;'; dc.textContent = s.desc || '';
       var ts = document.createElement('div');
-      ts.style.cssText = 'font-size:0.73rem;color:#aaa;margin-top:3px;';
-      ts.textContent = s.ts || '';
+      ts.style.cssText = 'font-size:0.73rem;color:#aaa;margin-top:3px;'; ts.textContent = s.ts || '';
       info.appendChild(nm);
       if (s.desc) info.appendChild(dc);
       info.appendChild(ts);
-      var btns = document.createElement('div');
-      btns.style.cssText = 'display:flex;gap:6px;flex-shrink:0;align-items:center;';
-      var lB = document.createElement('button');
-      lB.textContent = '↩ Načíst';
+      var btns = document.createElement('div'); btns.style.cssText = 'display:flex;gap:6px;flex-shrink:0;align-items:center;';
+      var lB = document.createElement('button'); lB.textContent = '↩ Načíst';
       lB.style.cssText = 'padding:5px 11px;border:1px solid #028661;border-radius:6px;' +
         'background:#e8f5ef;color:#028661;font-size:0.8rem;cursor:pointer;font-weight:600;white-space:nowrap;';
-      var dB = document.createElement('button');
-      dB.textContent = '✖';
-      dB.title = 'Smazat stav';
+      var dB = document.createElement('button'); dB.textContent = '✖'; dB.title = 'Smazat stav';
       dB.style.cssText = 'padding:5px 9px;border:1px solid #EB4C79;border-radius:6px;' +
         'background:#fde8ef;color:#EB4C79;font-size:0.8rem;cursor:pointer;';
       (function(si2, ss) {{
@@ -12904,6 +13091,40 @@ setTimeout(function() {{
       _smRenderList();
       if (_smForm)   _smForm.style.display = 'none';
       if (_smNewBtn) _smNewBtn.style.display = '';
+    }});
+  }}
+  // Export to file
+  if (_smExportBtn) {{
+    _smExportBtn.addEventListener('click', function() {{
+      var all = _smLoadAll();
+      if (!all.length) {{ alert('Žádné uložené stavy k exportu.'); return; }}
+      var json = JSON.stringify(all, null, 2);
+      var blob = new Blob([json], {{type: 'application/json'}});
+      var url  = URL.createObjectURL(blob);
+      var a    = document.createElement('a');
+      a.href = url; a.download = 'ft_states_{table_id}.json'; a.click();
+      setTimeout(function() {{ URL.revokeObjectURL(url); }}, 500);
+    }});
+  }}
+  // Import from file
+  if (_smImportI) {{
+    _smImportI.addEventListener('change', function() {{
+      var f = _smImportI.files[0];
+      if (!f) return;
+      var reader = new FileReader();
+      reader.onload = function(e) {{
+        try {{
+          var imported = JSON.parse(e.target.result);
+          if (!Array.isArray(imported)) throw new Error('Neplatný formát souboru.');
+          _smStates = imported.concat(_smStates);
+          _smRenderList();
+          alert('Načteno ' + imported.length + ' stavů.');
+        }} catch(err) {{
+          alert('Chyba při čtení souboru: ' + err.message);
+        }}
+      }};
+      reader.readAsText(f);
+      _smImportI.value = '';
     }});
   }}
   // ─── End State save / restore ────────────────────────────────────────────────
