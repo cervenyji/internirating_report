@@ -11389,14 +11389,17 @@ setTimeout(function() {{
   var mfAddBtn     = document.getElementById("ft-mf-add-{table_id}");
 
   // Sesbírej unikátní hodnoty pro každý sloupec (z textContent buněk)
-  var colValues = {{}};  // idx -> Set of strings
-  var colNames  = [];    // [{{idx, label}}] — jen viditelné sloupce (dle headerCells)
+  var colValues   = {{}};  // idx -> Set of strings
+  var colHasEmpty = {{}};  // idx -> bool: column contains blank/empty cells
+  var colNames    = [];    // [{{idx, label}}] — jen viditelné sloupce (dle headerCells)
+  var _MF_EMPTY   = '\x00prázdné';   // sentinel for "empty cell" filter option
   headerCells.forEach(function(th, i) {{
     var label = th.textContent.trim().replace(/[↕↑↓]/g,"").trim();
     var idx   = i + 1;
     if (!label) return;
     colNames.push({{idx: idx, label: label}});
-    colValues[idx] = new Set();
+    colValues[idx]   = new Set();
+    colHasEmpty[idx] = false;
     rows.forEach(function(r) {{
       var td = r.querySelectorAll("td")[idx];
       if (td) {{
@@ -11404,6 +11407,7 @@ setTimeout(function() {{
         var _vl = v.toLowerCase();
         var _vs = v.replace(/[—–‒\-\s]/g,"");
         if (v && v !== "—" && _vl !== "nan" && _vl !== "none" && _vs !== "") colValues[idx].add(v);
+        else colHasEmpty[idx] = true;
       }}
     }});
   }});
@@ -11458,7 +11462,12 @@ setTimeout(function() {{
       var key = f.dateMode === 'month' ? (dm[3] + '-' + dm[2].padStart(2,'0')) : dm[3];
       return f.dateValues.has(key);
     }}
-    return !!(f.values && f.values.has(t));
+    if (!f.values) return true;
+    // sentinel _MF_EMPTY matches blank/dash/nan cells
+    var _cellIsEmpty = !t || t === "—" || t.toLowerCase() === "nan" || t.toLowerCase() === "none" ||
+                       t.replace(/[—–‒\-\s]/g,"") === "";
+    if (_cellIsEmpty) return f.values.has(_MF_EMPTY);
+    return f.values.has(t);
   }}
 
   function applyMultiFilter() {{
@@ -11699,6 +11708,22 @@ setTimeout(function() {{
         ctrlRow2.appendChild(btnAll); ctrlRow2.appendChild(btnNone);
         var listDiv = document.createElement("div");
         var cbs = [];
+        // (Prázdné) option — only when column has blank cells
+        if (colHasEmpty[idx]) {{
+          var eLbl = document.createElement("label");
+          eLbl.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 0;font-size:0.82rem;" +
+            "cursor:pointer;white-space:nowrap;border-bottom:1px solid #eee;margin-bottom:4px;padding-bottom:5px;color:#888;font-style:italic;";
+          var eCb = document.createElement("input"); eCb.type = "checkbox"; eCb.style.cursor = "pointer";
+          eCb.checked = prevSel.has(_MF_EMPTY);
+          if (eCb.checked) filterObj.values.add(_MF_EMPTY);
+          eCb.addEventListener("change", function() {{
+            if (eCb.checked) filterObj.values.add(_MF_EMPTY); else filterObj.values.delete(_MF_EMPTY);
+            updDropBtn(); applyMultiFilter();
+          }});
+          eLbl.appendChild(eCb); eLbl.appendChild(document.createTextNode("(Prázdné)"));
+          listDiv.appendChild(eLbl);
+          cbs.push({{cb:eCb, v:_MF_EMPTY, lbl:eLbl, _always:true}});
+        }}
         sorted.forEach(function(v) {{
           var lbl = document.createElement("label");
           lbl.style.cssText = "display:flex;align-items:center;gap:6px;padding:2px 0;font-size:0.82rem;cursor:pointer;white-space:nowrap;";
@@ -11715,7 +11740,8 @@ setTimeout(function() {{
         }});
         srchIn.addEventListener("input", function() {{
           var q2 = srchIn.value.toLowerCase();
-          cbs.forEach(function(o) {{ o.lbl.style.display = (!q2 || o.v.toLowerCase().includes(q2)) ? '' : 'none'; }});
+          // _always items (Prázdné) are never hidden by search
+          cbs.forEach(function(o) {{ o.lbl.style.display = (o._always || !q2 || o.v.toLowerCase().includes(q2)) ? '' : 'none'; }});
         }});
         btnAll.addEventListener("click", function(e) {{
           e.preventDefault();
