@@ -9510,7 +9510,7 @@ def _apply_common_formatting(d, cols_to_show):
     # Realizovaný formát budovy fixed (DBS) — barevný badge jen pro NF pobočky
     if 'FORMAT_2024_FIXED' in cols_to_show and 'FORMAT_2024_FIXED' in d.columns:
         _nfsf_fx = d['BRANCH_BUILDING_NF_SF'].astype(str).str.strip().str.upper() if 'BRANCH_BUILDING_NF_SF' in d.columns else None
-        _fx_colors = {'small': '#f59e0b', 'medium': '#2770f0', 'flagship': '#0bb440', 'ta': '#7c3aed'}
+        _fx_colors = {'small': '#f59e0b', 'medium economy': '#fb923c', 'medium': '#2770f0', 'flagship': '#0bb440', 'ta': '#7c3aed'}
         def _fmt_fixed_badge(row_v):
             v, is_nf = row_v
             s = str(v or '').lower().strip()
@@ -10298,7 +10298,8 @@ def generate_column_map_html():
         ("IR22",                  COMPUTED_NOTE, "rank(IR22_SCORE) — 1=nejlepší",                          "interní rating 2022"),
         ("IR22_Q",                COMPUTED_NOTE, "qcut(IR22, q=5) — 1=nejlepší",                           "interní rating 2022"),
         # Formát pobočky
-        ("BRANCH_FORMAT",         COMPUTED_NOTE, "FTE: ≥25→flagship, ≥10→medium, ≥5→medium economy, jinak small", "formát"),
+        ("BRANCH_FORMAT",         COMPUTED_NOTE, "FTE: ≥25→flagship, ≥10→medium, ≥5→medium economy, <5→small", "formát"),
+        ("FORMAT_2024_FIXED",     COMPUTED_NOTE, "FTE: ≥25→flagship, ≥10→medium, ≥5→medium economy, <5→small", "formát"),
         ("BRANCH_FORMAT_OBCHODNI",COMPUTED_NOTE, "OBCHODNI_FTE: stejná pravidla jako BRANCH_FORMAT",      "formát"),
         # Klienti
         ("PRIM_RATIO",            COMPUTED_NOTE, "PRIMARNI_KLIENTI / POCET_KLIENTU",                      "klienti"),
@@ -20490,22 +20491,34 @@ if 'FORMAT' in df.columns:
     df['FORMAT_2024_(FIX_FS)'] = df['FORMAT']
     df = df.drop(columns=['FORMAT'])
 
-# Realizovaný formát budovy fixed — zjednodušená klasifikace (Flagship/Medium/Small/TA)
-def _simplify_dbs_format(v):
-    s = str(v or '').strip().lower()
-    if not s or s in ('nan', 'none', '—', ''):
+# Realizovaný formát budovy fixed — klasifikace dle FTE (≥25 flagship, ≥10 medium, ≥5 medium economy, <5 small)
+def _fte_to_format_fixed(fte):
+    try:
+        v = float(fte)
+    except (TypeError, ValueError):
         return None
-    if s.startswith('flagship'):
-        return 'Flagship'
-    if s.startswith('medium'):
-        return 'Medium'
-    if s.startswith('small'):
-        return 'Small'
-    if s.strip() == 'ta':
-        return 'TA'
-    return None
+    if v >= 25:
+        return 'flagship'
+    elif v >= 10:
+        return 'medium'
+    elif v >= 5:
+        return 'medium economy'
+    else:
+        return 'small'
 
-if 'FORMAT_2024_(FIX_FS)' in df.columns:
+if 'FTE' in df.columns:
+    df['FORMAT_2024_FIXED'] = df['FTE'].apply(_fte_to_format_fixed)
+elif 'FORMAT_2024_(FIX_FS)' in df.columns:
+    # Záloha: pokud FTE chybí, odvoď z textového sloupce
+    def _simplify_dbs_format(v):
+        s = str(v or '').strip().lower()
+        if not s or s in ('nan', 'none', '—', ''):
+            return None
+        if s.startswith('flagship'): return 'flagship'
+        if s.startswith('medium'):   return 'medium'
+        if s.startswith('small'):    return 'small'
+        if s.strip() == 'ta':        return 'ta'
+        return None
     df['FORMAT_2024_FIXED'] = df['FORMAT_2024_(FIX_FS)'].apply(_simplify_dbs_format)
 
 # Explicitní přiřazení výnosových sloupců ze správných zdrojů (přes map — bez merge, bez duplikátů)
