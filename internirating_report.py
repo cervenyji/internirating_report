@@ -10299,7 +10299,7 @@ def generate_column_map_html():
         ("IR22_Q",                COMPUTED_NOTE, "qcut(IR22, q=5) — 1=nejlepší",                           "interní rating 2022"),
         # Formát pobočky
         ("BRANCH_FORMAT",         COMPUTED_NOTE, "FTE: ≥25→flagship, ≥10→medium, ≥5→medium economy, <5→small", "formát"),
-        ("FORMAT_2024_FIXED",     COMPUTED_NOTE, "FTE: ≥25→flagship, ≥10→medium, ≥5→medium economy, <5→small", "formát"),
+        ("FORMAT_2024_FIXED",     COMPUTED_NOTE, "Zjednodušení FORMAT_2024_(FIX_FS): Flagship*→flagship, Medium*→medium, Small*→small, TA→ta", "formát"),
         ("BRANCH_FORMAT_OBCHODNI",COMPUTED_NOTE, "OBCHODNI_FTE: stejná pravidla jako BRANCH_FORMAT",      "formát"),
         # Klienti
         ("PRIM_RATIO",            COMPUTED_NOTE, "PRIMARNI_KLIENTI / POCET_KLIENTU",                      "klienti"),
@@ -20491,34 +20491,26 @@ if 'FORMAT' in df.columns:
     df['FORMAT_2024_(FIX_FS)'] = df['FORMAT']
     df = df.drop(columns=['FORMAT'])
 
-# Realizovaný formát budovy fixed — klasifikace dle FTE (≥25 flagship, ≥10 medium, ≥5 medium economy, <5 small)
-def _fte_to_format_fixed(fte):
-    try:
-        v = float(fte)
-    except (TypeError, ValueError):
+# Realizovaný formát budovy fixed — zjednodušení hodnot ze sloupce FORMAT_2024_(FIX_FS):
+#   Flagship*                              → flagship
+#   Medium / Medium Cashless / Medium *    → medium
+#   Small / Small Cashless* / Small *      → small
+#   TA                                     → ta
+def _simplify_dbs_format(v):
+    s = str(v or '').strip().lower()
+    if not s or s in ('nan', 'none', '—', ''):
         return None
-    if v >= 25:
+    if s.startswith('flagship'):
         return 'flagship'
-    elif v >= 10:
+    if s.startswith('medium'):
         return 'medium'
-    elif v >= 5:
-        return 'medium economy'
-    else:
+    if s.startswith('small'):
         return 'small'
+    if s == 'ta':
+        return 'ta'
+    return None
 
-if 'FTE' in df.columns:
-    df['FORMAT_2024_FIXED'] = df['FTE'].apply(_fte_to_format_fixed)
-elif 'FORMAT_2024_(FIX_FS)' in df.columns:
-    # Záloha: pokud FTE chybí, odvoď z textového sloupce
-    def _simplify_dbs_format(v):
-        s = str(v or '').strip().lower()
-        if not s or s in ('nan', 'none', '—', ''):
-            return None
-        if s.startswith('flagship'): return 'flagship'
-        if s.startswith('medium'):   return 'medium'
-        if s.startswith('small'):    return 'small'
-        if s.strip() == 'ta':        return 'ta'
-        return None
+if 'FORMAT_2024_(FIX_FS)' in df.columns:
     df['FORMAT_2024_FIXED'] = df['FORMAT_2024_(FIX_FS)'].apply(_simplify_dbs_format)
 
 # Explicitní přiřazení výnosových sloupců ze správných zdrojů (přes map — bez merge, bez duplikátů)
